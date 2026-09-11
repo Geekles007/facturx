@@ -8,9 +8,9 @@
   "scripts": {
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "typecheck": "pnpm --filter facturx typecheck",
-    "test": "pnpm --filter facturx test",
-    "build": "pnpm --filter facturx build",
+    "typecheck": "pnpm --filter facturx-sdk typecheck",
+    "test": "pnpm --filter facturx-sdk test",
+    "build": "pnpm --filter facturx-sdk build",
     "examples:check": "pnpm -r --filter \"./examples/*\" run check",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm examples:check"
   },

@@ -1,16 +1,16 @@
-# facturx
+# facturx-sdk
 
 SDK **TypeScript pur** pour **générer, valider, embarquer et lire** des factures **Factur-X** au profil **EN 16931**, avec les règles françaises de la réforme de la facturation électronique. Zéro dépendance native, compatible edge / serverless ; `pdf-lib` uniquement dans l'entrée `facturx/pdf`.
 
 ```bash
-pnpm add facturx
+pnpm add facturx-sdk
 ```
 
 ## Émettre
 
 ```ts
-import { assertValidInvoice, cents, computeTotals, percent, quantity, unitPrice, toCiiXml } from 'facturx';
-import { embedFacturX } from 'facturx/pdf';
+import { assertValidInvoice, cents, computeTotals, percent, quantity, unitPrice, toCiiXml } from 'facturx-sdk';
+import { embedFacturX } from 'facturx-sdk/pdf';
 
 const draft = {
   id: 'F-2026-0001', issueDate: '2026-09-11', typeCode: '380', currency: 'EUR',
@@ -34,8 +34,8 @@ const pdfA3 = await embedFacturX(yourPdfBytes, { invoice }); // PDF/A-3 Factur-X
 ## Recevoir
 
 ```ts
-import { fromCiiXml } from 'facturx';
-import { extractInvoice } from 'facturx/pdf';
+import { fromCiiXml } from 'facturx-sdk';
+import { extractInvoice } from 'facturx-sdk/pdf';
 
 const received = await extractInvoice(pdfBytes); // { invoice, xml, filename, conformanceLevel } | undefined
 const invoice = fromCiiXml(xmlString);           // validée ; FacturXParseError { code, path } si illisible

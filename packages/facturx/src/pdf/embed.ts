@@ -51,7 +51,7 @@ export interface EmbedOptions {
   outputIntent?: OutputIntentOptions;
 }
 
-const PRODUCER = 'facturx';
+const PRODUCER = 'facturx-sdk';
 const encoder = new TextEncoder();
 
 function toBytes(input: Uint8Array | ArrayBuffer): Uint8Array {

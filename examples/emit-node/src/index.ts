@@ -7,8 +7,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { centsToString, FacturXValidationError, toCiiXml, validateInvoice } from 'facturx';
-import { embedFacturX } from 'facturx/pdf';
+import { centsToString, FacturXValidationError, toCiiXml, validateInvoice } from 'facturx-sdk';
+import { embedFacturX } from 'facturx-sdk/pdf';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import type { AppInvoice } from './app-model.ts';
 import { toFacturX } from './to-facturx.ts';

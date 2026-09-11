@@ -9,8 +9,8 @@ import {
   quantity,
   toCiiXml,
   unitPrice,
-} from 'facturx';
-import { embedFacturX } from 'facturx/pdf';
+} from 'facturx-sdk';
+import { embedFacturX } from 'facturx-sdk/pdf';
 import { PDFDocument } from 'pdf-lib';
 
 async function blankPdf(): Promise<Uint8Array> {

@@ -1,4 +1,4 @@
-# facturx
+# facturx-sdk
 
 SDK **TypeScript pur** — zéro dépendance native, compatible edge/serverless — pour **générer, embarquer et extraire** des factures **Factur-X** au profil **EN 16931**, avec les règles françaises intégrées.
 
@@ -6,7 +6,7 @@ SDK **TypeScript pur** — zéro dépendance native, compatible edge/serverless 
 
 ## Vision
 
-Une facture électronique française conforme ne devrait pas exiger une dépendance Java, un service SaaS ou une lecture de 300 pages de norme. `facturx` expose :
+Une facture électronique française conforme ne devrait pas exiger une dépendance Java, un service SaaS ou une lecture de 300 pages de norme. `facturx-sdk` expose :
 
 - un type `Invoice` **annoté champ par champ** avec le Business Term EN 16931 (`BT-xx`) et, quand elle s'applique, la règle française (Code de commerce, CGI) ;
 - une **arithmétique monétaire exacte** (entiers en centimes, `bigint` en intermédiaire, un seul arrondi commercial) ;
@@ -46,7 +46,7 @@ pnpm --filter example-http-handler start
 ## Installation
 
 ```bash
-pnpm add facturx
+pnpm add facturx-sdk
 ```
 
 ## Usage
@@ -61,7 +61,7 @@ import {
   quantity,
   unitPrice,
   validateInvoice,
-} from 'facturx';
+} from 'facturx-sdk';
 
 const draft: InvoiceDraft = {
   id: 'F-2026-0001',
@@ -107,7 +107,7 @@ assertValidInvoice(invoice); // lève FacturXValidationError { issues } sinon
 ### XML CII
 
 ```ts
-import { toCiiXml } from 'facturx';
+import { toCiiXml } from 'facturx-sdk';
 
 const xml = toCiiXml(invoice);                  // compact, validé avant génération
 const debug = toCiiXml(invoice, { pretty: true, businessProcessId: 'A1' });
@@ -119,7 +119,7 @@ Le XML produit est conforme au XSD Factur-X EN 16931 (`urn:cen.eu:en16931:2017`,
 ### PDF/A-3 : embarquer et extraire
 
 ```ts
-import { embedFacturX, extractFacturX } from 'facturx/pdf';
+import { embedFacturX, extractFacturX } from 'facturx-sdk/pdf';
 
 // pdfBytes : un PDF déjà conforme PDF/A (polices embarquées, non chiffré), Uint8Array | ArrayBuffer
 const facturx = await embedFacturX(pdfBytes, { invoice }, {
@@ -135,8 +135,8 @@ const found = await extractFacturX(facturx);
 ### Lire une facture reçue
 
 ```ts
-import { fromCiiXml, parseCiiDocument } from 'facturx';
-import { extractInvoice } from 'facturx/pdf';
+import { fromCiiXml, parseCiiDocument } from 'facturx-sdk';
+import { extractInvoice } from 'facturx-sdk/pdf';
 
 const invoice = fromCiiXml(xmlString);                 // validée EN 16931 + FR, sinon FacturXValidationError
 const { invoice: raw, guidelineId } = parseCiiDocument(xmlString); // tout profil, sans validation

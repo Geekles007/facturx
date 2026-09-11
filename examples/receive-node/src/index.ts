@@ -8,8 +8,13 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { centsToString, FacturXParseError, FacturXValidationError, type Invoice } from 'facturx';
-import { extractInvoice, FacturXPdfError } from 'facturx/pdf';
+import {
+  centsToString,
+  FacturXParseError,
+  FacturXValidationError,
+  type Invoice,
+} from 'facturx-sdk';
+import { extractInvoice, FacturXPdfError } from 'facturx-sdk/pdf';
 import { createDemoInbox } from './demo-inbox.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));

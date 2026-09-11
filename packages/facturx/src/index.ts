@@ -1,5 +1,5 @@
 /**
- * facturx — SDK TypeScript pur pour les factures Factur-X (profil EN 16931).
+ * facturx-sdk — SDK TypeScript pur pour les factures Factur-X (profil EN 16931).
  *
  * Ce point d'entrée contient le modèle, la monnaie, la validation, le calcul des totaux et la génération XML CII.
  * L'embarquement PDF (pdf-lib) arrivera dans une entrée séparée.

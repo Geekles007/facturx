@@ -1,6 +1,6 @@
 # Changelog
 
-Toutes les évolutions notables de `facturx`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Avant 1.0.0, une version mineure peut contenir des changements d'API.
+Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Avant 1.0.0, une version mineure peut contenir des changements d'API.
 
 ## [0.1.0] — 2026-09-11
 
@@ -20,7 +20,7 @@ Première version publiée : la boucle complète émission → réception pour l
 - `toCiiXml` : templating typé, ordre XSD par construction, échappement manuel, sortie compacte déterministe (`pretty` en option), validation par défaut ; conforme au XSD officiel Factur-X EN 16931.
 - `fromCiiXml` / `parseCiiDocument` : mini-parseur XML sans DTD (pas de XXE), namespaces résolus par URI, tout profil lu, `FacturXParseError { code, path }` ; aller-retour `fromCiiXml(toCiiXml(x)) ≡ x`.
 
-### PDF/A-3 (`facturx/pdf`)
+### PDF/A-3 (`facturx-sdk/pdf`)
 - `embedFacturX` : pièce jointe `factur-x.xml` (`/AFRelationship /Alternative`), `/AF`, XMP `pdfaid` + schéma `fx`, `Info` aligné, `/ID` reproductible, `OutputIntent` optionnel ; idempotent.
 - `extractFacturX` / `extractInvoice` : lecture tolérante (`factur-x.xml`, repli ZUGFeRD / XRechnung), `FacturXPdfError { code }`.
 
