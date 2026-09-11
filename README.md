@@ -2,7 +2,7 @@
 
 SDK **TypeScript pur** — zéro dépendance native, compatible edge/serverless — pour **générer, embarquer et extraire** des factures **Factur-X** au profil **EN 16931**, avec les règles françaises intégrées.
 
-> État : **session 4 / lecture** — la boucle est complète : modèle typé, monnaie entière, validation, génération XML CII (validée contre le XSD officiel), **lecture XML → `Invoice`**, embarquement / extraction PDF/A-3 (`@geekles/facturx/pdf`). Prochaines étapes : exemples d'intégration, validation veraPDF.
+> État : **session 5 / adoption** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3), **guide réforme** et **trois exemples exécutables** (émission, réception, handler HTTP). Prochaines étapes : nature de l'opération & SIREN acheteur obligatoire, publication npm, veraPDF.
 
 ## Vision
 
@@ -15,6 +15,25 @@ Une facture électronique française conforme ne devrait pas exiger une dépenda
 - une **lecture XML → `Invoice`** (`fromCiiXml`) tolérante aux profils et aux préfixes, sécurisée (pas de DTD), qui valide par défaut et localise chaque erreur par un chemin CII ;
 - un **embarquement PDF/A-3** (`embedFacturX`) qui écrit pièce jointe, `/AF`, XMP `pdfaid` + schéma `fx`, `Info` aligné et `/ID`, de façon idempotente et reproductible, et une **extraction** (`extractFacturX`) tolérante aux noms ZUGFeRD ;
 - une seule dépendance runtime, `pdf-lib`, chargée uniquement par l'entrée `./pdf` (l'entrée principale reste sans dépendance).
+
+## Réforme 2026-2027 : où ce SDK se place
+
+Réception obligatoire pour **toutes** les entreprises au 1er septembre 2026, émission en 2026 (grandes entreprises/ETI) puis 2027 (PME/micro), transit par une **plateforme agréée**. Le SDK est la brique **format + conformité** (produire, vérifier, lire du Factur-X) ; la plateforme agréée est la brique **transport** (envoi, statuts, e-reporting), hors périmètre. Guide complet, checklist et écarts connus : [docs/reforme.md](docs/reforme.md).
+
+## Exemples exécutables
+
+| Exemple | Ce qu'il montre |
+|---|---|
+| [examples/emit-node](examples/emit-node) | modèle applicatif JSON (montants en chaînes) → `Invoice` → validation → PDF Factur-X sur disque |
+| [examples/receive-node](examples/receive-node) | dossier de PDF reçus → tableau (ok / invalide / sans Factur-X) + `received.json`, anomalies localisées |
+| [examples/http-handler](examples/http-handler) | `(Request) => Response` Web standard, `POST /emit` et `POST /receive`, copiable dans Next.js, Hono, Workers, Deno |
+
+```bash
+pnpm install && pnpm build
+pnpm --filter example-emit-node start
+pnpm --filter example-receive-node start -- --demo
+pnpm --filter example-http-handler start
+```
 
 ## Périmètre v1
 
@@ -137,10 +156,10 @@ Aucun flottant : `cents(1234)` = 12,34 €, `quantity(15000)` = 1,5, `unitPrice(
 
 ```bash
 pnpm install
-pnpm check       # lint + typecheck + test + build
+pnpm check       # lint + typecheck + test + build + exemples (typecheck + exécution)
 ```
 
-Monorepo pnpm : `packages/facturx` (le SDK). Outils : TypeScript strict, tsup (ESM + CJS + d.ts), vitest, Biome, GitHub Actions (Node 22/24).
+Monorepo pnpm : `packages/facturx` (le SDK), `examples/*` (exemples exécutés en CI). Outils : TypeScript strict, tsup (ESM + CJS + d.ts), vitest, Biome, GitHub Actions (Node 22/24).
 
 ## Licence
 

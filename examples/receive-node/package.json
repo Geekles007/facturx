@@ -1,0 +1,19 @@
+{
+  "name": "example-receive-node",
+  "private": true,
+  "type": "module",
+  "description": "Réception : un dossier de PDF reçus → factures typées, anomalies localisées, export JSON.",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "check": "tsc --noEmit -p tsconfig.json && tsx src/index.ts --demo"
+  },
+  "dependencies": {
+    "@geekles/facturx": "workspace:*",
+    "pdf-lib": "^1.17.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.3"
+  }
+}

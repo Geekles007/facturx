@@ -8,10 +8,11 @@
   "scripts": {
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test",
-    "build": "pnpm -r build",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "typecheck": "pnpm --filter @geekles/facturx typecheck",
+    "test": "pnpm --filter @geekles/facturx test",
+    "build": "pnpm --filter @geekles/facturx build",
+    "examples:check": "pnpm -r --filter \"./examples/*\" run check",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm examples:check"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",

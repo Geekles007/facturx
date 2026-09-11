@@ -90,3 +90,11 @@ Le XML ne porte que le texte des conditions (BT-20). `latePenaltyRate`, `recover
 
 ### D27. Aller-retour garanti par les tests
 `fromCiiXml(toCiiXml(x))` est `deepEqual` à `x` sur les trois fixtures (aux mentions FR structurées près, devenues texte), et `toCiiXml(fromCiiXml(xml)) === xml`. Conséquence de modélisation : `remittanceInformation` (BT-83, document-level en CII) est lu sur le **premier** moyen de paiement ; le mandat/ICS (BT-89/BT-90) sur le premier moyen de type prélèvement. `extractInvoice(pdf)` = `extractFacturX` + `fromCiiXml`.
+
+## 2026-09-11 — Session 5 : guide réforme et exemples
+
+### D28. Positionnement : SDK pour développeurs, brique « format + conformité »
+Cible confirmée : les devs qui doivent rendre une application conforme à la réforme (réception 2026 pour tous, émission 2026/2027). Le SDK produit, vérifie et lit du Factur-X ; la plateforme agréée assure le transport, les statuts et l'e-reporting. Pas de cible non-dev : un produit grand public serait construit *sur* le SDK, pas dedans. `docs/reforme.md` documente cette frontière et liste honnêtement les écarts du modèle (nature de l'opération, TVA sur les débits, SIREN acheteur) plutôt que de les improviser.
+
+### D29. Exemples exécutés en CI, sans framework
+Trois paquets `examples/*` dans le workspace (`workspace:*`, `tsx`), typecheckés **et exécutés** par `pnpm check` : un exemple qui ne tourne plus casse la CI. Le handler HTTP n'utilise que `Request`/`Response`/`FormData` (Web standard) — copiable dans Next.js, Hono, Workers, Deno sans dépendance et cohérent avec la promesse edge du SDK. Une vraie app Next.js aurait coûté ~300 Mo de `node_modules` et lié l'exemple à un framework ; des snippets non exécutés auraient dérivé.

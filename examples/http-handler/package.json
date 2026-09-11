@@ -1,0 +1,19 @@
+{
+  "name": "example-http-handler",
+  "private": true,
+  "type": "module",
+  "description": "Handler HTTP Web standard (Request → Response) : POST /emit et POST /receive, utilisable dans Next.js, Hono, Workers, Deno.",
+  "scripts": {
+    "start": "tsx src/demo.ts",
+    "check": "tsc --noEmit -p tsconfig.json && tsx src/demo.ts"
+  },
+  "dependencies": {
+    "@geekles/facturx": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "pdf-lib": "^1.17.1",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.3"
+  }
+}
