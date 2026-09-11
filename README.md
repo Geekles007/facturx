@@ -4,7 +4,7 @@
 
 SDK **TypeScript pur** — zéro dépendance native, compatible edge/serverless — pour **générer, embarquer et extraire** des factures **Factur-X** au profil **EN 16931**, avec les règles françaises intégrées.
 
-> État : **session 6 / mentions réforme** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3), guide réforme, trois exemples exécutables, et les **mentions de la réforme** : SIREN acheteur exigé (B2C via `buyer.consumer`), nature de l'opération (BT-23), option TVA sur les débits (BT-8), avoirs 381. **Publié sur npm : `facturx-sdk@0.1.0`.** Prochaines étapes : veraPDF, confirmation du mapping BT-23 auprès d'une plateforme agréée.
+> État : **session 6 / mentions réforme** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3), guide réforme, trois exemples exécutables, et les **mentions de la réforme** : SIREN acheteur exigé (B2C via `buyer.consumer`), nature de l'opération (BT-23), option TVA sur les débits (BT-8), avoirs 381. **Publié sur npm : `facturx-sdk`.** Conformité PDF/A-3b vérifiée par veraPDF en CI. Prochaine étape : confirmation du mapping BT-23 auprès d'une plateforme agréée.
 
 ## Vision
 
@@ -147,7 +147,7 @@ const received = await extractInvoice(pdfBytes);       // PDF → { invoice, xml
 
 Les erreurs de lecture sont typées et localisées : `FacturXParseError { code: 'MALFORMED' | 'NOT_CII' | 'MISSING' | 'FORMAT' | 'UNSUPPORTED', path }`, ex. `…/ram:IncludedSupplyChainTradeLineItem[2]/…/ram:LineTotalAmount`. Aucun `DOCTYPE` n'est accepté (pas de XXE). Une facture lue porte ses conditions de paiement en texte (`paymentTerms.text`) ; une facture rédigée avec le SDK peut utiliser les champs structurés FR, qui génèrent ce texte.
 
-`embedFacturX` accepte `{ invoice }` (XML généré et validé) ou `{ xml }` (chaîne ou octets). Il **ne convertit pas** un PDF quelconque en PDF/A : il ajoute la pièce jointe `factur-x.xml` (`/AFRelationship /Alternative`), le tableau `/AF`, les métadonnées XMP (`pdfaid:part 3`, `pdfaid:conformance B`, schéma d'extension `fx`), aligne le dictionnaire `Info` et fixe l'identifiant `/ID`. Une pièce Factur-X déjà présente est remplacée, les autres pièces jointes sont conservées. Les erreurs sont typées : `FacturXPdfError { code: 'INVALID_PDF' | 'ENCRYPTED' | 'INVALID_XML' | 'UNSUPPORTED' }`.
+La couche ajoutée par `embedFacturX` est **validée PDF/A-3b par veraPDF** en CI (zéro règle violée sur un PDF d'entrée sans police ; voir `test/pdfa.test.ts`). `embedFacturX` accepte `{ invoice }` (XML généré et validé) ou `{ xml }` (chaîne ou octets). Il **ne convertit pas** un PDF quelconque en PDF/A : il ajoute la pièce jointe `factur-x.xml` (`/AFRelationship /Alternative`), le tableau `/AF`, les métadonnées XMP (`pdfaid:part 3`, `pdfaid:conformance B`, schéma d'extension `fx`), aligne le dictionnaire `Info` et fixe l'identifiant `/ID`. Une pièce Factur-X déjà présente est remplacée, les autres pièces jointes sont conservées. Les erreurs sont typées : `FacturXPdfError { code: 'INVALID_PDF' | 'ENCRYPTED' | 'INVALID_XML' | 'UNSUPPORTED' }`.
 
 ### Monnaie
 

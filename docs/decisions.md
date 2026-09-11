@@ -128,3 +128,8 @@ Aucun secret dans le dépôt : le workflow obtient un jeton OIDC (`id-token: wri
 
 ### D37. Garde-fous avant publication, pas de bump automatique
 `scripts/release-check.mjs` refuse un tag qui ne correspond pas aux deux `package.json`, une section de CHANGELOG absente, un CHANGELOG de paquet désynchronisé, ou une version déjà publiée. `pnpm bump` fait les écritures mécaniques mais **exige** que la section du CHANGELOG existe déjà : on ne publie pas sans avoir écrit ce qui change. Les source maps sont retirées du paquet (tarball ÷ 3, plus d'avertissements « source map manquante » chez les utilisateurs de bundlers).
+
+## 2026-09-11 — Session 9 : conformité PDF/A-3b par veraPDF
+
+### D38. veraPDF via Docker, test bloquant, fixture sans police
+veraPDF est le validateur de référence PDF/A ; il exige Java 11+, absent de la machine de dev. L'image officielle `ghcr.io/verapdf/cli` le fait tourner sans Java, localement (shim `scripts/verapdf`, Docker Desktop) comme en CI (le shim est mis dans le `PATH`, l'image tirée avant les tests). Le test (`test/pdfa.test.ts`) valide un PDF d'entrée **sans texte** (un rectangle vectoriel) : aucune police à embarquer, donc chaque règle ISO 19005-3 évaluée porte sur ce que le SDK ajoute — pièce jointe, `/AF`, XMP, `Info`, `/ID`, `OutputIntent` (profil sRGB compact CC0 de 456 octets, `test/fixtures/sRGB.icc`). Résultat au premier passage : **conforme 3b, zéro règle violée** (veraPDF 1.31). Un contrôle négatif (Helvetica non embarquée) échoue bien, ce qui valide le harnais. Le test est bloquant en CI et ignoré proprement sans `verapdf` dans le `PATH`. Le contrat D19 reste inchangé : le SDK ne convertit pas un PDF quelconque en PDF/A ; il garantit désormais, preuve à l'appui, que sa couche ne casse pas un PDF/A d'entrée.

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Shim veraPDF : exécute le CLI officiel via Docker (ghcr.io/verapdf/cli), sans Java local.
+# Usage identique au binaire : verapdf [options] fichier.pdf …
+# Les fichiers existants passés en argument sont montés en lecture seule dans le conteneur.
+set -euo pipefail
+IMAGE="${VERAPDF_IMAGE:-ghcr.io/verapdf/cli:latest}"
+PLATFORM="${VERAPDF_PLATFORM:-linux/amd64}" # l'image n'est publiée qu'en amd64 ; émulée sur Apple Silicon
+args=()
+mounts=()
+n=0
+for a in "$@"; do
+  if [[ -f "$a" ]]; then
+    dir=$(cd "$(dirname "$a")" && pwd -P)
+    n=$((n + 1))
+    mounts+=(-v "$dir:/data/$n:ro")
+    args+=("/data/$n/$(basename "$a")")
+  else
+    args+=("$a")
+  fi
+done
+exec docker run --rm --platform "$PLATFORM" ${mounts[@]+"${mounts[@]}"} "$IMAGE" ${args[@]+"${args[@]}"}
