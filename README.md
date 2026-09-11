@@ -2,7 +2,7 @@
 
 SDK **TypeScript pur** — zéro dépendance native, compatible edge/serverless — pour **générer, embarquer et extraire** des factures **Factur-X** au profil **EN 16931**, avec les règles françaises intégrées.
 
-> État : **session 5 / adoption** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3), **guide réforme** et **trois exemples exécutables** (émission, réception, handler HTTP). Prochaines étapes : nature de l'opération & SIREN acheteur obligatoire, publication npm, veraPDF.
+> État : **session 6 / mentions réforme** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3), guide réforme, trois exemples exécutables, et les **mentions de la réforme** : SIREN acheteur exigé (B2C via `buyer.consumer`), nature de l'opération (BT-23), option TVA sur les débits (BT-8), avoirs 381. Prochaines étapes : publication npm, veraPDF.
 
 ## Vision
 
@@ -39,7 +39,9 @@ pnpm --filter example-http-handler start
 
 **Inclus** : profil EN 16931 (`urn:cen.eu:en16931:2017`), facture commerciale (380), TVA multi-taux, remises/frais ligne et document, exonérations (E, AE, K, G, O, Z), mentions FR (SIREN/SIRET/TVA, date ou période de livraison, pénalités de retard, indemnité forfaitaire de 40 €, escompte), moyens de paiement virement/prélèvement.
 
-**Hors périmètre** : avoirs (381), Order-X, UBL, rendu PDF de la facture, conversion d'un PDF quelconque en PDF/A, envoi à une plateforme (PA/PDP/PPF), autres profils Factur-X (MINIMUM, BASIC, EXTENDED).
+**Inclus aussi (session 6)** : avoirs (381), nature de l'opération (`operationCategory` → BT-23), option TVA sur les débits (`vatOnDebits` → BT-8), SIREN acheteur exigé avec drapeau `buyer.consumer` pour le B2C.
+
+**Hors périmètre** : Order-X, UBL, autofacturation, rendu PDF de la facture, conversion d'un PDF quelconque en PDF/A, envoi à une plateforme agréée, e-reporting, autres profils Factur-X (MINIMUM, BASIC, EXTENDED).
 
 ## Installation
 
@@ -66,6 +68,7 @@ const draft: InvoiceDraft = {
   issueDate: '2026-09-11',
   typeCode: '380',
   currency: 'EUR',
+  operationCategory: 'services',                        // biens / services / mixte (réforme)
   seller: { name: 'Atelier Exemple SAS', siren: '443061841', vatId: 'FR64443061841',
             address: { line1: '12 rue de la Facture', postCode: '75011', city: 'Paris', countryCode: 'FR' } },
   buyer:  { name: 'Client Démo SARL', siren: '732829320',

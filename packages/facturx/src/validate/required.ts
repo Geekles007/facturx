@@ -1,4 +1,4 @@
-import { TAX_CATEGORY_CODES } from '../types/codes.js';
+import { INVOICE_TYPE_CODES, TAX_CATEGORY_CODES } from '../types/codes.js';
 import type { Invoice } from '../types/invoice.js';
 import type { Party } from '../types/party.js';
 import {
@@ -106,13 +106,13 @@ export function checkRequired(inv: Invoice, c: IssueCollector): void {
 
   if (!isNonEmptyString(inv.typeCode)) {
     c.add('BR-04', 'typeCode', 'Le type de facture (BT-3) est obligatoire.');
-  } else if (inv.typeCode !== '380') {
+  } else if (!INVOICE_TYPE_CODES.includes(inv.typeCode)) {
     c.add(
       'BR-CL-01',
       'typeCode',
-      'Seul le type 380 (facture commerciale) est pris en charge en v1.',
+      'Types de facture pris en charge : 380 (facture) et 381 (avoir).',
       {
-        expected: '380',
+        expected: INVOICE_TYPE_CODES,
         actual: inv.typeCode,
       },
     );
@@ -127,6 +127,13 @@ export function checkRequired(inv: Invoice, c: IssueCollector): void {
   }
 
   checkDate(inv.taxPointDate, 'taxPointDate', c);
+  if (inv.taxPointDate !== undefined && inv.vatOnDebits === true) {
+    c.add(
+      'BR-CO-03',
+      'vatOnDebits',
+      'La date d’exigibilité (BT-7) et l’option TVA sur les débits (BT-8) sont mutuellement exclusives.',
+    );
+  }
 
   checkParty(inv.seller, 'seller', { name: 'BR-06', address: 'BR-08', country: 'BR-09' }, c);
   checkParty(inv.buyer, 'buyer', { name: 'BR-07', address: 'BR-10', country: 'BR-11' }, c);

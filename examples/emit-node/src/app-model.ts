@@ -12,6 +12,8 @@ export interface AppAddress {
 
 export interface AppInvoice {
   number: string;
+  /** Nature de l'opération (mention obligatoire depuis la réforme). */
+  operation: 'goods' | 'services' | 'mixed';
   issuedOn: string;
   deliveredOn: string;
   dueOn: string;

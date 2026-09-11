@@ -40,10 +40,10 @@ Nouvelles mentions obligatoires (en plus de celles de l'art. L441-9 C. com.) :
 
 | Mention | Où dans Factur-X | Dans le SDK |
 |---|---|---|
-| **SIREN** du client | BT-47 (`0002`) | `buyer.siren` — validé (clé de Luhn) quand présent ; **rendu obligatoire dans une prochaine version** (aujourd'hui seul le SIREN vendeur est exigé) |
+| **SIREN** du client | BT-47 (`0002`) | `buyer.siren` ✅ — **exigé** pour un acheteur professionnel établi en France (`FR-BUYER-SIREN`), clé de Luhn vérifiée ; `buyer.consumer: true` pour un particulier (B2C) |
 | **Adresse de livraison** si différente de l'adresse du client | BG-15 | `delivery.address` ✅ |
-| **Nature de l'opération** : livraison de biens / prestation de services / mixte | code d'opération (spécifications externes) | ⏳ pas encore modélisé — voir « Écarts connus » |
-| **Option pour le paiement de la TVA d'après les débits** | mention textuelle | ⏳ pas encore modélisé — passe aujourd'hui par `notes` (BG-1) |
+| **Nature de l'opération** : livraison de biens / prestation de services / mixte | cadre de facturation BT-23 (`B1` / `S1` / `M1`) | `operationCategory` ✅ — exigée (`FR-OPERATION-CATEGORY`), écrite en BT-23 et relue ; `businessProcessId` explicite pour les autres cadres (autofacturation…) — mapping **à confirmer** contre les spécifications externes en vigueur |
+| **Option pour le paiement de la TVA d'après les débits** | BT-8 `DueDateTypeCode` = `5` | `vatOnDebits: true` ✅ — écrit dans chaque ventilation, relu, exclusif de `taxPointDate` (BR-CO-03) ; la mention lisible est à imprimer par votre PDF |
 | Mentions FR classiques : SIREN/SIRET vendeur, TVA intracom, date de livraison ou période, pénalités de retard, indemnité forfaitaire de 40 €, escompte | BT-30, BT-31, BT-72/73/74, BT-20 | ✅ validées (`FR-*`), texte BT-20 généré depuis les champs structurés |
 
 ## E-reporting
@@ -67,7 +67,8 @@ Chaque facture suit un cycle de statuts échangés entre plateformes : *déposé
 | Lire une facture reçue (PDF ou XML) en objet typé | ✅ `extractInvoice`, `fromCiiXml` |
 | Fonctionner en edge / serverless / navigateur | ✅ zéro dépendance native ; `pdf-lib` uniquement dans `./pdf` |
 | Produire un PDF/A à partir de n'importe quel PDF | ❌ votre outil de rendu doit produire un PDF/A (polices embarquées) ; le SDK ajoute la couche Factur-X |
-| UBL, CII nu, autres profils Factur-X (MINIMUM, BASIC, EXTENDED), avoirs | ❌ (lecture tolérante des autres profils, écriture EN 16931 seulement) |
+| Avoirs (381) | ✅ même structure, montants positifs, facture d'origine dans `references.precedingInvoices` |
+| UBL, CII nu, autres profils Factur-X (MINIMUM, BASIC, EXTENDED) | ❌ (lecture tolérante des autres profils, écriture EN 16931 seulement) |
 | Envoyer à une PA, statuts, e-reporting, annuaire | ❌ API de la PA |
 | Archivage à valeur probante | ❌ votre stockage (ou la PA) |
 
@@ -80,17 +81,19 @@ Chaque facture suit un cycle de statuts échangés entre plateformes : *déposé
 - [ ] Je conserve le fichier original (archivage) et je remonte les statuts à la PA.
 
 **Émission (2026 ou 2027 selon la taille)**
-- [ ] Mon modèle porte les nouvelles mentions : SIREN client, adresse de livraison, nature de l'opération.
+- [ ] Mon modèle porte les nouvelles mentions : `buyer.siren` (ou `buyer.consumer`), `delivery.address`, `operationCategory`, `vatOnDebits` si l'option est exercée.
 - [ ] Je produis l'`Invoice` avec des **montants entiers** (`centsFromDecimal`, jamais de float) et des totaux calculés explicitement (`computeTotals`) — [exemple](../examples/emit-node).
 - [ ] `validateInvoice` est branché dans mon formulaire : les erreurs sont affichées **avant** l'envoi, par champ.
 - [ ] Mon générateur de PDF produit du PDF/A (polices embarquées, pas de chiffrement), puis `embedFacturX` — [handler HTTP](../examples/http-handler).
 - [ ] J'envoie le fichier à la PA et je stocke l'identifiant retourné.
 
-## Écarts connus du modèle (à traiter)
+## Écarts du modèle : couverts
 
-Ces points sont documentés plutôt qu'improvisés ; ils feront l'objet de sessions dédiées, après vérification des spécifications externes en vigueur :
+Les quatre écarts identifiés en session 5 sont traités (voir [decisions.md](decisions.md), D30–D33) :
 
-1. **Nature de l'opération** (biens / services / mixte) — champ dédié dans `Invoice` + validation + mapping CII.
-2. **Option TVA sur les débits** — champ booléen + mention générée.
-3. **SIREN acheteur obligatoire** pour un acheteur établi en France — passage de « recommandé » à « requis » (`FR-BUYER-SIREN` sur absence).
-4. **Avoirs (381)** et factures rectificatives — hors périmètre v1, mais fréquents en réception.
+1. **Nature de l'opération** — `operationCategory` exigée, portée par le cadre de facturation BT-23 (`B1`/`S1`/`M1`). Le mapping repose sur les spécifications externes DGFiP telles que comprises à la date de rédaction : **à confirmer** contre la version en vigueur avant mise en production ; `businessProcessId` permet d'imposer toute autre valeur sans attendre une nouvelle version du SDK.
+2. **Option TVA sur les débits** — `vatOnDebits`, BT-8 = 5.
+3. **SIREN acheteur** — exigé pour un acheteur professionnel établi en France ; `buyer.consumer` pour le B2C.
+4. **Avoirs (381)** — lus et écrits avec la même structure.
+
+Restent hors périmètre : autofacturation (cadres `*2`), e-reporting, statuts, UBL.

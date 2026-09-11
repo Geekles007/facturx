@@ -17,6 +17,7 @@ const draft: InvoiceDraft = {
   id: 'API-2026-007',
   issueDate: '2026-09-11',
   typeCode: '380',
+  operationCategory: 'services',
   currency: 'EUR',
   seller: {
     name: 'Atelier Exemple SAS',

@@ -24,6 +24,7 @@ function draft(id: string): InvoiceDraft {
     id,
     issueDate: '2026-09-11',
     typeCode: '380',
+    operationCategory: 'services',
     currency: 'EUR',
     seller: {
       name: 'Fournisseur SAS',

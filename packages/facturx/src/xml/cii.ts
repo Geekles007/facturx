@@ -10,7 +10,7 @@ import {
 import { resolvePaymentTermsText } from '../payment-terms.js';
 import type { Address } from '../types/address.js';
 import type { DocumentAllowance, DocumentCharge } from '../types/allowance.js';
-import type { IsoDate } from '../types/codes.js';
+import { BUSINESS_PROCESS_BY_CATEGORY, type IsoDate } from '../types/codes.js';
 import type { Invoice } from '../types/invoice.js';
 import type { Line, LineAllowance, LineCharge } from '../types/line.js';
 import type { Contact, Party } from '../types/party.js';
@@ -35,7 +35,7 @@ export interface ToCiiXmlOptions {
   validate?: boolean;
   /** Indenter la sortie (défaut : compact). */
   pretty?: boolean;
-  /** BT-23 — Identifiant de processus métier (ex. `A1`). Omis par défaut. */
+  /** BT-23 — Cadre de facturation explicite (ex. `B2` autofacturation). Par défaut, déduit de `operationCategory` (`B1` / `S1` / `M1`). */
   businessProcessId?: string;
 }
 
@@ -162,7 +162,11 @@ function allowanceCharge(
 }
 
 /** BG-23 — ordre XSD : CalculatedAmount, TypeCode, ExemptionReason, BasisAmount, CategoryCode, ExemptionReasonCode, TaxPointDate, RateApplicablePercent. */
-function headerTradeTax(tb: TaxBreakdown, taxPointDate: IsoDate | undefined): XmlElement {
+function headerTradeTax(
+  tb: TaxBreakdown,
+  taxPointDate: IsoDate | undefined,
+  vatOnDebits: boolean,
+): XmlElement {
   return el(
     'ram:ApplicableTradeTax',
     el('ram:CalculatedAmount', amount(tb.taxAmount)),
@@ -174,6 +178,7 @@ function headerTradeTax(tb: TaxBreakdown, taxPointDate: IsoDate | undefined): Xm
     taxPointDate === undefined
       ? undefined
       : el('ram:TaxPointDate', elA('udt:DateString', { format: '102' }, date102(taxPointDate))),
+    vatOnDebits ? el('ram:DueDateTypeCode', '5') : undefined,
     tb.rate === undefined ? undefined : el('ram:RateApplicablePercent', pct(tb.rate)),
   );
 }
@@ -335,15 +340,18 @@ export function toCiiTree(
     (pm) => pm.remittanceInformation !== undefined,
   )?.remittanceInformation;
   const totals = invoice.totals;
+  // BT-23 : cadre de facturation explicite, sinon déduit de la nature de l'opération (B1 / S1 / M1)
+  const businessProcessId =
+    options.businessProcessId ??
+    (invoice.operationCategory === undefined
+      ? undefined
+      : BUSINESS_PROCESS_BY_CATEGORY[invoice.operationCategory]);
 
   const context = el(
     'rsm:ExchangedDocumentContext',
-    options.businessProcessId === undefined
+    businessProcessId === undefined
       ? undefined
-      : el(
-          'ram:BusinessProcessSpecifiedDocumentContextParameter',
-          el('ram:ID', options.businessProcessId),
-        ),
+      : el('ram:BusinessProcessSpecifiedDocumentContextParameter', el('ram:ID', businessProcessId)),
     el('ram:GuidelineSpecifiedDocumentContextParameter', el('ram:ID', EN16931_GUIDELINE_ID)),
   );
 
@@ -425,7 +433,9 @@ export function toCiiTree(
               ),
         ),
     (invoice.paymentMeans ?? []).map(paymentMeans),
-    invoice.taxBreakdown.map((tb) => headerTradeTax(tb, invoice.taxPointDate)),
+    invoice.taxBreakdown.map((tb) =>
+      headerTradeTax(tb, invoice.taxPointDate, invoice.vatOnDebits === true),
+    ),
     d?.period === undefined
       ? undefined
       : el(

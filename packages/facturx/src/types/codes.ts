@@ -7,8 +7,38 @@
 /** Date calendaire ISO 8601 `YYYY-MM-DD` (format 102 en CII). */
 export type IsoDate = `${number}-${number}-${number}`;
 
-/** BT-3 — Code de type de facture (UNTDID 1001). v1 : facture commerciale uniquement. */
-export type InvoiceTypeCode = '380';
+/** BT-3 — Code de type de facture (UNTDID 1001) : `380` facture commerciale, `381` avoir (même structure, montants positifs). */
+export type InvoiceTypeCode = '380' | '381';
+export const INVOICE_TYPE_CODES: readonly InvoiceTypeCode[] = ['380', '381'];
+
+/**
+ * Règle FR (réforme, spécifications externes DGFiP) — Nature de l'opération facturée :
+ * livraison de biens, prestation de services, ou opération mixte.
+ * Portée par le cadre de facturation BT-23 (`B1` / `S1` / `M1`) dans Factur-X.
+ */
+export type OperationCategory = 'goods' | 'services' | 'mixed';
+export const OPERATION_CATEGORIES: readonly OperationCategory[] = ['goods', 'services', 'mixed'];
+
+/** Cadre de facturation BT-23 correspondant à une nature d'opération (dépôt d'une facture par le fournisseur). */
+export const BUSINESS_PROCESS_BY_CATEGORY: Readonly<Record<OperationCategory, string>> = {
+  goods: 'B1',
+  services: 'S1',
+  mixed: 'M1',
+};
+
+/** Nature d'opération déduite d'un cadre de facturation BT-23 (`B*`, `S*`, `M*`), sinon `undefined`. */
+export function operationCategoryFromBusinessProcess(
+  id: string | undefined,
+): OperationCategory | undefined {
+  const letter = id?.trim().charAt(0).toUpperCase();
+  return letter === 'B'
+    ? 'goods'
+    : letter === 'S'
+      ? 'services'
+      : letter === 'M'
+        ? 'mixed'
+        : undefined;
+}
 
 /** BT-5 — Code devise ISO 4217. */
 export type CurrencyCode = 'EUR' | (string & {});

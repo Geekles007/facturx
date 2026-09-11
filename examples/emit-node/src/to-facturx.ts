@@ -47,6 +47,7 @@ export function toFacturX(app: AppInvoice): Invoice {
     issueDate: app.issuedOn as IsoDate,
     typeCode: '380',
     currency: 'EUR',
+    operationCategory: app.operation,
     seller: {
       name: app.seller.name,
       siren: app.seller.siren,

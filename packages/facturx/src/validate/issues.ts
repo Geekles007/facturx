@@ -80,6 +80,7 @@ export type IssueCode =
   | 'FR-BUYER-SIREN'
   | 'FR-BUYER-SIRET'
   | 'FR-VAT-ID'
+  | 'FR-OPERATION-CATEGORY'
   | 'FR-DELIVERY'
   | 'FR-LATE-PENALTY'
   | 'FR-RECOVERY-INDEMNITY'

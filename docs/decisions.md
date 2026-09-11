@@ -98,3 +98,17 @@ Cible confirmée : les devs qui doivent rendre une application conforme à la r�
 
 ### D29. Exemples exécutés en CI, sans framework
 Trois paquets `examples/*` dans le workspace (`workspace:*`, `tsx`), typecheckés **et exécutés** par `pnpm check` : un exemple qui ne tourne plus casse la CI. Le handler HTTP n'utilise que `Request`/`Response`/`FormData` (Web standard) — copiable dans Next.js, Hono, Workers, Deno sans dépendance et cohérent avec la promesse edge du SDK. Une vraie app Next.js aurait coûté ~300 Mo de `node_modules` et lié l'exemple à un framework ; des snippets non exécutés auraient dérivé.
+
+## 2026-09-11 — Session 6 : mentions de la réforme
+
+### D30. SIREN acheteur exigé, B2C déclaré explicitement
+`FR-BUYER-SIREN` sur absence pour un acheteur établi en France, sauf `buyer.consumer: true`. Déduire le B2C de l'absence d'identifiant aurait vidé la règle de son sens ; l'exiger toujours aurait bloqué les factures B2C que les mêmes applications émettent. Le drapeau est `true`-only : on ne « déclare » pas un professionnel, on déclare une exception.
+
+### D31. Nature de l'opération → cadre de facturation BT-23, mapping signalé « à confirmer »
+`operationCategory: 'goods' | 'services' | 'mixed'` est exigée pour un vendeur FR et écrite dans `BusinessProcessSpecifiedDocumentContextParameter/ID` sous la forme `B1` / `S1` / `M1` (dépôt d'une facture par le fournisseur), lue en retour depuis toute valeur `B*` / `S*` / `M*`. Ce mapping suit les spécifications externes DGFiP telles que comprises à la rédaction ; il n'a pas été vérifié contre un validateur de plateforme agréée : **à confirmer avant production**. Garde-fou : `businessProcessId` explicite prime toujours (autofacturation `*2`, autres cadres), sans attendre une version du SDK.
+
+### D32. TVA sur les débits → BT-8 = 5, sans note automatique
+`vatOnDebits: true` écrit `DueDateTypeCode` = `5` (date de facture, UNTDID 2005) dans chaque ventilation et ajoute la règle BR-CO-03 (exclusif de BT-7). Le SDK n'injecte pas de note textuelle « Option pour le paiement de la TVA d'après les débits » dans le XML : les `notes` sont des données de l'appelant, et une note injectée casserait l'aller-retour ; la mention lisible relève du PDF visuel, comme les autres mentions légales.
+
+### D33. Avoirs (381) : même modèle, montants positifs
+`typeCode: '380' | '381'`, sans type distinct ni règles supplémentaires : en CII EN 16931, un avoir est une facture de type 381 aux montants positifs, la facture d'origine étant référencée en BG-3 (`references.precedingInvoices`). Les règles arithmétiques et FR s'appliquent à l'identique. Les types 384 (rectificative) et 389 (autofacturation) restent refusés (BR-CL-01).

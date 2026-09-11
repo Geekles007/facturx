@@ -10,11 +10,18 @@ export type {
   InvoiceTypeCode,
   IsoDate,
   NoteSubjectCode,
+  OperationCategory,
   PaymentMeansCode,
   TaxCategoryCode,
   UnitCode,
 } from './codes.js';
-export { TAX_CATEGORY_CODES } from './codes.js';
+export {
+  BUSINESS_PROCESS_BY_CATEGORY,
+  INVOICE_TYPE_CODES,
+  OPERATION_CATEGORIES,
+  operationCategoryFromBusinessProcess,
+  TAX_CATEGORY_CODES,
+} from './codes.js';
 export type { Delivery, Invoice, InvoiceDraft, InvoiceNote, Totals } from './invoice.js';
 export type { Line, LineAllowance, LineCharge, LinePeriod } from './line.js';
 export type { Contact, ElectronicAddress, Party, Payee } from './party.js';

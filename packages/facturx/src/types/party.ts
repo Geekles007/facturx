@@ -58,6 +58,12 @@ export interface Party {
   contact?: Contact;
   /** BT-34 / BT-49 — Adresse électronique pour le routage. */
   electronicAddress?: ElectronicAddress;
+  /**
+   * (acheteur uniquement) `true` si l'acheteur est un particulier (B2C) : ni SIREN (BT-47) ni TVA (BT-48)
+   * ne sont exigés. Règle FR : sans ce drapeau, un acheteur établi en France doit porter son SIREN
+   * (mention obligatoire depuis la réforme ; art. 242 nonies A CGI).
+   */
+  consumer?: true;
 }
 
 /** Bénéficiaire du paiement si différent du vendeur — BG-10. */

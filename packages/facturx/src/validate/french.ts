@@ -1,3 +1,4 @@
+import { OPERATION_CATEGORIES } from '../types/codes.js';
 import type { Invoice } from '../types/invoice.js';
 import type { Party } from '../types/party.js';
 import { isNonEmptyString, isSafeInteger, isValidSiren, isValidSiret } from './formats.js';
@@ -16,7 +17,7 @@ function checkPartyIds(
       c.add(
         codes.siren,
         `${path}.siren`,
-        'Le SIREN (BT-30, schéma 0002) est obligatoire pour un vendeur établi en France.',
+        `Le SIREN (schéma 0002) est obligatoire pour ${path === 'seller' ? 'un vendeur' : 'un acheteur professionnel'} établi en France.`,
       );
     }
   } else if (!isValidSiren(party.siren)) {
@@ -74,7 +75,30 @@ export function checkFrenchRules(inv: Invoice, c: IssueCollector): void {
     true,
     c,
   );
-  checkPartyIds(inv.buyer, 'buyer', { siren: 'FR-BUYER-SIREN', siret: 'FR-BUYER-SIRET' }, false, c);
+  const buyerIsFrenchBusiness =
+    inv.buyer?.address?.countryCode === 'FR' && inv.buyer.consumer !== true;
+  checkPartyIds(
+    inv.buyer,
+    'buyer',
+    { siren: 'FR-BUYER-SIREN', siret: 'FR-BUYER-SIRET' },
+    buyerIsFrenchBusiness,
+    c,
+  );
+
+  // Nature de l'opération (réforme : mention obligatoire, cadre de facturation BT-23)
+  if (inv.operationCategory === undefined) {
+    c.add(
+      'FR-OPERATION-CATEGORY',
+      'operationCategory',
+      'La nature de l’opération (biens, services ou mixte) est obligatoire pour un vendeur établi en France.',
+      { expected: OPERATION_CATEGORIES },
+    );
+  } else if (!OPERATION_CATEGORIES.includes(inv.operationCategory)) {
+    c.add('FR-OPERATION-CATEGORY', 'operationCategory', 'Nature d’opération inconnue.', {
+      expected: OPERATION_CATEGORIES,
+      actual: inv.operationCategory,
+    });
+  }
 
   // Date de la vente / prestation : date de livraison OU période (L441-9)
   const d = inv.delivery;

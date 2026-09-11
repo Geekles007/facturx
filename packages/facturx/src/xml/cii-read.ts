@@ -8,7 +8,12 @@ import {
 } from '../money.js';
 import type { Address } from '../types/address.js';
 import type { DocumentAllowance, DocumentCharge } from '../types/allowance.js';
-import type { InvoiceTypeCode, IsoDate, TaxCategoryCode } from '../types/codes.js';
+import {
+  type InvoiceTypeCode,
+  type IsoDate,
+  operationCategoryFromBusinessProcess,
+  type TaxCategoryCode,
+} from '../types/codes.js';
 import type { Delivery, Invoice, InvoiceNote, Totals } from '../types/invoice.js';
 import type { Line, LineAllowance, LineCharge } from '../types/line.js';
 import type { Contact, Party, Payee } from '../types/party.js';
@@ -506,6 +511,7 @@ export function parseCiiDocument(xml: string | Uint8Array): ParsedCiiDocument {
   // Ventilation TVA (+ BT-7 lue sur la première entrée qui la porte)
   const taxes = children(settlement, 'ApplicableTradeTax');
   const taxPointDate = taxes.map((t) => dateOf(t, 'TaxPointDate')).find((d) => d !== undefined);
+  const vatOnDebits = taxes.some((t) => textOf(t, 'DueDateTypeCode') === '5');
 
   // Moyens de paiement + informations document-level (BT-83, BT-89, BT-90)
   const means = children(settlement, 'SpecifiedTradeSettlementPaymentMeans').map(paymentMeans);
@@ -559,6 +565,8 @@ export function parseCiiDocument(xml: string | Uint8Array): ParsedCiiDocument {
     typeCode: (textOf(document, 'TypeCode') ?? '') as InvoiceTypeCode,
     currency: textOf(settlement, 'InvoiceCurrencyCode') ?? '',
     taxPointDate,
+    vatOnDebits: vatOnDebits ? true : undefined,
+    operationCategory: operationCategoryFromBusinessProcess(businessProcessId),
     buyerReference: textOf(agreement, 'BuyerReference'),
     notes: nonEmpty(
       children(document, 'IncludedNote').map((n) =>

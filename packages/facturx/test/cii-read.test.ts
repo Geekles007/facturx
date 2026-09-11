@@ -37,7 +37,7 @@ describe('aller-retour toCiiXml → fromCiiXml', () => {
       const xml = readFileSync(new URL(`./golden/${name}.xml`, import.meta.url), 'utf8');
       const { invoice, guidelineId, businessProcessId } = parseCiiDocument(xml);
       expect(guidelineId).toBe('urn:cen.eu:en16931:2017');
-      expect(businessProcessId).toBeUndefined();
+      expect(businessProcessId).toMatch(/^[SM]1$/);
       expect(invoice.lines.length).toBeGreaterThan(0);
     }
     expect(
@@ -174,5 +174,28 @@ describe('fromCiiXml — XML étrangers', () => {
     );
     expect(() => fromCiiXml(xml)).toThrow(FacturXValidationError);
     expect(fromCiiXml(xml, { validate: false }).totals.taxInclusiveAmount).toBe(24001);
+  });
+});
+
+describe('réforme : lecture de BT-23, BT-8 et des avoirs', () => {
+  it('déduit la nature de l’opération de tout cadre B*/S*/M*, et l’option débits de BT-8', () => {
+    const xml = toCiiXml(simpleInvoice(), { businessProcessId: 'B2' });
+    const parsed = parseCiiDocument(xml);
+    expect(parsed.businessProcessId).toBe('B2');
+    expect(parsed.invoice.operationCategory).toBe('goods');
+    expect(parsed.invoice.vatOnDebits).toBeUndefined();
+
+    const debits = fromCiiXml(toCiiXml(multiRateInvoice()));
+    expect(debits.vatOnDebits).toBe(true);
+    expect(debits.operationCategory).toBe('mixed');
+
+    const unknown = parseCiiDocument(toCiiXml(simpleInvoice(), { businessProcessId: 'A1' }));
+    expect(unknown.invoice.operationCategory).toBeUndefined();
+  });
+
+  it('lit un avoir 381 et le valide', () => {
+    const creditNote: Invoice = { ...simpleInvoice(), typeCode: '381' };
+    const parsed = fromCiiXml(toCiiXml(creditNote));
+    expect(parsed.typeCode).toBe('381');
   });
 });

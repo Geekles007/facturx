@@ -1,7 +1,13 @@
 import type { Cents } from '../money.js';
 import type { Address } from './address.js';
 import type { DocumentAllowance, DocumentCharge } from './allowance.js';
-import type { CurrencyCode, InvoiceTypeCode, IsoDate, NoteSubjectCode } from './codes.js';
+import type {
+  CurrencyCode,
+  InvoiceTypeCode,
+  IsoDate,
+  NoteSubjectCode,
+  OperationCategory,
+} from './codes.js';
 import type { Line } from './line.js';
 import type { Party, Payee } from './party.js';
 import type { PaymentMeans, PaymentTerms } from './payment.js';
@@ -69,12 +75,24 @@ export interface Invoice {
   id: string;
   /** BT-2 — Date d'émission. Obligatoire (BR-03). */
   issueDate: IsoDate;
-  /** BT-3 — Type de facture. v1 : `380` (facture commerciale). Obligatoire (BR-04). */
+  /** BT-3 — Type de facture : `380` facture, `381` avoir (montants positifs, facture d'origine dans `references.precedingInvoices`). Obligatoire (BR-04). */
   typeCode: InvoiceTypeCode;
   /** BT-5 — Devise de la facture (ISO 4217). Obligatoire (BR-05). */
   currency: CurrencyCode;
-  /** BT-7 — Date d'exigibilité de la TVA, si différente de BT-2 (BR-CO-03). */
+  /** BT-7 — Date d'exigibilité de la TVA, si différente de BT-2. Exclusif de `vatOnDebits` (BR-CO-03). */
   taxPointDate?: IsoDate;
+  /**
+   * BT-8 — Option pour le paiement de la TVA d'après les débits (code `5` = date de facture, UNTDID 2005).
+   * Règle FR : mention obligatoire lorsque l'option est exercée (art. 242 nonies A CGI, réforme) ;
+   * le PDF visuel doit l'imprimer. Exclusif de `taxPointDate` (BR-CO-03).
+   */
+  vatOnDebits?: true;
+  /**
+   * Règle FR (réforme) — Nature de l'opération : `goods` (livraison de biens), `services` (prestation),
+   * `mixed`. Obligatoire pour un vendeur établi en France ; écrite dans le cadre de facturation BT-23
+   * (`B1` / `S1` / `M1`) sauf `businessProcessId` explicite.
+   */
+  operationCategory?: OperationCategory;
   /** BT-10 — Référence acheteur (ex. code service Chorus Pro). Règle FR : obligatoire vers le secteur public. */
   buyerReference?: string;
   /** BG-1 — Notes. Règle FR : y placer les mentions légales libres (ex. membre d'un centre de gestion agréé). */

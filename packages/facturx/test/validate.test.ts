@@ -360,3 +360,58 @@ describe('conditions de paiement : texte OU champs structurés', () => {
     expect(() => buildPaymentTermsText({ text: 'x' })).toThrow(TypeError);
   });
 });
+
+describe('réforme : SIREN acheteur, nature de l’opération, TVA sur les débits, avoirs', () => {
+  it('exige le SIREN d’un acheteur professionnel établi en France', () => {
+    const invoice = simpleInvoice();
+    const { siren: _siren, vatId: _vat, ...buyerWithoutSiren } = invoice.buyer;
+    invoice.buyer = buyerWithoutSiren;
+    expect(codesAndPaths(invoice)).toContain('FR-BUYER-SIREN @ buyer.siren');
+  });
+
+  it('n’exige pas le SIREN d’un particulier ni d’un acheteur étranger', () => {
+    const consumer = simpleInvoice();
+    const { siren: _s1, vatId: _v1, ...b1 } = consumer.buyer;
+    consumer.buyer = { ...b1, consumer: true };
+    expect(codesAndPaths(consumer).filter((c) => c.startsWith('FR-BUYER'))).toEqual([]);
+
+    const foreign = simpleInvoice();
+    const { siren: _s2, vatId: _v2, ...b2 } = foreign.buyer;
+    foreign.buyer = { ...b2, address: { ...b2.address, countryCode: 'DE' } };
+    expect(codesAndPaths(foreign).filter((c) => c.startsWith('FR-BUYER'))).toEqual([]);
+  });
+
+  it('exige la nature de l’opération et refuse une valeur inconnue', () => {
+    const invoice = simpleInvoice();
+    delete (invoice as { operationCategory?: unknown }).operationCategory;
+    expect(codesAndPaths(invoice)).toContain('FR-OPERATION-CATEGORY @ operationCategory');
+    invoice.operationCategory = 'other' as never;
+    expect(issuesOf(invoice)).toContainEqual(
+      expect.objectContaining({
+        code: 'FR-OPERATION-CATEGORY',
+        path: 'operationCategory',
+        actual: 'other',
+      }),
+    );
+  });
+
+  it('refuse BT-7 et BT-8 ensemble (BR-CO-03)', () => {
+    const invoice = simpleInvoice();
+    invoice.taxPointDate = '2026-09-10';
+    invoice.vatOnDebits = true;
+    expect(codesAndPaths(invoice)).toContain('BR-CO-03 @ vatOnDebits');
+    delete invoice.taxPointDate;
+    expect(validateInvoice(invoice).ok).toBe(true);
+  });
+
+  it('accepte un avoir (381) et refuse les autres types', () => {
+    const creditNote = simpleInvoice();
+    creditNote.typeCode = '381';
+    creditNote.references = { precedingInvoices: [{ id: 'F-2026-0000', issueDate: '2026-08-01' }] };
+    expect(validateInvoice(creditNote).ok).toBe(true);
+    creditNote.typeCode = '384' as never;
+    expect(issuesOf(creditNote)).toContainEqual(
+      expect.objectContaining({ code: 'BR-CL-01', path: 'typeCode', actual: '384' }),
+    );
+  });
+});

@@ -34,7 +34,10 @@ describe('toCiiXml', () => {
     expect(xml).toContain(
       `<ram:GuidelineSpecifiedDocumentContextParameter><ram:ID>${EN16931_GUIDELINE_ID}</ram:ID>`,
     );
-    expect(xml).not.toContain('BusinessProcessSpecifiedDocumentContextParameter');
+    // BT-23 déduit de la nature de l'opération (fixture : services → S1)
+    expect(xml).toContain(
+      '<ram:BusinessProcessSpecifiedDocumentContextParameter><ram:ID>S1</ram:ID>',
+    );
   });
 
   it('émet BT-23 si demandé', () => {
@@ -130,5 +133,31 @@ describe('toCiiXml', () => {
       'rsm:ExchangedDocument',
       'rsm:SupplyChainTradeTransaction',
     ]);
+  });
+});
+
+describe('réforme : BT-23, BT-8, avoirs', () => {
+  it('déduit le cadre de facturation BT-23 de la nature de l’opération, sauf valeur explicite', () => {
+    const goods = { ...simpleInvoice(), operationCategory: 'goods' as const };
+    expect(toCiiXml(goods)).toContain(
+      '<ram:BusinessProcessSpecifiedDocumentContextParameter><ram:ID>B1</ram:ID>',
+    );
+    expect(toCiiXml(simpleInvoice())).toContain('<ram:ID>S1</ram:ID>');
+    expect(toCiiXml(multiRateInvoice())).toContain('<ram:ID>M1</ram:ID>');
+    expect(toCiiXml(goods, { businessProcessId: 'B2' })).toContain('<ram:ID>B2</ram:ID>');
+  });
+
+  it('émet BT-8 = 5 dans chaque ventilation pour l’option TVA sur les débits', () => {
+    const xml = toCiiXml(multiRateInvoice());
+    expect(xml.match(/<ram:DueDateTypeCode>5<\/ram:DueDateTypeCode>/g)?.length).toBe(2);
+    expect(xml).toContain(
+      '<ram:CategoryCode>S</ram:CategoryCode><ram:DueDateTypeCode>5</ram:DueDateTypeCode><ram:RateApplicablePercent>20.00</ram:RateApplicablePercent>',
+    );
+    expect(toCiiXml(simpleInvoice())).not.toContain('DueDateTypeCode');
+  });
+
+  it('écrit un avoir avec le type 381', () => {
+    const creditNote = { ...simpleInvoice(), typeCode: '381' as const };
+    expect(toCiiXml(creditNote)).toContain('<ram:TypeCode>381</ram:TypeCode>');
   });
 });
