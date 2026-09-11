@@ -1,10 +1,35 @@
 {
   "name": "@geekles/facturx",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "SDK TypeScript pur pour générer, embarquer et extraire des factures Factur-X (profil EN 16931). Entrée ./pdf basée sur pdf-lib.",
   "license": "MIT",
+  "author": "geekles007",
+  "homepage": "https://github.com/Geekles007/facturx#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Geekles007/facturx.git",
+    "directory": "packages/facturx"
+  },
+  "bugs": {
+    "url": "https://github.com/Geekles007/facturx/issues"
+  },
+  "keywords": [
+    "factur-x",
+    "facturx",
+    "en16931",
+    "cii",
+    "zugferd",
+    "pdf-a3",
+    "e-invoicing",
+    "facture-electronique",
+    "reforme-facturation",
+    "typescript"
+  ],
   "type": "module",
   "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -28,33 +53,32 @@
         "types": "./dist/pdf.d.cts",
         "default": "./dist/pdf.cjs"
       }
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
   ],
-  "keywords": [
-    "factur-x",
-    "facturx",
-    "en16931",
-    "cii",
-    "e-invoicing",
-    "facture-electronique"
-  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": false
+  },
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
+  },
   "devDependencies": {
     "@types/node": "^22.20.2",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "vitest": "^5.0.0"
-  },
-  "dependencies": {
-    "pdf-lib": "^1.17.1"
   }
 }
