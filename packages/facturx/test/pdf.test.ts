@@ -103,8 +103,8 @@ describe('embedFacturX — structure PDF/A-3', () => {
     // Info aligné sur le XMP
     expect(doc.getTitle()).toBe('Facture F-2026-0001');
     expect(doc.getAuthor()).toBe('Atelier Exemple SAS');
-    expect(doc.getProducer()).toBe('@geekles/facturx');
-    expect(doc.getCreator()).toBe('@geekles/facturx');
+    expect(doc.getProducer()).toBe('facturx');
+    expect(doc.getCreator()).toBe('facturx');
     expect(doc.getCreationDate()?.toISOString()).toBe(FIXED_DATE.toISOString());
     expect(doc.getModificationDate()?.toISOString()).toBe(FIXED_DATE.toISOString());
 

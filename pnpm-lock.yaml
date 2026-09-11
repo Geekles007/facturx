@@ -17,7 +17,7 @@ importers:
 
   examples/emit-node:
     dependencies:
-      '@geekles/facturx':
+      facturx:
         specifier: workspace:*
         version: link:../../packages/facturx
       pdf-lib:
@@ -36,7 +36,7 @@ importers:
 
   examples/http-handler:
     dependencies:
-      '@geekles/facturx':
+      facturx:
         specifier: workspace:*
         version: link:../../packages/facturx
     devDependencies:
@@ -55,7 +55,7 @@ importers:
 
   examples/receive-node:
     dependencies:
-      '@geekles/facturx':
+      facturx:
         specifier: workspace:*
         version: link:../../packages/facturx
       pdf-lib:

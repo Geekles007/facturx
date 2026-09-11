@@ -2,14 +2,7 @@
  * Démo sans serveur : construit des `Request` Web standard et appelle le handler directement.
  * (Dans votre app, c'est le framework qui fournit la Request.)
  */
-import {
-  cents,
-  computeTotals,
-  type InvoiceDraft,
-  percent,
-  quantity,
-  unitPrice,
-} from '@geekles/facturx';
+import { cents, computeTotals, type InvoiceDraft, percent, quantity, unitPrice } from 'facturx';
 import { PDFDocument } from 'pdf-lib';
 import { handleFacturX } from './handler.ts';
 

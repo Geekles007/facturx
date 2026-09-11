@@ -1,4 +1,4 @@
-# Décisions d'architecture — `@geekles/facturx`
+# Décisions d'architecture — `facturx`
 
 Journal des choix structurants, dans l'ordre où ils ont été pris. Une ligne de justification par décision ; on ne rouvre pas sans nouvel argument.
 
@@ -59,7 +59,7 @@ SIRET → `ram:GlobalID schemeID="0009"` ; SIREN → `ram:SpecifiedLegalOrganiza
 
 ## 2026-09-11 — Session 3 : embarquement / extraction PDF/A-3
 
-### D18. Entrée séparée `@geekles/facturx/pdf`, `pdf-lib` en dépendance classique
+### D18. Entrée séparée `facturx/pdf`, `pdf-lib` en dépendance classique
 `pdf-lib` est la seule dépendance runtime, déclarée en `dependencies` (zéro friction à l'installation) mais importée uniquement par `src/pdf/` et marquée `external` au build : `dist/index.js` ne la référence pas. Une `peerDependency` optionnelle aurait été plus « pure » au prix d'erreurs d'import obscures ; un fork (`@cantoo/pdf-lib`) n'apporte rien d'indispensable ici.
 
 ### D19. Contrat PDF/A-3 : le SDK rend Factur-X un PDF déjà PDF/A, il ne convertit pas

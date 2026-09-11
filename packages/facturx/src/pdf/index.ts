@@ -1,5 +1,5 @@
 /**
- * @geekles/facturx/pdf — embarquement et extraction Factur-X dans un PDF/A-3 (dépend de pdf-lib).
+ * facturx/pdf — embarquement et extraction Factur-X dans un PDF/A-3 (dépend de pdf-lib).
  */
 export {
   type EmbedOptions,

@@ -16,8 +16,8 @@ import {
   type Invoice,
   type Issue,
   validateInvoice,
-} from '@geekles/facturx';
-import { embedFacturX, extractInvoice, FacturXPdfError } from '@geekles/facturx/pdf';
+} from 'facturx';
+import { embedFacturX, extractInvoice, FacturXPdfError } from 'facturx/pdf';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {

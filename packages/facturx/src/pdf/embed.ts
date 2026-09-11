@@ -43,15 +43,15 @@ export interface EmbedOptions {
   subject?: string;
   /** `Info/Keywords` et `pdf:Keywords`. Défaut : mots-clés existants. */
   keywords?: string;
-  /** `Info/Creator` et `xmp:CreatorTool` (application d'origine). Défaut : valeur existante, sinon `@geekles/facturx`. */
+  /** `Info/Creator` et `xmp:CreatorTool` (application d'origine). Défaut : valeur existante, sinon `facturx`. */
   creator?: string;
-  /** `Info/Producer` et `pdf:Producer`. Défaut : `@geekles/facturx`. */
+  /** `Info/Producer` et `pdf:Producer`. Défaut : `facturx`. */
   producer?: string;
   /** Ajoute un `OutputIntent` PDF/A si le PDF n'en a pas (souvent la seule pièce manquante pour PDF/A-3b). */
   outputIntent?: OutputIntentOptions;
 }
 
-const PRODUCER = '@geekles/facturx';
+const PRODUCER = 'facturx';
 const encoder = new TextEncoder();
 
 function toBytes(input: Uint8Array | ArrayBuffer): Uint8Array {

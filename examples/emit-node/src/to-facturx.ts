@@ -10,7 +10,7 @@ import {
   percent,
   quantityFromDecimal,
   unitPriceFromDecimal,
-} from '@geekles/facturx';
+} from 'facturx';
 import type { AppAddress, AppInvoice } from './app-model.ts';
 
 const address = (a: AppAddress): Address => ({
