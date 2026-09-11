@@ -17,6 +17,7 @@ import type { Contact, Party } from '../types/party.js';
 import type { PaymentMeans } from '../types/payment.js';
 import type { TaxBreakdown, TaxInfo } from '../types/tax.js';
 import { assertValidInvoice } from '../validate/index.js';
+import { encodeBase64 } from './base64.js';
 import { el, elA, serializeXml, type XmlChild, type XmlElement } from './node.js';
 
 /** Espaces de noms CII D16B utilisés par Factur-X. */
@@ -390,6 +391,23 @@ export function toCiiTree(
           el('ram:IssuerAssignedID', refs.invoicedObject),
           el('ram:TypeCode', '130'),
         ),
+    // BG-24 : documents justificatifs (TypeCode 916), contenu en base64
+    (invoice.attachments ?? []).map((a) =>
+      el(
+        'ram:AdditionalReferencedDocument',
+        el('ram:IssuerAssignedID', a.id),
+        text('ram:URIID', a.uri),
+        el('ram:TypeCode', '916'),
+        text('ram:Name', a.description),
+        a.file === undefined
+          ? undefined
+          : elA(
+              'ram:AttachmentBinaryObject',
+              { mimeCode: a.file.mimeType, filename: a.file.filename },
+              encodeBase64(a.file.bytes),
+            ),
+      ),
+    ),
     refs.project === undefined
       ? undefined
       : el(

@@ -49,6 +49,7 @@ export type IssueCode =
   | 'BR-44'
   // Paiement
   | 'BR-49'
+  | 'BR-52'
   | 'BR-61'
   // Conditions
   | 'BR-CO-03'
@@ -72,6 +73,7 @@ export type IssueCode =
   | 'BR-CL-14'
   | 'BR-CL-16'
   | 'BR-CL-23'
+  | 'BR-CL-24'
   // Catégories TVA : présence de la ventilation (-01), taux ligne (-05), remise (-06), frais (-07),
   // base imposable (-08), montant TVA (-09), motif d'exonération (-10)
   | `BR-${TaxRuleFamily}-${'01' | '05' | '06' | '07' | '08' | '09' | '10'}`
@@ -91,6 +93,7 @@ export type IssueCode =
   | 'BR-FR-14'
   | 'BR-FR-15'
   | 'BR-FR-16'
+  | 'BR-FR-18'
   | 'BR-FR-20'
   | 'BR-FR-21'
   | 'BR-FR-22'
@@ -111,6 +114,7 @@ export type IssueCode =
   | 'FORMAT-IBAN'
   | 'FORMAT-BIC'
   | 'FORMAT-EMAIL'
+  | 'FORMAT-BINARY'
   | 'FORMAT-VAT-ID'
   | 'FORMAT-COUNTRY'
   | 'FORMAT-CURRENCY'

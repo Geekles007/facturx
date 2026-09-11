@@ -16,6 +16,7 @@ import {
   validateInvoice,
 } from '../src/index.js';
 import {
+  fullInvoice,
   multiRateDraft,
   multiRateInvoice,
   simpleDraft,
@@ -618,5 +619,29 @@ describe('adresses électroniques et traitement attendu (BR-FR-12/13/20–26)', 
     const unknown = { ...simpleInvoice(), processing: 'XYZ' as never };
     expect(codesAndPaths(unknown)).toContain('BR-FR-20 @ processing');
     expect(resolveNotes(b2c).find((n) => n.subjectCode === 'BAR')?.text).toBe('B2C');
+  });
+});
+
+describe('documents justificatifs BG-24', () => {
+  it('BR-52, BR-CL-24, FORMAT-BINARY et BR-FR-18', () => {
+    const invoice = simpleInvoice();
+    invoice.attachments = [
+      {
+        id: '',
+        file: { filename: '', mimeType: 'application/zip' as never, bytes: 'abc' as never },
+      },
+      { id: 'A', description: 'LISIBLE' },
+      { id: 'B', description: 'LISIBLE' },
+    ];
+    expect(codesAndPaths(invoice)).toEqual(
+      expect.arrayContaining([
+        'BR-52 @ attachments[0].id',
+        'BR-52 @ attachments[0].file.filename',
+        'BR-CL-24 @ attachments[0].file.mimeType',
+        'FORMAT-BINARY @ attachments[0].file.bytes',
+        'BR-FR-18 @ attachments',
+      ]),
+    );
+    expect(validateInvoice(fullInvoice()).ok).toBe(true);
   });
 });

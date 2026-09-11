@@ -331,6 +331,17 @@ export function checkFrenchRules(inv: Invoice, c: IssueCollector): void {
     }
   }
 
+  // BR-FR-18 : une seule pièce jointe « LISIBLE »
+  const readable = (inv.attachments ?? []).filter((a) => a.description === 'LISIBLE').length;
+  if (readable > 1) {
+    c.add(
+      'BR-FR-18',
+      'attachments',
+      'Il ne peut y avoir qu’une seule pièce jointe décrite « LISIBLE » (BT-123).',
+      { actual: readable },
+    );
+  }
+
   // BR-FR-15 / BR-FR-16 : catégories et taux de TVA
   for (const [i, line] of (Array.isArray(inv.lines) ? inv.lines : []).entries())
     checkTax(line.tax, `lines[${i}].tax`, c);

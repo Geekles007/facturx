@@ -2,6 +2,13 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Avant 1.0.0, une version mineure peut contenir des changements d'API.
 
+## [0.6.0] — 2026-09-12
+
+### Ajouté
+- `attachments` (BG-24) : documents justificatifs embarqués en base64 (`file: { filename, mimeType, bytes }`) ou référencés par URI, écrits en `AdditionalReferencedDocument` TypeCode 916 et relus octet pour octet ; `ATTACHMENT_QUALIFIERS` (BR-FR-17), `ATTACHMENT_MIME_TYPES` (BR-CL-24).
+- Règles BR-52, BR-CL-24, BR-FR-18 (une seule pièce `LISIBLE`), `FORMAT-BINARY`.
+- `encodeBase64` / `decodeBase64` sans dépendance.
+
 ## [0.5.0] — 2026-09-11
 
 ### Ajouté
@@ -77,6 +84,7 @@ Première version publiée : la boucle complète émission → réception pour l
 ### Documentation
 - Guide de la réforme (`docs/reforme.md`), journal des décisions (`docs/decisions.md`), trois exemples exécutés en CI (émission Node, réception Node, handler HTTP Web standard).
 
+[0.6.0]: https://github.com/Geekles007/facturx/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Geekles007/facturx/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Geekles007/facturx/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Geekles007/facturx/releases/tag/v0.3.0

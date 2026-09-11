@@ -221,6 +221,18 @@
         <ram:IssuerAssignedID>ABO-55512</ram:IssuerAssignedID>
         <ram:TypeCode>130</ram:TypeCode>
       </ram:AdditionalReferencedDocument>
+      <ram:AdditionalReferencedDocument>
+        <ram:IssuerAssignedID>PO-9001</ram:IssuerAssignedID>
+        <ram:TypeCode>916</ram:TypeCode>
+        <ram:Name>BON_COMMANDE</ram:Name>
+        <ram:AttachmentBinaryObject mimeCode="text/csv" filename="bon-de-commande.csv">cmVmO3F0eQpDQUItMk1NOzI1MAo=</ram:AttachmentBinaryObject>
+      </ram:AdditionalReferencedDocument>
+      <ram:AdditionalReferencedDocument>
+        <ram:IssuerAssignedID>RIB-2026</ram:IssuerAssignedID>
+        <ram:URIID>https://exemple.fr/rib/443061841.pdf</ram:URIID>
+        <ram:TypeCode>916</ram:TypeCode>
+        <ram:Name>RIB</ram:Name>
+      </ram:AdditionalReferencedDocument>
       <ram:SpecifiedProcuringProject>
         <ram:ID>PROJ-2026-07</ram:ID>
         <ram:Name>PROJ-2026-07</ram:Name>

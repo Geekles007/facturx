@@ -1,3 +1,4 @@
+export { Base64Error, decodeBase64, encodeBase64 } from './base64.js';
 export {
   CII_NAMESPACES,
   EN16931_GUIDELINE_ID,

@@ -1,5 +1,13 @@
 export type { Address } from './address.js';
 export type { DocumentAllowance, DocumentCharge } from './allowance.js';
+export {
+  ATTACHMENT_MIME_TYPES,
+  ATTACHMENT_QUALIFIERS,
+  type Attachment,
+  type AttachmentFile,
+  type AttachmentMimeType,
+  type AttachmentQualifier,
+} from './attachment.js';
 export type {
   AllowanceReasonCode,
   BusinessProcessCode,

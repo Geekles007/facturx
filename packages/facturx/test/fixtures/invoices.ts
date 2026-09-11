@@ -188,6 +188,18 @@ export function fullDraft(): InvoiceDraft {
       buyerAccountingReference: '706100',
       precedingInvoices: [{ id: 'F-2026-0000', issueDate: '2026-08-01' }, { id: 'F-2025-0999' }],
     },
+    attachments: [
+      {
+        id: 'PO-9001',
+        description: 'BON_COMMANDE',
+        file: {
+          filename: 'bon-de-commande.csv',
+          mimeType: 'text/csv',
+          bytes: new TextEncoder().encode('ref;qty\nCAB-2MM;250\n'),
+        },
+      },
+      { id: 'RIB-2026', description: 'RIB', uri: 'https://exemple.fr/rib/443061841.pdf' },
+    ],
     lines: [
       {
         id: 'L1',

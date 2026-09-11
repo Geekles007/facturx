@@ -9,6 +9,7 @@ import {
 import { buildPaymentTermsText, parseLegalNotes, parseProcessingNote } from '../payment-terms.js';
 import type { Address } from '../types/address.js';
 import type { DocumentAllowance, DocumentCharge } from '../types/allowance.js';
+import type { Attachment, AttachmentMimeType } from '../types/attachment.js';
 import {
   type InvoiceTypeCode,
   type IsoDate,
@@ -24,6 +25,7 @@ import type { DocumentReferences, PrecedingInvoiceReference } from '../types/ref
 import type { TaxBreakdown, TaxInfo } from '../types/tax.js';
 import { isValidIsoDate } from '../validate/formats.js';
 import { assertValidInvoice } from '../validate/index.js';
+import { decodeBase64 } from './base64.js';
 import { CII_NAMESPACES } from './cii.js';
 import { parseXml, type XmlNode, XmlParseError } from './parse.js';
 
@@ -467,6 +469,36 @@ export function parseCiiDocument(xml: string | Uint8Array): ParsedCiiDocument {
 
   // Références
   const additional = children(agreement, 'AdditionalReferencedDocument');
+  // BG-24 : documents justificatifs (TypeCode 916)
+  const attachments: Attachment[] = additional
+    .filter((d) => textOf(d, 'TypeCode') === '916')
+    .map((d) => {
+      const binary = child(d, 'AttachmentBinaryObject');
+      const raw = text(binary);
+      let bytes: Uint8Array | undefined;
+      if (binary && raw !== undefined) {
+        try {
+          bytes = decodeBase64(raw);
+        } catch (error) {
+          throw new FacturXParseError('FORMAT', binary.path, 'Contenu base64 invalide (BT-125).', {
+            cause: error,
+          });
+        }
+      }
+      return defined<Attachment>({
+        id: textOf(d, 'IssuerAssignedID') ?? '',
+        description: textOf(d, 'Name'),
+        uri: textOf(d, 'URIID'),
+        file:
+          binary === undefined || bytes === undefined
+            ? undefined
+            : {
+                filename: attr(binary, 'filename') ?? '',
+                mimeType: (attr(binary, 'mimeCode') ?? '') as AttachmentMimeType,
+                bytes,
+              },
+      });
+    });
   const byType = (code: string) =>
     textOf(
       additional.find((d) => textOf(d, 'TypeCode') === code),
@@ -595,6 +627,7 @@ export function parseCiiDocument(xml: string | Uint8Array): ParsedCiiDocument {
     buyerReference: textOf(agreement, 'BuyerReference'),
     processing: bar.processing,
     notes: nonEmpty(bar.remaining),
+    attachments: nonEmpty(attachments),
     seller: party(requireChild(agreement, 'SellerTradeParty'), 'seller'),
     buyer: party(requireChild(agreement, 'BuyerTradeParty'), 'buyer'),
     payee,

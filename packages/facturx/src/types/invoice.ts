@@ -1,6 +1,7 @@
 import type { Cents } from '../money.js';
 import type { Address } from './address.js';
 import type { DocumentAllowance, DocumentCharge } from './allowance.js';
+import type { Attachment } from './attachment.js';
 import type {
   BusinessProcessCode,
   CurrencyCode,
@@ -133,6 +134,8 @@ export interface Invoice {
   delivery?: Delivery;
   /** Références documentaires (BT-11 à BT-19, BG-3). */
   references?: DocumentReferences;
+  /** BG-24 — Documents justificatifs (bon de commande, RIB, représentation lisible…), embarqués en base64 ou référencés par URI. */
+  attachments?: Attachment[];
   /** BG-25 — Lignes. Au moins une (BR-16). */
   lines: Line[];
   /** BG-20 — Remises au niveau document. */

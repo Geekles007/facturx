@@ -250,3 +250,30 @@ describe('adresses électroniques, code de routage et note BAR', () => {
     expect(parsed.notes).toEqual([{ text: 'AUTRE', subjectCode: 'BAR' }]);
   });
 });
+
+describe('documents justificatifs BG-24', () => {
+  it('écrit BT-122/123/124/125 en TypeCode 916 et relit les octets à l’identique', () => {
+    const invoice = fullInvoice();
+    const xml = toCiiXml(invoice);
+    expect(xml).toContain(
+      '<ram:AdditionalReferencedDocument><ram:IssuerAssignedID>PO-9001</ram:IssuerAssignedID><ram:TypeCode>916</ram:TypeCode><ram:Name>BON_COMMANDE</ram:Name><ram:AttachmentBinaryObject mimeCode="text/csv" filename="bon-de-commande.csv">',
+    );
+    expect(xml).toContain(
+      '<ram:URIID>https://exemple.fr/rib/443061841.pdf</ram:URIID><ram:TypeCode>916</ram:TypeCode><ram:Name>RIB</ram:Name>',
+    );
+    const parsed = fromCiiXml(xml);
+    expect(parsed.attachments).toEqual(invoice.attachments);
+    expect(new TextDecoder().decode(parsed.attachments?.[0]?.file?.bytes)).toBe(
+      'ref;qty\nCAB-2MM;250\n',
+    );
+  });
+
+  it('signale un base64 invalide avec le chemin', () => {
+    const xml = toCiiXml(fullInvoice()).replace(
+      /filename="bon-de-commande.csv">[^<]+</,
+      'filename="bon-de-commande.csv">@@@@<',
+    );
+    expect(() => fromCiiXml(xml)).toThrow(FacturXParseError);
+    expect(() => fromCiiXml(xml)).toThrow(/AttachmentBinaryObject/);
+  });
+});

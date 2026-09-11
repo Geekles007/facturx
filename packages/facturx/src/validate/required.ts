@@ -1,3 +1,4 @@
+import { ATTACHMENT_MIME_TYPES } from '../types/attachment.js';
 import { INVOICE_TYPE_CODES, TAX_CATEGORY_CODES } from '../types/codes.js';
 import type { Invoice } from '../types/invoice.js';
 import type { Party } from '../types/party.js';
@@ -282,6 +283,31 @@ export function checkRequired(inv: Invoice, c: IssueCollector): void {
     }
     if (!isNonEmptyString(ch.reason) && !isNonEmptyString(ch.reasonCode)) {
       c.add('BR-38', p, 'Motif de frais (BT-104) ou code (BT-105) obligatoire.');
+    }
+  }
+
+  // Documents justificatifs (BG-24)
+  for (const [i, a] of (inv.attachments ?? []).entries()) {
+    const p = `attachments[${i}]`;
+    if (!isNonEmptyString(a.id))
+      c.add('BR-52', `${p}.id`, 'L’identifiant du document justificatif (BT-122) est obligatoire.');
+    if (a.file) {
+      if (!isNonEmptyString(a.file.filename))
+        c.add('BR-52', `${p}.file.filename`, 'Le nom du fichier joint (BT-125-2) est obligatoire.');
+      if (!ATTACHMENT_MIME_TYPES.includes(a.file.mimeType)) {
+        c.add(
+          'BR-CL-24',
+          `${p}.file.mimeType`,
+          'Type MIME de pièce jointe non autorisé (PDF, PNG, JPEG, CSV, XLSX, ODS).',
+          {
+            expected: ATTACHMENT_MIME_TYPES,
+            actual: a.file.mimeType,
+          },
+        );
+      }
+      if (!(a.file.bytes instanceof Uint8Array)) {
+        c.add('FORMAT-BINARY', `${p}.file.bytes`, 'Contenu attendu en Uint8Array.');
+      }
     }
   }
 
