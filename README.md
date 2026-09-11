@@ -1,8 +1,10 @@
 # facturx-sdk
 
+[![npm](https://img.shields.io/npm/v/facturx-sdk)](https://www.npmjs.com/package/facturx-sdk) [![CI](https://github.com/Geekles007/facturx/actions/workflows/ci.yml/badge.svg)](https://github.com/Geekles007/facturx/actions/workflows/ci.yml) ![licence MIT](https://img.shields.io/npm/l/facturx-sdk)
+
 SDK **TypeScript pur** — zéro dépendance native, compatible edge/serverless — pour **générer, embarquer et extraire** des factures **Factur-X** au profil **EN 16931**, avec les règles françaises intégrées.
 
-> État : **session 6 / mentions réforme** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3), guide réforme, trois exemples exécutables, et les **mentions de la réforme** : SIREN acheteur exigé (B2C via `buyer.consumer`), nature de l'opération (BT-23), option TVA sur les débits (BT-8), avoirs 381. Prochaines étapes : publication npm, veraPDF.
+> État : **session 6 / mentions réforme** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3), guide réforme, trois exemples exécutables, et les **mentions de la réforme** : SIREN acheteur exigé (B2C via `buyer.consumer`), nature de l'opération (BT-23), option TVA sur les débits (BT-8), avoirs 381. **Publié sur npm : `facturx-sdk@0.1.0`.** Prochaines étapes : veraPDF, confirmation du mapping BT-23 auprès d'une plateforme agréée.
 
 ## Vision
 

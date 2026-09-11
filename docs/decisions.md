@@ -112,3 +112,11 @@ Trois paquets `examples/*` dans le workspace (`workspace:*`, `tsx`), typechecké
 
 ### D33. Avoirs (381) : même modèle, montants positifs
 `typeCode: '380' | '381'`, sans type distinct ni règles supplémentaires : en CII EN 16931, un avoir est une facture de type 381 aux montants positifs, la facture d'origine étant référencée en BG-3 (`references.precedingInvoices`). Les règles arithmétiques et FR s'appliquent à l'identique. Les types 384 (rectificative) et 389 (autofacturation) restent refusés (BR-CL-01).
+
+## 2026-09-11 — Session 7 : publication
+
+### D34. Nom npm `facturx-sdk`
+`@geekles/facturx` était impossible (le scope `@geekles` appartient à un autre compte npm) et `facturx` est refusé par la protection anti-typosquat de npm (trop proche de `factur-x`, une lib existante). `facturx-sdk` est libre, non scopé, et dit ce que c'est. Le dépôt GitHub, le dossier `packages/facturx` et les identifiants internes gardent `facturx`.
+
+### D35. Publication manuelle avec OTP, pas de token en CI (pour l'instant)
+Le compte npm est en 2FA `auth-and-writes` : le `publish` est lancé par le mainteneur avec son code OTP (`docs/release.md`). Un workflow de release sur tag (token granulaire « bypass 2FA » ou trusted publishing OIDC) sera envisagé quand la cadence de versions le justifiera ; le trusted publishing exige que le paquet existe déjà, ce qui est désormais le cas.
