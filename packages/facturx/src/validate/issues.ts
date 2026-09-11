@@ -95,6 +95,7 @@ export type IssueCode =
   | 'BR-FR-15'
   | 'BR-FR-16'
   | 'BR-FR-18'
+  | 'BR-FR-19'
   | 'BR-FR-20'
   | 'BR-FR-21'
   | 'BR-FR-22'

@@ -2,6 +2,12 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Avant 1.0.0, une version mineure peut contenir des changements d'API.
 
+## [0.9.0] — 2026-09-12
+
+### Ajouté
+- Limites de taille (`DEFAULT_LIMITS`, option `{ limits }`) : XML 64 Mio, pièce jointe 20 Mio, pièces cumulées 100 Mo (BR-FR-19), PDF 100 Mio — vérifiées avant lecture, erreurs typées `TOO_LARGE` (`FacturXParseError`, `FacturXPdfError`) et anomalie `BR-FR-19` à la validation ; `validateInvoice(invoice, { limits })`.
+- `SECURITY.md` : modèle de menace, garanties, signalement privé GitHub.
+
 ## [0.8.0] — 2026-09-12
 
 ### Ajouté
@@ -105,6 +111,7 @@ Première version publiée : la boucle complète émission → réception pour l
 ### Documentation
 - Guide de la réforme (`docs/reforme.md`), journal des décisions (`docs/decisions.md`), trois exemples exécutés en CI (émission Node, réception Node, handler HTTP Web standard).
 
+[0.9.0]: https://github.com/Geekles007/facturx/releases/tag/v0.9.0
 [0.8.0]: https://github.com/Geekles007/facturx/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Geekles007/facturx/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Geekles007/facturx/releases/tag/v0.6.0

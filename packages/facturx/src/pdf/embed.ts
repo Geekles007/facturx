@@ -9,6 +9,7 @@ import {
   PDFRef,
   PDFString,
 } from 'pdf-lib';
+import { type Limits, resolveLimits } from '../limits.js';
 import type { Invoice } from '../types/invoice.js';
 import { toCiiXml } from '../xml/cii.js';
 import { FacturXPdfError } from './errors.js';
@@ -49,6 +50,8 @@ export interface EmbedOptions {
   producer?: string;
   /** Ajoute un `OutputIntent` PDF/A si le PDF n'en a pas (souvent la seule pièce manquante pour PDF/A-3b). */
   outputIntent?: OutputIntentOptions;
+  /** Limites de taille (défaut : `DEFAULT_LIMITS`). */
+  limits?: Partial<Limits>;
 }
 
 const PRODUCER = 'facturx-sdk';
@@ -82,7 +85,17 @@ function resolveXml(source: FacturXSource): Uint8Array {
 }
 
 /** Charge un PDF avec des erreurs typées (PDF illisible, chiffré). */
-export async function loadPdf(input: Uint8Array | ArrayBuffer): Promise<PDFDocument> {
+export async function loadPdf(
+  input: Uint8Array | ArrayBuffer,
+  limits: Partial<Limits> = {},
+): Promise<PDFDocument> {
+  const max = resolveLimits(limits).pdfBytes;
+  if (input.byteLength > max) {
+    throw new FacturXPdfError(
+      'TOO_LARGE',
+      `PDF de ${input.byteLength} octets au-delà de la limite \`pdfBytes\` (${max}).`,
+    );
+  }
   try {
     return await PDFDocument.load(toBytes(input), { updateMetadata: false });
   } catch (error) {
@@ -128,7 +141,7 @@ export async function embedFacturX(
   options: EmbedOptions = {},
 ): Promise<Uint8Array> {
   const xmlBytes = resolveXml(source);
-  const doc = await loadPdf(pdf);
+  const doc = await loadPdf(pdf, options.limits);
   const { context, catalog } = doc;
   const date = options.date ?? new Date();
 

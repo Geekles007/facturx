@@ -6,7 +6,9 @@ export type FacturXPdfErrorCode =
   /** La source XML est vide ou n'est pas un document XML. */
   | 'INVALID_XML'
   /** Structure PDF non prise en charge (ex. arbre de noms corrompu). */
-  | 'UNSUPPORTED';
+  | 'UNSUPPORTED'
+  /** PDF ou XML au-delà des limites (`Limits`). */
+  | 'TOO_LARGE';
 
 /** Erreur typée levée par `embedFacturX` / `extractFacturX`. */
 export class FacturXPdfError extends Error {

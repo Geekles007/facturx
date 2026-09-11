@@ -18,6 +18,7 @@ export {
   withDeposits,
 } from './deposit.js';
 export * from './electronic-address.js';
+export * from './limits.js';
 export * from './money.js';
 export {
   buildLegalNotes,

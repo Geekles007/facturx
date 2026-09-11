@@ -4,7 +4,7 @@
 
 SDK **TypeScript pur** — zéro dépendance native, compatible edge/serverless — pour **générer, embarquer et extraire** des factures **Factur-X** au profil **EN 16931**, avec les règles françaises intégrées.
 
-> État : **0.8.0 / conformité AFNOR** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3 validé veraPDF), guide réforme, exemples exécutables, mentions de la réforme, et les **règles françaises de la norme AFNOR XP Z12-012** (toutes les règles `BR-FR` vérifiables hors ligne), **contre-vérifiées par les schematrons officiels CEN, Factur-X et BR-FR V1.3.0 en CI**. **Publié sur npm : `facturx-sdk`.**
+> État : **0.9.0 / conformité AFNOR** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3 validé veraPDF), guide réforme, exemples exécutables, mentions de la réforme, et les **règles françaises de la norme AFNOR XP Z12-012** (toutes les règles `BR-FR` vérifiables hors ligne), **contre-vérifiées par les schematrons officiels CEN, Factur-X et BR-FR V1.3.0 en CI**. **Publié sur npm : `facturx-sdk`.**
 
 ## Vision
 
@@ -38,6 +38,10 @@ pnpm --filter example-receive-node start -- --demo
 pnpm --filter example-http-handler start
 pnpm --filter example-deposit-node start
 ```
+
+## Sécurité
+
+Les entrées (XML, PDF) sont traitées comme non fiables : pas de DTD ni d'entité externe, profondeur et tailles bornées (`DEFAULT_LIMITS`, surchargeables par `{ limits }`), erreurs typées `TOO_LARGE`, aucune exécution de contenu. Détails et signalement : [SECURITY.md](SECURITY.md).
 
 ## Périmètre v1
 

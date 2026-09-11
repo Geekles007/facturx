@@ -4,6 +4,7 @@ import {
   ROUTING_CHARS,
   ROUTING_CODE_MAX_LENGTH,
 } from '../electronic-address.js';
+import { DEFAULT_LIMITS, type Limits } from '../limits.js';
 import { resolveNotes } from '../payment-terms.js';
 import {
   BUSINESS_PROCESS_CODES,
@@ -148,7 +149,11 @@ function checkTax(tax: TaxInfo | undefined, path: string, c: IssueCollector): vo
  * Règles françaises : norme AFNOR XP Z12-012 (`BR-FR-*`) et Code de commerce / CGI (`FR-*`).
  * Appliquées uniquement si le vendeur est établi en France (BT-40 = FR).
  */
-export function checkFrenchRules(inv: Invoice, c: IssueCollector): void {
+export function checkFrenchRules(
+  inv: Invoice,
+  c: IssueCollector,
+  limits: Limits = DEFAULT_LIMITS,
+): void {
   if (inv.seller?.address?.countryCode !== 'FR') return;
 
   // BR-FR-01 / BR-FR-02 : numéro de facture
@@ -344,6 +349,35 @@ export function checkFrenchRules(inv: Invoice, c: IssueCollector): void {
         }
       }
     }
+  }
+
+  // BR-FR-19 : taille des pièces jointes (par pièce, et 100 Mo cumulés par facture)
+  let attachedTotal = 0;
+  for (const [i, a] of (inv.attachments ?? []).entries()) {
+    const size = a.file?.bytes instanceof Uint8Array ? a.file.bytes.byteLength : 0;
+    attachedTotal += size;
+    if (size > limits.attachmentBytes) {
+      c.add(
+        'BR-FR-19',
+        `attachments[${i}].file.bytes`,
+        `Pièce jointe de ${size} octets au-delà de la limite (${limits.attachmentBytes}).`,
+        {
+          expected: `≤ ${limits.attachmentBytes}`,
+          actual: size,
+        },
+      );
+    }
+  }
+  if (attachedTotal > limits.attachmentsTotalBytes) {
+    c.add(
+      'BR-FR-19',
+      'attachments',
+      `Pièces jointes cumulées : ${attachedTotal} octets, au-delà de ${limits.attachmentsTotalBytes} (100 Mo par facture).`,
+      {
+        expected: `≤ ${limits.attachmentsTotalBytes}`,
+        actual: attachedTotal,
+      },
+    );
   }
 
   // BR-FR-18 : une seule pièce jointe « LISIBLE »

@@ -130,12 +130,13 @@ La norme **AFNOR XP Z12-012** (formats et profils du socle, juillet 2025) fixe l
 | BR-FR-14 | adresse de livraison fournie ⇒ BT-75/77/78/80 présents ; jamais pour une prestation de services | `delivery.address` |
 | BR-FR-15 / 16 | catégories de TVA S, E, AE, K, G, O, Z ; taux dans la liste française | `tax.category`, `tax.rate` |
 | BR-FR-17 / 18 | pièces jointes BG-24 : qualificatifs (`BON_COMMANDE`, `RIB`, `LISIBLE`…), une seule `LISIBLE` | `attachments` |
+| BR-FR-19 | 100 Mo par facture : pièces jointes bornées par pièce et cumulées | `attachments`, `DEFAULT_LIMITS` |
 | BR-FR-20 | traitement attendu (note `BAR` : B2B, B2BINT, B2C, OUTOFSCOPE, ARCHIVEONLY) | `processing` |
 | BR-FR-23 / 25 | adresse 0225 : `A-Z a-z 0-9 - _ .` ; toute adresse ≤ 125 caractères | `electronicAddress` |
 | BR-FR-24 / 26 | code de routage 0224 : mêmes caractères, ≤ 100 | `routingCode` |
 | BR-FR-MAP-03 | TVA sur les débits : BT-8 = 5 en CII | `vatOnDebits` |
 
-Non implémentées : BR-FR-07 (codes de notes libres — disponibles dans `NoteSubjectCode`, aucune contrainte à vérifier), BR-FR-10/11 « présent et actif dans l'annuaire » (vérification en ligne, rôle de la plateforme agréée), BR-FR-19 (100 Mo par facture, contrôle de la plateforme). **Toutes les règles vérifiables hors ligne sur le contenu d'une facture sont couvertes.** Règle maison en complément : `FR-DEPOSIT-REFERENCE` — une facture définitive après acompte (cadre `*4`) doit référencer ses factures d'acompte (BT-25).
+Non implémentées : BR-FR-07 (codes de notes libres — disponibles dans `NoteSubjectCode`, aucune contrainte à vérifier), BR-FR-10/11 « présent et actif dans l'annuaire » (vérification en ligne, rôle de la plateforme agréée). **Toutes les règles vérifiables hors ligne sur le contenu d'une facture sont couvertes.** Règle maison en complément : `FR-DEPOSIT-REFERENCE` — une facture définitive après acompte (cadre `*4`) doit référencer ses factures d'acompte (BT-25).
 
 ## Écarts du modèle : couverts
 

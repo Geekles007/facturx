@@ -1,3 +1,4 @@
+import { DEFAULT_LIMITS, exceeds } from '../limits.js';
 /**
  * Mini-parseur XML sans dépendance, suffisant pour CII : déclaration, commentaires, instructions de
  * traitement, CDATA, entités prédéfinies et numériques, attributs, namespaces.
@@ -32,6 +33,8 @@ export class XmlParseError extends Error {
 export interface ParseXmlOptions {
   /** Profondeur d'imbrication maximale (défaut : 256). */
   maxDepth?: number;
+  /** Taille maximale de l'entrée en octets UTF-8 (défaut : `DEFAULT_LIMITS.xmlBytes`, 64 Mio). */
+  maxBytes?: number;
 }
 
 interface MutableNode {
@@ -250,6 +253,14 @@ class Parser {
 
 /** Parse un document XML (chaîne ou octets UTF-8) en arbre d'éléments. */
 export function parseXml(input: string | Uint8Array, options: ParseXmlOptions = {}): XmlNode {
+  const maxBytes = options.maxBytes ?? DEFAULT_LIMITS.xmlBytes;
+  if (exceeds(input, maxBytes)) {
+    throw new XmlParseError(
+      `Document trop volumineux : plus de ${maxBytes} octets (limite \`xmlBytes\`)`,
+      0,
+      0,
+    );
+  }
   const src = typeof input === 'string' ? input : new TextDecoder('utf-8').decode(input);
   return new Parser(src, options.maxDepth ?? 256).parse();
 }

@@ -12,6 +12,7 @@ export { FacturXPdfError, type FacturXPdfErrorCode } from './errors.js';
 export {
   type ExtractedFacturX,
   type ExtractedInvoice,
+  type ExtractOptions,
   extractFacturX,
   extractInvoice,
   readXmp,

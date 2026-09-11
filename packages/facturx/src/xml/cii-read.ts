@@ -1,3 +1,4 @@
+import { type Limits, resolveLimits } from '../limits.js';
 import {
   type Cents,
   fromDecimal,
@@ -39,7 +40,9 @@ export type FacturXParseErrorCode =
   /** Valeur mal formée (nombre, date, indicateur). */
   | 'FORMAT'
   /** Structure non prise en charge. */
-  | 'UNSUPPORTED';
+  | 'UNSUPPORTED'
+  /** Entrée ou pièce jointe au-delà des limites (`Limits`). */
+  | 'TOO_LARGE';
 
 /** Erreur typée de lecture CII, localisée par un chemin d'éléments. */
 export class FacturXParseError extends Error {
@@ -71,6 +74,8 @@ export interface ParsedCiiDocument {
 export interface FromCiiXmlOptions {
   /** Valider avec `assertValidInvoice` après lecture (défaut : `true`). */
   validate?: boolean;
+  /** Limites de taille (défaut : `DEFAULT_LIMITS`). */
+  limits?: Partial<Limits>;
 }
 
 // ---------- accès à l'arbre ----------
@@ -435,13 +440,13 @@ function paymentMeans(ctx: Ctx): PaymentMeans {
 }
 
 /** Guideline (BT-24) et cadre (BT-23) d'un document CII, sans lire le reste — pour router une facture reçue. */
-export function readCiiGuideline(xml: string | Uint8Array): {
-  guidelineId: string;
-  businessProcessId?: string;
-} {
+export function readCiiGuideline(
+  xml: string | Uint8Array,
+  options: Pick<FromCiiXmlOptions, 'limits'> = {},
+): { guidelineId: string; businessProcessId?: string } {
   let rootNode: XmlNode;
   try {
-    rootNode = parseXml(xml);
+    rootNode = parseXml(xml, { maxBytes: resolveLimits(options.limits).xmlBytes });
   } catch (error) {
     if (error instanceof XmlParseError)
       throw new FacturXParseError('MALFORMED', '', error.message, { cause: error });
@@ -480,10 +485,14 @@ export function readCiiGuideline(xml: string | Uint8Array): {
  * Lit un document CII (Factur-X, tout profil) en `Invoice`, sans validation.
  * Les éléments inconnus sont ignorés ; les éléments structurellement indispensables manquants lèvent `FacturXParseError`.
  */
-export function parseCiiDocument(xml: string | Uint8Array): ParsedCiiDocument {
+export function parseCiiDocument(
+  xml: string | Uint8Array,
+  options: Pick<FromCiiXmlOptions, 'limits'> = {},
+): ParsedCiiDocument {
+  const limits = resolveLimits(options.limits);
   let rootNode: XmlNode;
   try {
-    rootNode = parseXml(xml);
+    rootNode = parseXml(xml, { maxBytes: limits.xmlBytes });
   } catch (error) {
     if (error instanceof XmlParseError)
       throw new FacturXParseError('MALFORMED', '', error.message, { cause: error });
@@ -531,6 +540,14 @@ export function parseCiiDocument(xml: string | Uint8Array): ParsedCiiDocument {
       const raw = text(binary);
       let bytes: Uint8Array | undefined = binary === undefined ? undefined : new Uint8Array(0);
       if (binary && raw !== undefined) {
+        const approx = Math.floor((raw.replace(/\s+/g, '').length * 3) / 4);
+        if (approx > limits.attachmentBytes) {
+          throw new FacturXParseError(
+            'TOO_LARGE',
+            binary.path,
+            `Pièce jointe de ~${approx} octets au-delà de la limite \`attachmentBytes\` (${limits.attachmentBytes}).`,
+          );
+        }
         try {
           bytes = decodeBase64(raw);
         } catch (error) {
@@ -710,6 +727,6 @@ export function parseCiiDocument(xml: string | Uint8Array): ParsedCiiDocument {
  * après lecture : `FacturXValidationError` sinon. `validate: false` pour lire un profil MINIMUM/BASIC tel quel.
  */
 export function fromCiiXml(xml: string | Uint8Array, options: FromCiiXmlOptions = {}): Invoice {
-  const { invoice } = parseCiiDocument(xml);
-  return (options.validate ?? true) ? assertValidInvoice(invoice) : invoice;
+  const { invoice } = parseCiiDocument(xml, options);
+  return (options.validate ?? true) ? assertValidInvoice(invoice, options) : invoice;
 }

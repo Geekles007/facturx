@@ -8,6 +8,7 @@ import {
   PDFRef,
   PDFStream,
 } from 'pdf-lib';
+import { type Limits, resolveLimits } from '../limits.js';
 import type { Invoice } from '../types/invoice.js';
 import { type FromCiiXmlOptions, fromCiiXml } from '../xml/cii-read.js';
 import { loadPdf } from './embed.js';
@@ -57,10 +58,17 @@ export function readXmp(doc: PDFDocument): string | undefined {
  * Extrait le XML Factur-X d'un PDF : cherche `factur-x.xml` (puis les noms de repli connus) dans
  * l'arbre de noms `EmbeddedFiles` et dans `/AF`. Renvoie `undefined` si aucune pièce n'est trouvée.
  */
+export interface ExtractOptions {
+  /** Limites de taille (défaut : `DEFAULT_LIMITS`). */
+  limits?: Partial<Limits>;
+}
+
 export async function extractFacturX(
   pdf: Uint8Array | ArrayBuffer,
+  options: ExtractOptions = {},
 ): Promise<ExtractedFacturX | undefined> {
-  const doc = await loadPdf(pdf);
+  const limits = resolveLimits(options.limits);
+  const doc = await loadPdf(pdf, limits);
   const candidates: { name: string; spec: PDFDict }[] = listEmbeddedFiles(doc).map(
     ({ name, spec }) => ({ name, spec }),
   );
@@ -78,6 +86,12 @@ export async function extractFacturX(
     const match = candidates.find((c) => c.name.toLowerCase() === known);
     if (!match) continue;
     const bytes = embeddedStream(doc, match.spec);
+    if (bytes !== undefined && bytes.byteLength > limits.xmlBytes) {
+      throw new FacturXPdfError(
+        'TOO_LARGE',
+        `XML embarqué de ${bytes.byteLength} octets au-delà de la limite \`xmlBytes\` (${limits.xmlBytes}).`,
+      );
+    }
     if (bytes === undefined) {
       throw new FacturXPdfError(
         'UNSUPPORTED',
@@ -109,7 +123,7 @@ export async function extractInvoice(
   pdf: Uint8Array | ArrayBuffer,
   options: FromCiiXmlOptions = {},
 ): Promise<ExtractedInvoice | undefined> {
-  const extracted = await extractFacturX(pdf);
+  const extracted = await extractFacturX(pdf, options);
   if (!extracted) return undefined;
   return { ...extracted, invoice: fromCiiXml(extracted.bytes, options) };
 }
