@@ -7,7 +7,6 @@ import {
   fromCiiXml,
   type Invoice,
   parseCiiDocument,
-  resolvePaymentTermsText,
   toCiiXml,
 } from '../src/index.js';
 import { fullInvoice, multiRateInvoice, simpleInvoice } from './fixtures/invoices.js';
