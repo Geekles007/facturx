@@ -15,8 +15,13 @@ export interface EarlyPaymentDiscount {
  * Règles FR (art. L441-9 et L441-10 C. com.) : la facture doit mentionner la date d'échéance,
  * le taux des pénalités de retard, l'indemnité forfaitaire pour frais de recouvrement (40 €, art. D441-5)
  * et les conditions d'escompte (ou l'absence d'escompte).
- * Le SDK compose le texte BT-20 depuis les champs structurés si `text` est absent
- * (voir `buildPaymentTermsText`).
+ *
+ * Deux façons de satisfaire ces mentions :
+ * - **champs structurés** (`latePenaltyRate`, `recoveryIndemnity`, `earlyPaymentDiscount`) : le SDK compose
+ *   le texte BT-20 (voir `buildPaymentTermsText`) — voie recommandée pour une facture rédigée avec le SDK ;
+ * - **texte libre** (`text`) : seule information disponible dans un XML lu (`fromCiiXml`) ; sa présence est
+ *   exigée, son contenu n'est pas interprété.
+ * La validation FR exige l'une ou l'autre.
  */
 export interface PaymentTerms {
   /** BT-9 — Date d'échéance. Obligatoire si BT-20 absent et montant dû > 0 (BR-CO-25). */
@@ -30,16 +35,16 @@ export interface PaymentTerms {
    * Règle FR — Taux annuel des pénalités de retard, en points de base (ex. 1000 = 10 %).
    * Doit être > 0 (minimum légal : 3 × le taux d'intérêt légal, art. L441-10 II).
    */
-  latePenaltyRate: Rate;
+  latePenaltyRate?: Rate;
   /**
    * Règle FR — Indemnité forfaitaire pour frais de recouvrement, en centimes (4000 = 40 €, art. D441-5).
    */
-  recoveryIndemnity: Cents;
+  recoveryIndemnity?: Cents;
   /**
    * Règle FR — Conditions d'escompte pour paiement anticipé, ou `'none'` pour la mention
    * « Pas d'escompte pour paiement anticipé ». Le choix doit être explicite.
    */
-  earlyPaymentDiscount: EarlyPaymentDiscount | 'none';
+  earlyPaymentDiscount?: EarlyPaymentDiscount | 'none';
 }
 
 /** Compte bancaire de règlement (virement) — BG-17. */
@@ -55,7 +60,7 @@ export interface CreditTransfer {
 /** Mandat de prélèvement — BG-19. */
 export interface DirectDebit {
   /** BT-89 — Référence unique du mandat (RUM). */
-  mandateReference: string;
+  mandateReference?: string;
   /** BT-90 — Identifiant créancier SEPA (ICS). */
   creditorId?: string;
   /** BT-91 — IBAN du compte débité. */

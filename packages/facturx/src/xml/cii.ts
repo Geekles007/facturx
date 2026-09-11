@@ -297,6 +297,26 @@ function paymentMeans(pm: PaymentMeans): XmlElement {
 
 // ---------- document ----------
 
+/** BT-20 / BT-9 / BT-89 — omis entièrement si aucune information. */
+function paymentTermsElement(
+  invoice: Invoice,
+  mandateReference: string | undefined,
+): XmlElement | undefined {
+  const description = resolvePaymentTermsText(invoice.paymentTerms);
+  if (
+    description === undefined &&
+    invoice.paymentTerms.dueDate === undefined &&
+    mandateReference === undefined
+  )
+    return undefined;
+  return el(
+    'ram:SpecifiedTradePaymentTerms',
+    text('ram:Description', description),
+    dateTime('ram:DueDateDateTime', invoice.paymentTerms.dueDate),
+    text('ram:DirectDebitMandateID', mandateReference),
+  );
+}
+
 function referencedDocument(name: string, id: string | undefined): XmlElement | undefined {
   return id === undefined ? undefined : el(name, el('ram:IssuerAssignedID', id));
 }
@@ -415,12 +435,7 @@ export function toCiiTree(
         ),
     (invoice.allowances ?? []).map((a) => allowanceCharge(false, a, a.tax)),
     (invoice.charges ?? []).map((c) => allowanceCharge(true, c, c.tax)),
-    el(
-      'ram:SpecifiedTradePaymentTerms',
-      el('ram:Description', resolvePaymentTermsText(invoice.paymentTerms)),
-      dateTime('ram:DueDateDateTime', invoice.paymentTerms.dueDate),
-      text('ram:DirectDebitMandateID', directDebit?.mandateReference),
-    ),
+    paymentTermsElement(invoice, directDebit?.mandateReference),
     el(
       'ram:SpecifiedTradeSettlementHeaderMonetarySummation',
       el('ram:LineTotalAmount', amount(totals.lineTotalAmount)),

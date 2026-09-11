@@ -15,6 +15,7 @@ import {
   buildXmp,
   embedFacturX,
   extractFacturX,
+  extractInvoice,
   FacturXPdfError,
   readXmp,
   readXmpProperty,
@@ -271,6 +272,19 @@ describe('extractFacturX', () => {
     expect(extracted?.filename).toBe('ZUGFeRD-invoice.xml');
     expect(extracted?.xml).toBe(xml);
     expect(extracted?.conformanceLevel).toBeUndefined();
+  });
+});
+
+describe('extractInvoice', () => {
+  it('renvoie la facture typée depuis un PDF Factur-X, undefined sinon', async () => {
+    const invoice = multiRateInvoice();
+    const out = await embedFacturX(await makePdf(), { invoice }, { date: FIXED_DATE });
+    const result = await extractInvoice(out);
+    expect(result?.filename).toBe('factur-x.xml');
+    expect(result?.invoice.id).toBe('F-2026-0002');
+    expect(result?.invoice.totals).toEqual(invoice.totals);
+    expect(result?.invoice.lines).toEqual(invoice.lines);
+    expect(await extractInvoice(await makePdf())).toBeUndefined();
   });
 });
 

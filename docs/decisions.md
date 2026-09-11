@@ -76,3 +76,17 @@ Convertir un PDF quelconque en PDF/A (polices non embarquées, transparence, chi
 
 ### D23. Validation PDF/A externe : veraPDF, à brancher
 Le test structurel couvre les points que veraPDF vérifie sur les pièces jointes et les métadonnées (ISO 19005-3 §6.8, §6.6, §6.1.3). Une validation complète exige veraPDF (Java 11+) et un PDF d'entrée réellement PDF/A ; à ajouter sur le modèle du test xmllint (ignoré si `verapdf` absent) quand l'outil sera disponible sur la machine de dev.
+
+## 2026-09-11 — Session 4 : lecture XML CII → `Invoice`
+
+### D24. Mini-parseur XML maison, sécurisé par construction
+~250 lignes : déclaration, commentaires, PI, CDATA, entités prédéfinies et numériques, attributs, namespaces résolus par URI (un document écrit avec `n1:` ou un namespace par défaut est lu comme `rsm:`/`ram:`). **Tout `DOCTYPE` est refusé** (XXE, expansion d'entités), les entités inconnues aussi, la profondeur est bornée (256). Erreurs `XmlParseError { line, column }`. Une lib (fast-xml-parser, @xmldom) ajouterait une dépendance runtime et, pour certaines, une surface DTD à désactiver.
+
+### D25. `PaymentTerms` : texte BT-20 OU champs structurés
+Le XML ne porte que le texte des conditions (BT-20). `latePenaltyRate`, `recoveryIndemnity` et `earlyPaymentDiscount` deviennent optionnels ; la règle FR exige **soit** un `text` non vide, **soit** les trois champs (les champs présents sont toujours vérifiés). Une facture rédigée avec le SDK garde la voie structurée (texte généré) ; une facture lue porte le texte. Alternatives écartées : un type `ParsedInvoice` distinct (deux modèles à maintenir, pas d'aller-retour direct) ; une heuristique sur le texte (fragile). `DirectDebit.mandateReference` devient optionnel pour la même raison (BT-89 et BT-90 sont dispersés dans le CII).
+
+### D26. Lecture tolérante, validation stricte, jamais d'arrondi
+`parseCiiDocument` lit **tout profil** Factur-X (EXTENDED ⊇ EN 16931 ⊇ BASIC ⊇ MINIMUM), ignore les éléments inconnus et expose `guidelineId` ; les chaînes obligatoires absentes deviennent `''` et sont signalées par la validation (BR-06, BR-11…), tandis que la structure et les nombres indispensables manquants lèvent `FacturXParseError { code, path }` — le chemin utilise les préfixes canoniques `rsm/ram/udt/qdt` avec index de ligne (`…LineItem[2]/…`). Une décimale de trop (`12.345` pour un montant) est une erreur `FORMAT`, pas un arrondi. `fromCiiXml` valide par défaut (miroir de `toCiiXml`), `validate: false` pour lire un MINIMUM tel quel.
+
+### D27. Aller-retour garanti par les tests
+`fromCiiXml(toCiiXml(x))` est `deepEqual` à `x` sur les trois fixtures (aux mentions FR structurées près, devenues texte), et `toCiiXml(fromCiiXml(xml)) === xml`. Conséquence de modélisation : `remittanceInformation` (BT-83, document-level en CII) est lu sur le **premier** moyen de paiement ; le mandat/ICS (BT-89/BT-90) sur le premier moyen de type prélèvement. `extractInvoice(pdf)` = `extractFacturX` + `fromCiiXml`.

@@ -325,3 +325,38 @@ describe('texte des conditions de paiement (BT-20)', () => {
     expect(text).toContain('Escompte pour paiement anticipé : 2,00 % si règlement sous 10 jours.');
   });
 });
+
+describe('conditions de paiement : texte OU champs structurés', () => {
+  it('accepte un texte BT-20 seul (facture importée)', () => {
+    const invoice = simpleInvoice();
+    invoice.paymentTerms = {
+      dueDate: '2026-10-11',
+      text: 'Pénalités de retard : 10 %. Indemnité : 40 €. Pas d’escompte.',
+    };
+    expect(validateInvoice(invoice).ok).toBe(true);
+  });
+
+  it('exige les champs structurés sans texte', () => {
+    const invoice = simpleInvoice();
+    invoice.paymentTerms = { dueDate: '2026-10-11' };
+    expect(codesAndPaths(invoice)).toEqual(
+      expect.arrayContaining([
+        'FR-LATE-PENALTY @ paymentTerms.latePenaltyRate',
+        'FR-RECOVERY-INDEMNITY @ paymentTerms.recoveryIndemnity',
+        'FR-EARLY-PAYMENT-DISCOUNT @ paymentTerms.earlyPaymentDiscount',
+      ]),
+    );
+  });
+
+  it('refuse un texte vide et vérifie les champs structurés même avec un texte', () => {
+    const invoice = simpleInvoice();
+    invoice.paymentTerms = { text: '  ', latePenaltyRate: percent('0') };
+    expect(codesAndPaths(invoice)).toEqual(
+      expect.arrayContaining([
+        'FR-PAYMENT-TERMS-TEXT @ paymentTerms.text',
+        'FR-LATE-PENALTY @ paymentTerms.latePenaltyRate',
+      ]),
+    );
+    expect(() => buildPaymentTermsText({ text: 'x' })).toThrow(TypeError);
+  });
+});

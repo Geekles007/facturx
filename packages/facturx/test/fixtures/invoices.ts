@@ -249,13 +249,14 @@ export function fullDraft(): InvoiceDraft {
       {
         typeCode: '59',
         text: 'Prélèvement SEPA',
+        remittanceInformation: 'F-2026-0003',
         directDebit: {
           mandateReference: 'RUM-2026-000123',
           creditorId: 'FR12ZZZ123456',
           debitedIban: 'DE89370400440532013000',
         },
       },
-      ...paymentMeans('F-2026-0003'),
+      { typeCode: '58', creditTransfer: { iban: 'FR7630006000011234567890189', bic: 'BNPAFRPP' } },
     ],
   };
 }

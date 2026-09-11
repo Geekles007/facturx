@@ -8,6 +8,8 @@ import {
   PDFRef,
   PDFStream,
 } from 'pdf-lib';
+import type { Invoice } from '../types/invoice.js';
+import { type FromCiiXmlOptions, fromCiiXml } from '../xml/cii-read.js';
 import { loadPdf } from './embed.js';
 import { FacturXPdfError } from './errors.js';
 import { filespecName, KNOWN_FILENAMES, listEmbeddedFiles } from './names.js';
@@ -92,4 +94,22 @@ export async function extractFacturX(
   }
 
   return undefined;
+}
+
+export interface ExtractedInvoice extends ExtractedFacturX {
+  /** Facture typée lue depuis le XML (validée par défaut, voir `FromCiiXmlOptions`). */
+  invoice: Invoice;
+}
+
+/**
+ * `extractFacturX` + `fromCiiXml` en un appel : renvoie la facture typée, ou `undefined` si le PDF
+ * ne contient pas de pièce Factur-X. Lève `FacturXParseError` / `FacturXValidationError` selon le cas.
+ */
+export async function extractInvoice(
+  pdf: Uint8Array | ArrayBuffer,
+  options: FromCiiXmlOptions = {},
+): Promise<ExtractedInvoice | undefined> {
+  const extracted = await extractFacturX(pdf);
+  if (!extracted) return undefined;
+  return { ...extracted, invoice: fromCiiXml(extracted.bytes, options) };
 }

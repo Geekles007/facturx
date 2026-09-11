@@ -11,6 +11,11 @@ function fr(decimal: string): string {
  * (art. L441-9 / L441-10 C. com.) : pénalités de retard, indemnité forfaitaire, escompte.
  */
 export function buildPaymentTermsText(terms: PaymentTerms): string {
+  if (!hasStructuredTerms(terms)) {
+    throw new TypeError(
+      'buildPaymentTermsText : latePenaltyRate, recoveryIndemnity et earlyPaymentDiscount sont requis.',
+    );
+  }
   const parts: string[] = [];
   if (terms.dueDate) parts.push(`Paiement à réception, au plus tard le ${terms.dueDate}.`);
   parts.push(
@@ -28,7 +33,20 @@ export function buildPaymentTermsText(terms: PaymentTerms): string {
   return parts.join(' ');
 }
 
-/** Texte BT-20 effectif : `terms.text` s'il est fourni, sinon le texte généré. */
-export function resolvePaymentTermsText(terms: PaymentTerms): string {
-  return terms.text ?? buildPaymentTermsText(terms);
+/** Vrai si les trois mentions FR structurées sont présentes. */
+export function hasStructuredTerms(
+  terms: PaymentTerms,
+): terms is PaymentTerms &
+  Required<Pick<PaymentTerms, 'latePenaltyRate' | 'recoveryIndemnity' | 'earlyPaymentDiscount'>> {
+  return (
+    terms.latePenaltyRate !== undefined &&
+    terms.recoveryIndemnity !== undefined &&
+    terms.earlyPaymentDiscount !== undefined
+  );
+}
+
+/** Texte BT-20 effectif : `terms.text` s'il est fourni, sinon le texte généré depuis les champs structurés, sinon rien. */
+export function resolvePaymentTermsText(terms: PaymentTerms): string | undefined {
+  if (terms.text !== undefined) return terms.text;
+  return hasStructuredTerms(terms) ? buildPaymentTermsText(terms) : undefined;
 }

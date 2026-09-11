@@ -88,32 +88,64 @@ export function checkFrenchRules(inv: Invoice, c: IssueCollector): void {
     );
   }
 
-  // Mentions de paiement (L441-9, L441-10, D441-5)
+  // Mentions de paiement (L441-9, L441-10, D441-5) : texte BT-20 fourni OU champs structurés complets
   const pt = inv.paymentTerms;
   if (!pt) return;
-  if (!isSafeInteger(pt.latePenaltyRate) || pt.latePenaltyRate <= 0) {
+  const hasText = isNonEmptyString(pt.text);
+  if (pt.text !== undefined && !hasText) {
+    c.add(
+      'FR-PAYMENT-TERMS-TEXT',
+      'paymentTerms.text',
+      'Le texte des conditions de paiement (BT-20) ne peut pas être vide.',
+    );
+  }
+  if (pt.latePenaltyRate === undefined) {
+    if (!hasText) {
+      c.add(
+        'FR-LATE-PENALTY',
+        'paymentTerms.latePenaltyRate',
+        'Le taux des pénalités de retard est obligatoire, sauf si un texte BT-20 est fourni (art. L441-10 C. com.).',
+      );
+    }
+  } else if (!isSafeInteger(pt.latePenaltyRate) || pt.latePenaltyRate <= 0) {
     c.add(
       'FR-LATE-PENALTY',
       'paymentTerms.latePenaltyRate',
-      'Le taux des pénalités de retard doit être fourni et > 0 (art. L441-10 C. com.).',
-      { expected: '> 0', actual: pt.latePenaltyRate },
+      'Le taux des pénalités de retard doit être > 0 (art. L441-10 C. com.).',
+      {
+        expected: '> 0',
+        actual: pt.latePenaltyRate,
+      },
     );
   }
-  if (!isSafeInteger(pt.recoveryIndemnity) || pt.recoveryIndemnity <= 0) {
+  if (pt.recoveryIndemnity === undefined) {
+    if (!hasText) {
+      c.add(
+        'FR-RECOVERY-INDEMNITY',
+        'paymentTerms.recoveryIndemnity',
+        'L’indemnité forfaitaire pour frais de recouvrement est obligatoire, sauf si un texte BT-20 est fourni (40 €, art. D441-5 C. com.).',
+      );
+    }
+  } else if (!isSafeInteger(pt.recoveryIndemnity) || pt.recoveryIndemnity <= 0) {
     c.add(
       'FR-RECOVERY-INDEMNITY',
       'paymentTerms.recoveryIndemnity',
-      'L’indemnité forfaitaire pour frais de recouvrement doit être fournie et > 0 (40 €, art. D441-5 C. com.).',
-      { expected: 4000, actual: pt.recoveryIndemnity },
+      'L’indemnité forfaitaire doit être > 0 (40 €, art. D441-5 C. com.).',
+      {
+        expected: 4000,
+        actual: pt.recoveryIndemnity,
+      },
     );
   }
   const disc = pt.earlyPaymentDiscount;
   if (disc === undefined) {
-    c.add(
-      'FR-EARLY-PAYMENT-DISCOUNT',
-      'paymentTerms.earlyPaymentDiscount',
-      'Les conditions d’escompte doivent être explicites : objet { rate, withinDays } ou "none" (art. L441-9 C. com.).',
-    );
+    if (!hasText) {
+      c.add(
+        'FR-EARLY-PAYMENT-DISCOUNT',
+        'paymentTerms.earlyPaymentDiscount',
+        'Les conditions d’escompte doivent être explicites ({ rate, withinDays } ou "none"), sauf si un texte BT-20 est fourni (art. L441-9 C. com.).',
+      );
+    }
   } else if (disc !== 'none') {
     if (!isSafeInteger(disc.rate) || disc.rate <= 0) {
       c.add(
@@ -130,15 +162,10 @@ export function checkFrenchRules(inv: Invoice, c: IssueCollector): void {
         'FR-EARLY-PAYMENT-DISCOUNT',
         'paymentTerms.earlyPaymentDiscount.withinDays',
         'Délai d’escompte (jours) > 0 attendu.',
-        { actual: disc.withinDays },
+        {
+          actual: disc.withinDays,
+        },
       );
     }
-  }
-  if (pt.text !== undefined && !isNonEmptyString(pt.text)) {
-    c.add(
-      'FR-PAYMENT-TERMS-TEXT',
-      'paymentTerms.text',
-      'Le texte des conditions de paiement (BT-20) ne peut pas être vide.',
-    );
   }
 }

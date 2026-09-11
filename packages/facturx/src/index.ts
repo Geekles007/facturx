@@ -11,7 +11,11 @@ export {
   computeTotals,
 } from './compute.js';
 export * from './money.js';
-export { buildPaymentTermsText, resolvePaymentTermsText } from './payment-terms.js';
+export {
+  buildPaymentTermsText,
+  hasStructuredTerms,
+  resolvePaymentTermsText,
+} from './payment-terms.js';
 export * from './types/index.js';
 export * from './validate/index.js';
 export * from './xml/index.js';

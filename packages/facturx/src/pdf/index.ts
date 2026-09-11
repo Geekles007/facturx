@@ -9,6 +9,12 @@ export {
   type OutputIntentOptions,
 } from './embed.js';
 export { FacturXPdfError, type FacturXPdfErrorCode } from './errors.js';
-export { type ExtractedFacturX, extractFacturX, readXmp } from './extract.js';
+export {
+  type ExtractedFacturX,
+  type ExtractedInvoice,
+  extractFacturX,
+  extractInvoice,
+  readXmp,
+} from './extract.js';
 export { FACTURX_FILENAME, KNOWN_FILENAMES } from './names.js';
 export { buildXmp, FACTURX_XMP_NAMESPACE, readXmpProperty, type XmpMetadata } from './xmp.js';
