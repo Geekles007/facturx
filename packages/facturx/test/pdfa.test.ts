@@ -19,10 +19,10 @@ function hasVerapdf(): boolean {
 }
 
 interface FailedRule {
-  clause?: string;
-  testNumber?: number;
-  description?: string;
-  specification?: string;
+  clause: string | undefined;
+  testNumber: number | undefined;
+  description: string | undefined;
+  specification: string | undefined;
 }
 
 /** Parcourt le JSON veraPDF (structure variable selon les versions) : conformité + règles en échec. */
