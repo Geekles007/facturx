@@ -2,6 +2,7 @@ export type { Address } from './address.js';
 export type { DocumentAllowance, DocumentCharge } from './allowance.js';
 export type {
   AllowanceReasonCode,
+  BusinessProcessCode,
   ChargeReasonCode,
   CountryCode,
   CurrencyCode,
@@ -9,6 +10,7 @@ export type {
   ExemptionReasonCode,
   InvoiceTypeCode,
   IsoDate,
+  LegalNoteCode,
   NoteSubjectCode,
   OperationCategory,
   PaymentMeansCode,
@@ -17,7 +19,12 @@ export type {
 } from './codes.js';
 export {
   BUSINESS_PROCESS_BY_CATEGORY,
+  BUSINESS_PROCESS_CODES,
+  FRENCH_TAX_CATEGORY_CODES,
+  FRENCH_VAT_RATES_BPS,
   INVOICE_TYPE_CODES,
+  isBusinessProcessCode,
+  LEGAL_NOTE_CODES,
   OPERATION_CATEGORIES,
   operationCategoryFromBusinessProcess,
   TAX_CATEGORY_CODES,

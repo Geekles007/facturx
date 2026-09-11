@@ -161,3 +161,32 @@ describe('réforme : BT-23, BT-8, avoirs', () => {
     expect(toCiiXml(creditNote)).toContain('<ram:TypeCode>381</ram:TypeCode>');
   });
 });
+
+describe('notes légales BR-FR-05 et cadre de facturation dans le XML', () => {
+  it('écrit les trois notes PMD / PMT / AAB générées depuis paymentTerms', () => {
+    const xml = toCiiXml(simpleInvoice());
+    expect(xml).toContain(
+      "<ram:IncludedNote><ram:Content>Pénalités de retard : 10,00 % l'an, exigibles sans rappel dès le lendemain de l'échéance (art. L441-10 C. com.).</ram:Content><ram:SubjectCode>PMD</ram:SubjectCode></ram:IncludedNote>",
+    );
+    expect(xml).toContain('<ram:SubjectCode>PMT</ram:SubjectCode>');
+    expect(xml).toContain(
+      "<ram:Content>Pas d'escompte pour paiement anticipé.</ram:Content><ram:SubjectCode>AAB</ram:SubjectCode>",
+    );
+    expect(xml.match(/<ram:IncludedNote>/g)?.length).toBe(3);
+  });
+
+  it('conserve les notes fournies avant les notes générées, sans doublon', () => {
+    const xml = toCiiXml(fullInvoice());
+    const header = xml.slice(0, xml.indexOf('</rsm:ExchangedDocument>')); // hors notes de ligne (BT-127)
+    expect(header.match(/<ram:IncludedNote>/g)?.length).toBe(5); // REG + libre + PMD + PMT + AAB
+    expect(xml.indexOf('<ram:SubjectCode>REG</ram:SubjectCode>')).toBeLessThan(
+      xml.indexOf('<ram:SubjectCode>PMD</ram:SubjectCode>'),
+    );
+  });
+
+  it('écrit le cadre de facturation du modèle en BT-23', () => {
+    expect(toCiiXml({ ...simpleInvoice(), businessProcess: 'S2' })).toContain(
+      '<ram:ID>S2</ram:ID>',
+    );
+  });
+});

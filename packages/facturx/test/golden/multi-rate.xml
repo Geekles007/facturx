@@ -14,6 +14,18 @@
     <ram:IssueDateTime>
       <udt:DateTimeString format="102">20260911</udt:DateTimeString>
     </ram:IssueDateTime>
+    <ram:IncludedNote>
+      <ram:Content>Pénalités de retard : 10,00 % l'an, exigibles sans rappel dès le lendemain de l'échéance (art. L441-10 C. com.).</ram:Content>
+      <ram:SubjectCode>PMD</ram:SubjectCode>
+    </ram:IncludedNote>
+    <ram:IncludedNote>
+      <ram:Content>Indemnité forfaitaire pour frais de recouvrement en cas de retard de paiement : 40,00 € (art. D441-5 C. com.).</ram:Content>
+      <ram:SubjectCode>PMT</ram:SubjectCode>
+    </ram:IncludedNote>
+    <ram:IncludedNote>
+      <ram:Content>Escompte pour paiement anticipé : 2,00 % si règlement sous 10 jours.</ram:Content>
+      <ram:SubjectCode>AAB</ram:SubjectCode>
+    </ram:IncludedNote>
   </rsm:ExchangedDocument>
   <rsm:SupplyChainTradeTransaction>
     <ram:IncludedSupplyChainTradeLineItem>
@@ -185,7 +197,7 @@
         </ram:CategoryTradeTax>
       </ram:SpecifiedTradeAllowanceCharge>
       <ram:SpecifiedTradePaymentTerms>
-        <ram:Description>Paiement à réception, au plus tard le 2026-10-11. Pénalités de retard : 10,00 % l'an, exigibles sans rappel dès le lendemain de l'échéance. Indemnité forfaitaire pour frais de recouvrement en cas de retard de paiement : 40,00 €. Escompte pour paiement anticipé : 2,00 % si règlement sous 10 jours.</ram:Description>
+        <ram:Description>Paiement à réception, au plus tard le 2026-10-11. Pénalités de retard : 10,00 % l'an, exigibles sans rappel dès le lendemain de l'échéance (art. L441-10 C. com.). Indemnité forfaitaire pour frais de recouvrement en cas de retard de paiement : 40,00 € (art. D441-5 C. com.). Escompte pour paiement anticipé : 2,00 % si règlement sous 10 jours.</ram:Description>
         <ram:DueDateDateTime>
           <udt:DateTimeString format="102">20261011</udt:DateTimeString>
         </ram:DueDateDateTime>

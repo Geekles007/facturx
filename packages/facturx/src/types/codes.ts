@@ -19,12 +19,74 @@ export const INVOICE_TYPE_CODES: readonly InvoiceTypeCode[] = ['380', '381'];
 export type OperationCategory = 'goods' | 'services' | 'mixed';
 export const OPERATION_CATEGORIES: readonly OperationCategory[] = ['goods', 'services', 'mixed'];
 
-/** Cadre de facturation BT-23 correspondant à une nature d'opération (dépôt d'une facture par le fournisseur). */
-export const BUSINESS_PROCESS_BY_CATEGORY: Readonly<Record<OperationCategory, string>> = {
+/**
+ * BT-23 — Cadre de facturation (règle BR-FR-08, AFNOR XP Z12-012). La première lettre donne la nature
+ * de l'opération (B biens, S services, M mixte), le chiffre le cas d'usage.
+ */
+export type BusinessProcessCode =
+  | 'B1'
+  | 'S1'
+  | 'M1'
+  | 'B2'
+  | 'S2'
+  | 'M2'
+  | 'B4'
+  | 'S4'
+  | 'M4'
+  | 'S5'
+  | 'S6'
+  | 'B7'
+  | 'S7';
+
+/** Libellés des cadres de facturation autorisés (BR-FR-08). */
+export const BUSINESS_PROCESS_CODES: Readonly<Record<BusinessProcessCode, string>> = {
+  B1: "Dépôt d'une facture de bien",
+  S1: "Dépôt d'une facture de prestation de service",
+  M1: "Dépôt d'une facture double (biens et services non accessoires l'un de l'autre)",
+  B2: "Dépôt d'une facture de bien déjà payée",
+  S2: "Dépôt d'une facture de prestation de service déjà payée",
+  M2: "Dépôt d'une facture double déjà payée",
+  B4: "Dépôt d'une facture définitive (après acompte) de bien",
+  S4: "Dépôt d'une facture définitive (après acompte) de service",
+  M4: "Dépôt d'une facture définitive (après acompte) double",
+  S5: "Dépôt par un sous-traitant d'une facture de prestation de service",
+  S6: "Dépôt par un cotraitant d'une facture de prestation de service",
+  B7: "Dépôt d'une facture de bien ayant fait l'objet d'un e-reporting (TVA déjà collectée)",
+  S7: "Dépôt d'une facture de prestation de service ayant fait l'objet d'un e-reporting (TVA déjà collectée)",
+};
+
+export function isBusinessProcessCode(value: string | undefined): value is BusinessProcessCode {
+  return value !== undefined && Object.hasOwn(BUSINESS_PROCESS_CODES, value);
+}
+
+/** Cadre de facturation par défaut d'une nature d'opération : dépôt d'une facture par le fournisseur. */
+export const BUSINESS_PROCESS_BY_CATEGORY: Readonly<
+  Record<OperationCategory, BusinessProcessCode>
+> = {
   goods: 'B1',
   services: 'S1',
   mixed: 'M1',
 };
+
+/** BR-FR-15 — Catégories de TVA acceptées en France (L et M ne sont pas pertinentes). */
+export const FRENCH_TAX_CATEGORY_CODES: readonly TaxCategoryCode[] = [
+  'S',
+  'E',
+  'AE',
+  'K',
+  'G',
+  'O',
+  'Z',
+];
+
+/** BR-FR-16 — Taux de TVA autorisés, en points de base (2000 = 20 %). */
+export const FRENCH_VAT_RATES_BPS: readonly number[] = [
+  0, 90, 105, 175, 210, 550, 700, 850, 920, 960, 1000, 1300, 1960, 2000, 2060,
+];
+
+/** BR-FR-05 — Codes de notes obligatoires : PMD pénalités de retard, PMT indemnité forfaitaire, AAB escompte. */
+export const LEGAL_NOTE_CODES = ['PMD', 'PMT', 'AAB'] as const;
+export type LegalNoteCode = (typeof LEGAL_NOTE_CODES)[number];
 
 /** Nature d'opération déduite d'un cadre de facturation BT-23 (`B*`, `S*`, `M*`), sinon `undefined`. */
 export function operationCategoryFromBusinessProcess(
@@ -160,5 +222,26 @@ export type ElectronicAddressScheme =
   | 'EM' // e-mail
   | (string & {});
 
-/** BT-21 — Code de sujet de note (UNTDID 4451). Ex. : `AAI` info générale, `PMT` paiement, `REG` info réglementaire. */
-export type NoteSubjectCode = 'AAI' | 'PMT' | 'REG' | 'ABL' | 'SUR' | 'TXD' | 'ADU' | (string & {});
+/**
+ * BT-21 — Code de sujet de note (UNTDID 4451). Règles FR (BR-FR-05/06/07) :
+ * `PMD` pénalités de retard, `PMT` indemnité forfaitaire de 40 €, `AAB` escompte (chacun une seule fois) ;
+ * `TXD` mention TVA (une seule fois) ; `ABL` information légale (RCS, capital…), `AAI` information générale,
+ * `SUR` remarques fournisseur, `ACC` clause de subrogation (affacturage), `CUS` information douanière,
+ * `BLU` éco-participation, `BAR` type de traitement attendu, `DCL` mandat de facturation, `REG` réglementaire.
+ */
+export type NoteSubjectCode =
+  | 'PMD'
+  | 'PMT'
+  | 'AAB'
+  | 'TXD'
+  | 'ABL'
+  | 'AAI'
+  | 'SUR'
+  | 'ACC'
+  | 'CUS'
+  | 'BLU'
+  | 'BAR'
+  | 'DCL'
+  | 'REG'
+  | 'ADU'
+  | (string & {});

@@ -2,6 +2,7 @@ import type { Cents } from '../money.js';
 import type { Address } from './address.js';
 import type { DocumentAllowance, DocumentCharge } from './allowance.js';
 import type {
+  BusinessProcessCode,
   CurrencyCode,
   InvoiceTypeCode,
   IsoDate,
@@ -93,9 +94,19 @@ export interface Invoice {
    * (`B1` / `S1` / `M1`) sauf `businessProcessId` explicite.
    */
   operationCategory?: OperationCategory;
+  /**
+   * BT-23 — Cadre de facturation (BR-FR-08) : `B1`/`S1`/`M1` dépôt d'une facture, `*2` déjà payée,
+   * `*4` définitive après acompte, `S5`/`S6` sous-/cotraitance, `*7` déjà e-reportée.
+   * Par défaut, déduit de `operationCategory` ; s'il est fourni, sa première lettre doit lui correspondre.
+   */
+  businessProcess?: BusinessProcessCode;
   /** BT-10 — Référence acheteur (ex. code service Chorus Pro). Règle FR : obligatoire vers le secteur public. */
   buyerReference?: string;
-  /** BG-1 — Notes. Règle FR : y placer les mentions légales libres (ex. membre d'un centre de gestion agréé). */
+  /**
+   * BG-1 — Notes. Règle FR (BR-FR-05/06) : toute facture porte exactement une note `PMD` (pénalités de retard),
+   * une `PMT` (indemnité forfaitaire de 40 €) et une `AAB` (escompte ou absence d'escompte) ; le SDK les génère
+   * depuis `paymentTerms` si elles ne sont pas fournies ici. Autres mentions : `ABL` (forme juridique, RCS), `AAI`…
+   */
   notes?: InvoiceNote[];
   /** BG-4 — Vendeur. */
   seller: Party;

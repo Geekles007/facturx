@@ -2,6 +2,22 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Avant 1.0.0, une version mineure peut contenir des changements d'API.
 
+## [0.2.0] — 2026-09-11
+
+Conformité aux règles françaises de la norme **AFNOR XP Z12-012** (celle qu'appliquent les plateformes agréées). Changements d'API : codes d'anomalie renommés, notes légales générées dans le XML.
+
+### Ajouté
+- `businessProcess` (BT-23) : les 13 cadres de facturation de BR-FR-08 (`B1`…`S7`), validés et cohérents avec `operationCategory` ; `BUSINESS_PROCESS_CODES` avec libellés.
+- Notes légales BR-FR-05/06 : `PMD` (pénalités), `PMT` (indemnité de 40 €), `AAB` (escompte) générées depuis `paymentTerms` dans les notes BG-1 (`resolveNotes`, `buildLegalNotes`) ; validation « une fois chacune » ; relecture en champs structurés (`parseLegalNotes`).
+- Règles BR-FR-01/02 (numéro de facture), BR-FR-03 (années 2000–2099), BR-FR-15 (catégories de TVA), BR-FR-16 (taux autorisés) ; constantes `FRENCH_TAX_CATEGORY_CODES`, `FRENCH_VAT_RATES_BPS`, `LEGAL_NOTE_CODES`.
+- `NoteSubjectCode` enrichi des codes BR-FR-07 (`ABL`, `AAI`, `SUR`, `ACC`, `CUS`, `BLU`, `BAR`, `DCL`, `TXD`).
+
+### Modifié
+- Codes d'anomalie : `FR-SELLER-SIREN` → `BR-FR-10`, `FR-BUYER-SIREN` → `BR-FR-11`, `FR-SELLER-SIRET` / `FR-BUYER-SIRET` → `BR-FR-09`, `FR-OPERATION-CATEGORY` → `BR-FR-08` ; mentions de paiement manquantes → `BR-FR-05` (au lieu de `FR-LATE-PENALTY`… qui ne signalent plus que des valeurs invalides).
+- Un texte BT-20 seul ne satisfait plus les mentions FR : les notes `PMD`/`PMT`/`AAB` sont exigées (générées ou fournies).
+- `fromCiiXml` relit BT-23 dans `businessProcess` et reconstitue `paymentTerms` depuis les notes au format du SDK : `fromCiiXml(toCiiXml(x))` est strictement égal à `x`.
+- Mapping BT-23 (`B1`/`S1`/`M1`) et BT-8 (`5`) **confirmés** par la norme ; `B2`/`S2`/`M2` = facture déjà payée (et non autofacturation).
+
 ## [0.1.1] — 2026-09-11
 
 ### Publication
@@ -34,5 +50,6 @@ Première version publiée : la boucle complète émission → réception pour l
 ### Documentation
 - Guide de la réforme (`docs/reforme.md`), journal des décisions (`docs/decisions.md`), trois exemples exécutés en CI (émission Node, réception Node, handler HTTP Web standard).
 
+[0.2.0]: https://github.com/Geekles007/facturx/releases/tag/v0.2.0
 [0.1.1]: https://github.com/Geekles007/facturx/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Geekles007/facturx/releases/tag/v0.1.0

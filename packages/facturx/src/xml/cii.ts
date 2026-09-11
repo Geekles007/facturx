@@ -7,7 +7,7 @@ import {
   toDecimalString,
   type UnitPrice,
 } from '../money.js';
-import { resolvePaymentTermsText } from '../payment-terms.js';
+import { resolveNotes, resolvePaymentTermsText } from '../payment-terms.js';
 import type { Address } from '../types/address.js';
 import type { DocumentAllowance, DocumentCharge } from '../types/allowance.js';
 import { BUSINESS_PROCESS_BY_CATEGORY, type IsoDate } from '../types/codes.js';
@@ -35,7 +35,7 @@ export interface ToCiiXmlOptions {
   validate?: boolean;
   /** Indenter la sortie (défaut : compact). */
   pretty?: boolean;
-  /** BT-23 — Cadre de facturation explicite (ex. `B2` autofacturation). Par défaut, déduit de `operationCategory` (`B1` / `S1` / `M1`). */
+  /** BT-23 — Valeur brute forcée (prioritaire sur `invoice.businessProcess` et sur la déduction depuis `operationCategory`). Réservé aux cas hors liste BR-FR-08. */
   businessProcessId?: string;
 }
 
@@ -340,9 +340,10 @@ export function toCiiTree(
     (pm) => pm.remittanceInformation !== undefined,
   )?.remittanceInformation;
   const totals = invoice.totals;
-  // BT-23 : cadre de facturation explicite, sinon déduit de la nature de l'opération (B1 / S1 / M1)
+  // BT-23 : option explicite, sinon cadre de facturation du modèle, sinon déduit de la nature de l'opération (B1 / S1 / M1)
   const businessProcessId =
     options.businessProcessId ??
+    invoice.businessProcess ??
     (invoice.operationCategory === undefined
       ? undefined
       : BUSINESS_PROCESS_BY_CATEGORY[invoice.operationCategory]);
@@ -360,7 +361,8 @@ export function toCiiTree(
     el('ram:ID', invoice.id),
     el('ram:TypeCode', invoice.typeCode),
     dateTime('ram:IssueDateTime', invoice.issueDate),
-    (invoice.notes ?? []).map((n) =>
+    // BG-1 : notes fournies + notes légales PMD/PMT/AAB générées depuis paymentTerms (BR-FR-05)
+    resolveNotes(invoice).map((n) =>
       el('ram:IncludedNote', el('ram:Content', n.text), text('ram:SubjectCode', n.subjectCode)),
     ),
   );

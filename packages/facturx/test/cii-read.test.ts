@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  BUSINESS_PROCESS_BY_CATEGORY,
   FacturXParseError,
   FacturXValidationError,
   fromCiiXml,
@@ -11,14 +12,14 @@ import {
 } from '../src/index.js';
 import { fullInvoice, multiRateInvoice, simpleInvoice } from './fixtures/invoices.js';
 
-/** Forme attendue après un aller-retour : les mentions FR structurées deviennent le texte BT-20. */
+/** Forme attendue après un aller-retour : identique, plus le cadre de facturation BT-23 relu. */
 function roundTripExpectation(invoice: Invoice): Invoice {
-  const text = resolvePaymentTermsText(invoice.paymentTerms);
-  const paymentTerms: Invoice['paymentTerms'] = {};
-  if (invoice.paymentTerms.dueDate !== undefined)
-    paymentTerms.dueDate = invoice.paymentTerms.dueDate;
-  if (text !== undefined) paymentTerms.text = text;
-  return { ...invoice, paymentTerms };
+  const businessProcess =
+    invoice.businessProcess ??
+    (invoice.operationCategory === undefined
+      ? undefined
+      : BUSINESS_PROCESS_BY_CATEGORY[invoice.operationCategory]);
+  return businessProcess === undefined ? invoice : { ...invoice, businessProcess };
 }
 
 describe('aller-retour toCiiXml → fromCiiXml', () => {
@@ -197,5 +198,32 @@ describe('réforme : lecture de BT-23, BT-8 et des avoirs', () => {
     const creditNote: Invoice = { ...simpleInvoice(), typeCode: '381' };
     const parsed = fromCiiXml(toCiiXml(creditNote));
     expect(parsed.typeCode).toBe('381');
+  });
+});
+
+describe('notes légales à la lecture', () => {
+  it('reconstitue les champs structurés depuis les notes au format du SDK et retire le BT-20 régénérable', () => {
+    const parsed = fromCiiXml(toCiiXml(simpleInvoice()));
+    expect(parsed.notes).toBeUndefined();
+    expect(parsed.paymentTerms).toEqual(simpleInvoice().paymentTerms);
+  });
+
+  it('conserve des notes légales étrangères telles quelles, sans champs structurés', () => {
+    const invoice = simpleInvoice();
+    invoice.paymentTerms = { dueDate: '2026-10-11', text: 'Conditions maison.' };
+    invoice.notes = [
+      { text: 'Pénalités de retard : taux BCE + 10 points.', subjectCode: 'PMD' },
+      { text: 'Indemnité forfaitaire de recouvrement : 40 euros.', subjectCode: 'PMT' },
+      { text: 'Aucun escompte.', subjectCode: 'AAB' },
+    ];
+    const parsed = fromCiiXml(toCiiXml(invoice));
+    expect(parsed.notes).toEqual(invoice.notes);
+    expect(parsed.paymentTerms).toEqual({ dueDate: '2026-10-11', text: 'Conditions maison.' });
+  });
+
+  it('lit le cadre de facturation en businessProcess', () => {
+    expect(
+      fromCiiXml(toCiiXml({ ...simpleInvoice(), businessProcess: 'S2' })).businessProcess,
+    ).toBe('S2');
   });
 });

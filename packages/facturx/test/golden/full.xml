@@ -21,6 +21,18 @@
     <ram:IncludedNote>
       <ram:Content>Merci pour votre confiance.</ram:Content>
     </ram:IncludedNote>
+    <ram:IncludedNote>
+      <ram:Content>Pénalités de retard : 10,00 % l'an, exigibles sans rappel dès le lendemain de l'échéance (art. L441-10 C. com.).</ram:Content>
+      <ram:SubjectCode>PMD</ram:SubjectCode>
+    </ram:IncludedNote>
+    <ram:IncludedNote>
+      <ram:Content>Indemnité forfaitaire pour frais de recouvrement en cas de retard de paiement : 40,00 € (art. D441-5 C. com.).</ram:Content>
+      <ram:SubjectCode>PMT</ram:SubjectCode>
+    </ram:IncludedNote>
+    <ram:IncludedNote>
+      <ram:Content>Pas d'escompte pour paiement anticipé.</ram:Content>
+      <ram:SubjectCode>AAB</ram:SubjectCode>
+    </ram:IncludedNote>
   </rsm:ExchangedDocument>
   <rsm:SupplyChainTradeTransaction>
     <ram:IncludedSupplyChainTradeLineItem>

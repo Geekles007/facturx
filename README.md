@@ -4,7 +4,7 @@
 
 SDK **TypeScript pur** — zéro dépendance native, compatible edge/serverless — pour **générer, embarquer et extraire** des factures **Factur-X** au profil **EN 16931**, avec les règles françaises intégrées.
 
-> État : **session 6 / mentions réforme** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3), guide réforme, trois exemples exécutables, et les **mentions de la réforme** : SIREN acheteur exigé (B2C via `buyer.consumer`), nature de l'opération (BT-23), option TVA sur les débits (BT-8), avoirs 381. **Publié sur npm : `facturx-sdk`.** Conformité PDF/A-3b vérifiée par veraPDF en CI. Prochaine étape : confirmation du mapping BT-23 auprès d'une plateforme agréée.
+> État : **0.2.0 / conformité AFNOR** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3 validé veraPDF), guide réforme, exemples exécutables, mentions de la réforme, et les **règles françaises de la norme AFNOR XP Z12-012** (`BR-FR-01/02/03/05/06/08/09/10/11/15/16`, BT-23 et BT-8 confirmés). **Publié sur npm : `facturx-sdk`.**
 
 ## Vision
 
@@ -145,7 +145,7 @@ const { invoice: raw, guidelineId } = parseCiiDocument(xmlString); // tout profi
 const received = await extractInvoice(pdfBytes);       // PDF → { invoice, xml, filename, conformanceLevel } | undefined
 ```
 
-Les erreurs de lecture sont typées et localisées : `FacturXParseError { code: 'MALFORMED' | 'NOT_CII' | 'MISSING' | 'FORMAT' | 'UNSUPPORTED', path }`, ex. `…/ram:IncludedSupplyChainTradeLineItem[2]/…/ram:LineTotalAmount`. Aucun `DOCTYPE` n'est accepté (pas de XXE). Une facture lue porte ses conditions de paiement en texte (`paymentTerms.text`) ; une facture rédigée avec le SDK peut utiliser les champs structurés FR, qui génèrent ce texte.
+Les mentions de paiement françaises (pénalités, indemnité de 40 €, escompte) sont écrites dans les **notes BG-1 codées `PMD` / `PMT` / `AAB`** exigées par la norme AFNOR (BR-FR-05), générées depuis les champs structurés de `paymentTerms` ; le texte BT-20 reste le libellé complet. Les erreurs de lecture sont typées et localisées : `FacturXParseError { code: 'MALFORMED' | 'NOT_CII' | 'MISSING' | 'FORMAT' | 'UNSUPPORTED', path }`, ex. `…/ram:IncludedSupplyChainTradeLineItem[2]/…/ram:LineTotalAmount`. Aucun `DOCTYPE` n'est accepté (pas de XXE). Une facture lue porte ses conditions de paiement en texte (`paymentTerms.text`) ; une facture rédigée avec le SDK peut utiliser les champs structurés FR, qui génèrent ce texte.
 
 La couche ajoutée par `embedFacturX` est **validée PDF/A-3b par veraPDF** en CI (zéro règle violée sur un PDF d'entrée sans police ; voir `test/pdfa.test.ts`). `embedFacturX` accepte `{ invoice }` (XML généré et validé) ou `{ xml }` (chaîne ou octets). Il **ne convertit pas** un PDF quelconque en PDF/A : il ajoute la pièce jointe `factur-x.xml` (`/AFRelationship /Alternative`), le tableau `/AF`, les métadonnées XMP (`pdfaid:part 3`, `pdfaid:conformance B`, schéma d'extension `fx`), aligne le dictionnaire `Info` et fixe l'identifiant `/ID`. Une pièce Factur-X déjà présente est remplacée, les autres pièces jointes sont conservées. Les erreurs sont typées : `FacturXPdfError { code: 'INVALID_PDF' | 'ENCRYPTED' | 'INVALID_XML' | 'UNSUPPORTED' }`.
 
@@ -155,7 +155,7 @@ Aucun flottant : `cents(1234)` = 12,34 €, `quantity(15000)` = 1,5, `unitPrice(
 
 ### Codes d'anomalie
 
-`BR-*` / `BR-CO-*` / `BR-S-*`… = règles EN 16931 (numérotation officielle) · `FR-*` = règles françaises · `FORMAT-*` = formats (dates, IBAN, TVA…) · `CALC-*` = cohérences arithmétiques non normées. Voir [`docs/decisions.md`](docs/decisions.md).
+`BR-*` / `BR-CO-*` / `BR-S-*`… = règles EN 16931 (numérotation officielle) · `BR-FR-*` = règles françaises de la norme AFNOR XP Z12-012 · `FR-*` = autres règles françaises (Code de commerce, CGI) · `FORMAT-*` = formats (dates, IBAN, TVA…) · `CALC-*` = cohérences arithmétiques non normées. Voir [`docs/decisions.md`](docs/decisions.md).
 
 ## Développement
 

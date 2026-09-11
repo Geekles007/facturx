@@ -6,11 +6,13 @@ import {
   type Rate,
   type UnitPrice,
 } from '../money.js';
+import { buildPaymentTermsText, parseLegalNotes } from '../payment-terms.js';
 import type { Address } from '../types/address.js';
 import type { DocumentAllowance, DocumentCharge } from '../types/allowance.js';
 import {
   type InvoiceTypeCode,
   type IsoDate,
+  isBusinessProcessCode,
   operationCategoryFromBusinessProcess,
   type TaxCategoryCode,
 } from '../types/codes.js';
@@ -559,6 +561,25 @@ export function parseCiiDocument(xml: string | Uint8Array): ParsedCiiDocument {
           legalId: textOf(child(payeeCtx, 'SpecifiedLegalOrganization'), 'ID'),
         });
 
+  // Notes BG-1 : les notes légales PMD/PMT/AAB au format du SDK redeviennent des champs structurés
+  const allNotes = children(document, 'IncludedNote').map((n) =>
+    defined<InvoiceNote>({
+      text: textOf(n, 'Content') ?? '',
+      subjectCode: textOf(n, 'SubjectCode'),
+    }),
+  );
+  const legal = parseLegalNotes(allNotes);
+  const dueDate = dateOf(terms, 'DueDateDateTime');
+  const termsText = textOf(terms, 'Description');
+  const paymentTerms = defined<PaymentTerms>({ dueDate, ...legal.terms });
+  // Le BT-20 généré par le SDK est régénéré à l'identique : on ne le conserve que s'il diffère
+  if (
+    termsText !== undefined &&
+    (legal.terms === undefined || termsText !== buildPaymentTermsText(paymentTerms))
+  ) {
+    paymentTerms.text = termsText;
+  }
+
   const invoice = defined<Invoice>({
     id: textOf(document, 'ID') ?? '',
     issueDate: dateOf(document, 'IssueDateTime') ?? ('' as IsoDate),
@@ -567,15 +588,9 @@ export function parseCiiDocument(xml: string | Uint8Array): ParsedCiiDocument {
     taxPointDate,
     vatOnDebits: vatOnDebits ? true : undefined,
     operationCategory: operationCategoryFromBusinessProcess(businessProcessId),
+    businessProcess: isBusinessProcessCode(businessProcessId) ? businessProcessId : undefined,
     buyerReference: textOf(agreement, 'BuyerReference'),
-    notes: nonEmpty(
-      children(document, 'IncludedNote').map((n) =>
-        defined<InvoiceNote>({
-          text: textOf(n, 'Content') ?? '',
-          subjectCode: textOf(n, 'SubjectCode'),
-        }),
-      ),
-    ),
+    notes: nonEmpty(legal.remaining),
     seller: party(requireChild(agreement, 'SellerTradeParty'), 'seller'),
     buyer: party(requireChild(agreement, 'BuyerTradeParty'), 'buyer'),
     payee,
@@ -585,10 +600,7 @@ export function parseCiiDocument(xml: string | Uint8Array): ParsedCiiDocument {
     ...documentAllowancesCharges(settlement),
     taxBreakdown: taxes.map(taxBreakdown),
     totals,
-    paymentTerms: defined<PaymentTerms>({
-      dueDate: dateOf(terms, 'DueDateDateTime'),
-      text: textOf(terms, 'Description'),
-    }),
+    paymentTerms,
     paymentMeans: nonEmpty(means),
   });
 

@@ -3,7 +3,8 @@ import type { Invoice } from '../types/invoice.js';
 /**
  * Codes d'anomalie.
  * - `BR-*`, `BR-CO-*`, `BR-CL-*`, `BR-S-*`… : règles EN 16931 (numérotation officielle).
- * - `FR-*`     : règles françaises (Code de commerce, CGI), appliquées si le vendeur est établi en France.
+ * - `BR-FR-*`  : règles françaises de la norme AFNOR XP Z12-012 (appliquées si le vendeur est établi en France).
+ * - `FR-*`     : autres règles françaises (Code de commerce, CGI), sans identifiant AFNOR.
  * - `FORMAT-*` : formats syntaxiques (dates, IBAN, montants entiers…).
  * - `CALC-*`   : cohérences arithmétiques non couvertes par un BR officiel (montant net de ligne).
  */
@@ -75,12 +76,20 @@ export type IssueCode =
   // base imposable (-08), montant TVA (-09), motif d'exonération (-10)
   | `BR-${TaxRuleFamily}-${'01' | '05' | '06' | '07' | '08' | '09' | '10'}`
   // Règles françaises
-  | 'FR-SELLER-SIREN'
-  | 'FR-SELLER-SIRET'
-  | 'FR-BUYER-SIREN'
-  | 'FR-BUYER-SIRET'
+  // Règles françaises officielles (AFNOR XP Z12-012)
+  | 'BR-FR-01'
+  | 'BR-FR-02'
+  | 'BR-FR-03'
+  | 'BR-FR-05'
+  | 'BR-FR-06'
+  | 'BR-FR-08'
+  | 'BR-FR-09'
+  | 'BR-FR-10'
+  | 'BR-FR-11'
+  | 'BR-FR-15'
+  | 'BR-FR-16'
+  // Règles françaises sans identifiant AFNOR (Code de commerce, CGI)
   | 'FR-VAT-ID'
-  | 'FR-OPERATION-CATEGORY'
   | 'FR-DELIVERY'
   | 'FR-LATE-PENALTY'
   | 'FR-RECOVERY-INDEMNITY'

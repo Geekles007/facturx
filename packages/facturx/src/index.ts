@@ -12,8 +12,13 @@ export {
 } from './compute.js';
 export * from './money.js';
 export {
+  buildLegalNotes,
   buildPaymentTermsText,
+  canBuildLegalNotes,
   hasStructuredTerms,
+  type ParsedLegalNotes,
+  parseLegalNotes,
+  resolveNotes,
   resolvePaymentTermsText,
 } from './payment-terms.js';
 export * from './types/index.js';

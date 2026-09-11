@@ -8,6 +8,7 @@ import {
   type Invoice,
   type Issue,
   percent,
+  resolveNotes,
   validateInvoice,
 } from '../src/index.js';
 import {
@@ -157,7 +158,7 @@ describe('totaux incohérents — jamais corrigés en silence', () => {
     const err = caught as FacturXValidationError;
     expect(err.issues.length).toBeGreaterThanOrEqual(2);
     expect(err.message).toContain('[BR-CO-15] totals.taxInclusiveAmount');
-    expect(err.message).toContain('[FR-SELLER-SIREN] seller.siren');
+    expect(err.message).toContain('[BR-FR-10] seller.siren');
   });
 });
 
@@ -168,7 +169,7 @@ describe('identifiants français', () => {
     invoice.seller = { ...rest, siren: '123456789' };
     expect(issuesOf(invoice)).toContainEqual(
       expect.objectContaining({
-        code: 'FR-SELLER-SIREN',
+        code: 'BR-FR-10',
         path: 'seller.siren',
         actual: '123456789',
       }),
@@ -179,7 +180,7 @@ describe('identifiants français', () => {
     const invoice = simpleInvoice();
     const { siren: _siren, siret: _siret, ...sellerWithoutSiren } = invoice.seller;
     invoice.seller = sellerWithoutSiren;
-    expect(codesAndPaths(invoice)).toContain('FR-SELLER-SIREN @ seller.siren');
+    expect(codesAndPaths(invoice)).toContain('BR-FR-10 @ seller.siren');
   });
 
   it('n’applique pas les règles FR à un vendeur étranger', () => {
@@ -197,7 +198,7 @@ describe('identifiants français', () => {
     const invoice = simpleInvoice();
     invoice.seller = { ...invoice.seller, siret: '73282932010008', vatId: 'FR44732829320' };
     const codes = codesAndPaths(invoice);
-    expect(codes).toContain('FR-SELLER-SIRET @ seller.siret');
+    expect(codes).toContain('BR-FR-09 @ seller.siret');
     expect(codes).toContain('FR-VAT-ID @ seller.vatId');
   });
 
@@ -326,38 +327,110 @@ describe('texte des conditions de paiement (BT-20)', () => {
   });
 });
 
-describe('conditions de paiement : texte OU champs structurés', () => {
-  it('accepte un texte BT-20 seul (facture importée)', () => {
+describe('conditions de paiement : notes légales BR-FR-05/06', () => {
+  it('génère PMD, PMT et AAB depuis les champs structurés', () => {
+    const notes = resolveNotes(simpleInvoice());
+    expect(notes.map((n) => n.subjectCode)).toEqual(['PMD', 'PMT', 'AAB']);
+    expect(notes[0]?.text).toContain("Pénalités de retard : 10,00 % l'an");
+    expect(notes[1]?.text).toContain('40,00 €');
+    expect(notes[2]?.text).toBe("Pas d'escompte pour paiement anticipé.");
+    expect(validateInvoice(simpleInvoice()).ok).toBe(true);
+  });
+
+  it('un texte BT-20 seul ne suffit plus : les trois notes sont exigées (facture importée sans notes)', () => {
     const invoice = simpleInvoice();
     invoice.paymentTerms = {
       dueDate: '2026-10-11',
-      text: 'Pénalités de retard : 10 %. Indemnité : 40 €. Pas d’escompte.',
+      text: 'Pénalités : 10 %. Indemnité : 40 €. Pas d’escompte.',
     };
+    const codes = codesAndPaths(invoice);
+    expect(codes.filter((c) => c === 'BR-FR-05 @ notes')).toHaveLength(3);
+    invoice.notes = [
+      { text: 'Pénalités de retard : 10 % l’an.', subjectCode: 'PMD' },
+      { text: 'Indemnité forfaitaire de 40 €.', subjectCode: 'PMT' },
+      { text: 'Pas d’escompte.', subjectCode: 'AAB' },
+    ];
     expect(validateInvoice(invoice).ok).toBe(true);
   });
 
-  it('exige les champs structurés sans texte', () => {
+  it('refuse une note légale en double (BR-FR-06) et ne régénère pas une note fournie', () => {
     const invoice = simpleInvoice();
-    invoice.paymentTerms = { dueDate: '2026-10-11' };
-    expect(codesAndPaths(invoice)).toEqual(
-      expect.arrayContaining([
-        'FR-LATE-PENALTY @ paymentTerms.latePenaltyRate',
-        'FR-RECOVERY-INDEMNITY @ paymentTerms.recoveryIndemnity',
-        'FR-EARLY-PAYMENT-DISCOUNT @ paymentTerms.earlyPaymentDiscount',
-      ]),
-    );
+    invoice.notes = [
+      { text: 'Mes pénalités.', subjectCode: 'PMD' },
+      { text: 'Encore.', subjectCode: 'PMD' },
+    ];
+    expect(codesAndPaths(invoice)).toContain('BR-FR-06 @ notes');
+    invoice.notes = [{ text: 'Mes pénalités.', subjectCode: 'PMD' }];
+    const notes = resolveNotes(invoice);
+    expect(notes.filter((n) => n.subjectCode === 'PMD')).toEqual([
+      { text: 'Mes pénalités.', subjectCode: 'PMD' },
+    ]);
+    expect(notes.map((n) => n.subjectCode)).toEqual(['PMD', 'PMT', 'AAB']);
   });
 
-  it('refuse un texte vide et vérifie les champs structurés même avec un texte', () => {
+  it('refuse un texte vide et vérifie les champs structurés même incomplets', () => {
     const invoice = simpleInvoice();
     invoice.paymentTerms = { text: '  ', latePenaltyRate: percent('0') };
     expect(codesAndPaths(invoice)).toEqual(
       expect.arrayContaining([
         'FR-PAYMENT-TERMS-TEXT @ paymentTerms.text',
         'FR-LATE-PENALTY @ paymentTerms.latePenaltyRate',
+        'BR-FR-05 @ notes',
       ]),
     );
     expect(() => buildPaymentTermsText({ text: 'x' })).toThrow(TypeError);
+  });
+});
+
+describe('règles AFNOR XP Z12-012 : numéro, dates, cadre, TVA', () => {
+  it('BR-FR-01 / BR-FR-02 : numéro de facture', () => {
+    const long = simpleInvoice();
+    long.id = 'F'.repeat(36);
+    expect(codesAndPaths(long)).toContain('BR-FR-01 @ id');
+    const chars = simpleInvoice();
+    chars.id = 'F 2026#1';
+    expect(codesAndPaths(chars)).toContain('BR-FR-02 @ id');
+    const ok = simpleInvoice();
+    ok.id = 'F/2026-0001_A+B';
+    expect(codesAndPaths(ok).filter((c) => c.startsWith('BR-FR-0'))).toEqual([]);
+  });
+
+  it('BR-FR-03 : années entre 2000 et 2099, sur toutes les dates', () => {
+    const invoice = simpleInvoice();
+    invoice.issueDate = '1999-12-31';
+    invoice.paymentTerms = { ...invoice.paymentTerms, dueDate: '2100-01-01' };
+    expect(codesAndPaths(invoice)).toEqual(
+      expect.arrayContaining(['BR-FR-03 @ issueDate', 'BR-FR-03 @ paymentTerms.dueDate']),
+    );
+  });
+
+  it('BR-FR-08 : cadre de facturation valide et cohérent avec la nature de l’opération', () => {
+    const paid = { ...simpleInvoice(), businessProcess: 'S2' as const };
+    expect(validateInvoice(paid).ok).toBe(true);
+    const mismatch = { ...simpleInvoice(), businessProcess: 'B1' as const };
+    expect(issuesOf(mismatch)).toContainEqual(
+      expect.objectContaining({ code: 'BR-FR-08', path: 'businessProcess', actual: 'B1' }),
+    );
+    const unknown = { ...simpleInvoice(), businessProcess: 'S9' as never };
+    expect(codesAndPaths(unknown)).toContain('BR-FR-08 @ businessProcess');
+  });
+
+  it('BR-FR-15 / BR-FR-16 : catégories et taux de TVA autorisés en France', () => {
+    const draft = simpleDraft();
+    draft.lines[0]!.tax = { category: 'L', rate: percent('7') };
+    const invoice: Invoice = { ...draft, ...computeTotals(draft) };
+    expect(codesAndPaths(invoice)).toEqual(
+      expect.arrayContaining([
+        'BR-FR-15 @ lines[0].tax.category',
+        'BR-FR-15 @ taxBreakdown[0].category',
+      ]),
+    );
+    const rate = simpleDraft();
+    rate.lines[0]!.tax = { category: 'S', rate: percent('19') };
+    const inv2: Invoice = { ...rate, ...computeTotals(rate) };
+    expect(codesAndPaths(inv2)).toEqual(
+      expect.arrayContaining(['BR-FR-16 @ lines[0].tax.rate', 'BR-FR-16 @ taxBreakdown[0].rate']),
+    );
   });
 });
 
@@ -366,29 +439,29 @@ describe('réforme : SIREN acheteur, nature de l’opération, TVA sur les débi
     const invoice = simpleInvoice();
     const { siren: _siren, vatId: _vat, ...buyerWithoutSiren } = invoice.buyer;
     invoice.buyer = buyerWithoutSiren;
-    expect(codesAndPaths(invoice)).toContain('FR-BUYER-SIREN @ buyer.siren');
+    expect(codesAndPaths(invoice)).toContain('BR-FR-11 @ buyer.siren');
   });
 
   it('n’exige pas le SIREN d’un particulier ni d’un acheteur étranger', () => {
     const consumer = simpleInvoice();
     const { siren: _s1, vatId: _v1, ...b1 } = consumer.buyer;
     consumer.buyer = { ...b1, consumer: true };
-    expect(codesAndPaths(consumer).filter((c) => c.startsWith('FR-BUYER'))).toEqual([]);
+    expect(codesAndPaths(consumer).filter((c) => c.startsWith('BR-FR-11'))).toEqual([]);
 
     const foreign = simpleInvoice();
     const { siren: _s2, vatId: _v2, ...b2 } = foreign.buyer;
     foreign.buyer = { ...b2, address: { ...b2.address, countryCode: 'DE' } };
-    expect(codesAndPaths(foreign).filter((c) => c.startsWith('FR-BUYER'))).toEqual([]);
+    expect(codesAndPaths(foreign).filter((c) => c.startsWith('BR-FR-11'))).toEqual([]);
   });
 
   it('exige la nature de l’opération et refuse une valeur inconnue', () => {
     const invoice = simpleInvoice();
     delete (invoice as { operationCategory?: unknown }).operationCategory;
-    expect(codesAndPaths(invoice)).toContain('FR-OPERATION-CATEGORY @ operationCategory');
+    expect(codesAndPaths(invoice)).toContain('BR-FR-08 @ operationCategory');
     invoice.operationCategory = 'other' as never;
     expect(issuesOf(invoice)).toContainEqual(
       expect.objectContaining({
-        code: 'FR-OPERATION-CATEGORY',
+        code: 'BR-FR-08',
         path: 'operationCategory',
         actual: 'other',
       }),
