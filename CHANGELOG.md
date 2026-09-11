@@ -2,6 +2,12 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Avant 1.0.0, une version mineure peut contenir des changements d'API.
 
+## [0.4.0] — 2026-09-11
+
+### Ajouté
+- `withDeposits(draft, deposits)` : lie une facture définitive à ses factures d'acompte (type 386) — cadre `B4`/`S4`/`M4`, références BT-25/26 dédoublonnées, `prepaidAmount` = Σ TTC à passer à `computeTotals` ; `DepositError` typée.
+- Exemple `examples/deposit-node` (deux acomptes puis définitive, relecture, erreur si l'on oublie de lier) ; section « Acomptes » du guide réforme ; golden file `deposit-final.xml` validé XSD.
+
 ## [0.3.0] — 2026-09-11
 
 ### Ajouté
@@ -60,6 +66,7 @@ Première version publiée : la boucle complète émission → réception pour l
 ### Documentation
 - Guide de la réforme (`docs/reforme.md`), journal des décisions (`docs/decisions.md`), trois exemples exécutés en CI (émission Node, réception Node, handler HTTP Web standard).
 
+[0.4.0]: https://github.com/Geekles007/facturx/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Geekles007/facturx/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Geekles007/facturx/releases/tag/v0.2.0
 [0.1.1]: https://github.com/Geekles007/facturx/releases/tag/v0.1.1

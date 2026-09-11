@@ -10,6 +10,13 @@ export {
   computeLineNetAmount,
   computeTotals,
 } from './compute.js';
+export {
+  DepositError,
+  type DepositErrorCode,
+  FINAL_AFTER_DEPOSIT_BY_CATEGORY,
+  type WithDepositsResult,
+  withDeposits,
+} from './deposit.js';
 export * from './money.js';
 export {
   buildLegalNotes,

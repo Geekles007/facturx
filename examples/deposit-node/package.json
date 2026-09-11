@@ -1,0 +1,19 @@
+{
+  "name": "example-deposit-node",
+  "private": true,
+  "type": "module",
+  "description": "Acomptes → facture définitive : deux factures d'acompte (386) puis la facture définitive (cadre S4) qui les référence et les déduit.",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "check": "tsc --noEmit -p tsconfig.json && tsx src/index.ts"
+  },
+  "dependencies": {
+    "facturx-sdk": "workspace:*",
+    "pdf-lib": "^1.17.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.3"
+  }
+}

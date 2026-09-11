@@ -152,3 +152,8 @@ La norme dit la règle « non contrôlable applicativement » : une plateforme n
 
 ### D43. BR-FR-04 : neuf types de document, les codes « en attente » refusés
 `typeCode` accepte les codes de BR-FR-04 déjà présents dans la liste EN 16931 (380, 384, 386, 389, 393, 381, 261, 262, 396), avec libellés et helpers `isCreditNoteType` / `isSelfBilledType`. Les sept codes marqués « en attente de l'intégration par la maintenance EN 16931 » (500, 501, 471–473, 502, 503) restent refusés : un validateur EN 16931 standard les rejette aujourd'hui, et l'API pourra les ajouter sans rupture. Aucune règle spécifique par type n'est ajoutée (la norme n'en définit pas ici), sauf un garde-fou maison : une facture définitive après acompte (cadre `*4`) doit référencer ses acomptes (`FR-DEPOSIT-REFERENCE`). Nouvelles règles pouvant refuser des factures hier valides → version 0.3.0.
+
+## 2026-09-11 — Session 12 : acomptes
+
+### D44. `withDeposits` : le lien acompte → définitive est une fonction, pas une convention
+Le cas d'usage repose sur trois données dispersées (cadre `*4`, références BT-25/26, BT-113) que chaque intégrateur aurait dû assembler à la main — et la validation ne peut vérifier que la cohérence interne d'une facture, pas que le montant déduit correspond aux acomptes réellement émis. `withDeposits(draft, deposits)` prend les factures d'acompte typées, pose le cadre déduit de la nature de l'opération, complète les références sans doublon et calcule `prepaidAmount` = Σ TTC ; l'appelant garde la main sur `computeTotals`. Refus typés (`DepositError`) : pas d'acompte, type ≠ 386, devise différente, nature d'opération absente. Ajout d'API → 0.4.0.

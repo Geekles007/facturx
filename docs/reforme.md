@@ -89,6 +89,22 @@ Chaque facture suit un cycle de statuts échangés entre plateformes : *déposé
 - [ ] Mon générateur de PDF produit du PDF/A (polices embarquées, pas de chiffrement), puis `embedFacturX` — [handler HTTP](../examples/http-handler).
 - [ ] J'envoie le fichier à la PA et je stocke l'identifiant retourné.
 
+## Acomptes
+
+Cas d'usage fréquent (XP Z12-014) : un ou plusieurs **acomptes** puis une **facture définitive**.
+
+- Chaque acompte est une facture à part entière, `typeCode: '386'`, avec sa ligne (« Acompte 30 % sur … ») et sa TVA — exigible au versement, pour les biens comme pour les services.
+- La facture définitive reprend les **lignes complètes**, porte le cadre **`B4` / `S4` / `M4`** (définitive après acompte), **référence** chaque acompte (BT-25/26) et **déduit** leur TTC via BT-113 : `net à payer = TTC − acomptes` (BR-CO-16).
+
+```ts
+import { computeTotals, withDeposits } from 'facturx-sdk';
+
+const { draft, prepaidAmount } = withDeposits(finalDraft, [deposit1, deposit2]); // cadre *4 + références
+const finalInvoice = { ...draft, ...computeTotals(draft, { prepaidAmount }) };   // BT-113 et net à payer
+```
+
+`withDeposits` refuse un acompte qui n'est pas de type 386 ou dans une autre devise ; la validation refuse une définitive `*4` sans référence (`FR-DEPOSIT-REFERENCE`) et un net à payer qui n'a pas déduit les acomptes (BR-CO-16). Exemple complet : [examples/deposit-node](../examples/deposit-node).
+
 ## Conformité AFNOR XP Z12-012 : ce qui est vérifié
 
 La norme **AFNOR XP Z12-012** (formats et profils du socle, juillet 2025) fixe les règles françaises `BR-FR-xx` que les plateformes agréées appliquent. Le SDK en implémente le noyau applicable à une facture EN 16931, avec les identifiants officiels comme codes d'anomalie :
