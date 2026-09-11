@@ -89,6 +89,10 @@ Chaque facture suit un cycle de statuts échangés entre plateformes : *déposé
 - [ ] Mon générateur de PDF produit du PDF/A (polices embarquées, pas de chiffrement), puis `embedFacturX` — [handler HTTP](../examples/http-handler).
 - [ ] J'envoie le fichier à la PA et je stocke l'identifiant retourné.
 
+## Adresses électroniques et routage
+
+Pour qu'une plateforme agréée route la facture, l'acheteur porte une **adresse électronique** (BT-49) au schéma **0225** : `SIREN` ou `SIREN_XXX` (`electronicAddress0225(siren, suffixe)`), et éventuellement un **code de routage** (BT-46, schéma 0224, `routingCode`) désignant un service. Le champ `processing` (note `BAR`, BR-FR-20) dit à la plateforme quel traitement attendre ; en `B2B` (e-invoicing), le SDK exige l'adresse 0225 du destinataire et vérifie qu'elle commence par son SIREN (BR-FR-21/22) — en autofacturation, c'est celle du vendeur. Hors e-invoicing, tout schéma EAS est accepté, e-mail compris (`EM`).
+
 ## Acomptes
 
 Cas d'usage fréquent (XP Z12-014) : un ou plusieurs **acomptes** puis une **facture définitive**.
@@ -118,11 +122,15 @@ La norme **AFNOR XP Z12-012** (formats et profils du socle, juillet 2025) fixe l
 | BR-FR-08 | cadre de facturation BT-23 ∈ {B1, S1, M1, B2, S2, M2, B4, S4, M4, S5, S6, B7, S7}, cohérent avec la nature de l'opération | `operationCategory`, `businessProcess` |
 | BR-FR-09 | SIRET cohérent avec le SIREN | `siret` / `siren` |
 | BR-FR-10 / 11 | SIREN vendeur obligatoire ; SIREN acheteur obligatoire (e-invoicing) | `seller.siren`, `buyer.siren` (`buyer.consumer` pour le B2C) |
+| BR-FR-12 / 13 / 21 / 22 | en e-invoicing (`processing: 'B2B'`), adresse électronique 0225 obligatoire pour l'acheteur (ou le vendeur en autofacturation), commençant par son SIREN | `electronicAddress`, `processing` |
 | BR-FR-14 | adresse de livraison fournie ⇒ BT-75/77/78/80 présents ; jamais pour une prestation de services | `delivery.address` |
 | BR-FR-15 / 16 | catégories de TVA S, E, AE, K, G, O, Z ; taux dans la liste française | `tax.category`, `tax.rate` |
+| BR-FR-20 | traitement attendu (note `BAR` : B2B, B2BINT, B2C, OUTOFSCOPE, ARCHIVEONLY) | `processing` |
+| BR-FR-23 / 25 | adresse 0225 : `A-Z a-z 0-9 - _ .` ; toute adresse ≤ 125 caractères | `electronicAddress` |
+| BR-FR-24 / 26 | code de routage 0224 : mêmes caractères, ≤ 100 | `routingCode` |
 | BR-FR-MAP-03 | TVA sur les débits : BT-8 = 5 en CII | `vatOnDebits` |
 
-Non implémentées (hors périmètre ou nécessitant l'annuaire) : BR-FR-07 (codes de notes libres — disponibles dans `NoteSubjectCode`), BR-FR-10/11 « présent et actif dans l'annuaire », BR-FR-12/13 (adresses électroniques), BR-FR-17/18 (pièces jointes), BR-FR-20 à 26 (note `BAR`, codes de routage). Règle maison en complément : `FR-DEPOSIT-REFERENCE` — une facture définitive après acompte (cadre `*4`) doit référencer ses factures d'acompte (BT-25).
+Non implémentées (hors périmètre ou nécessitant l'annuaire) : BR-FR-07 (codes de notes libres — disponibles dans `NoteSubjectCode`), BR-FR-10/11 « présent et actif dans l'annuaire » (vérification en ligne, rôle de la PA), BR-FR-17/18 (pièces jointes). Règle maison en complément : `FR-DEPOSIT-REFERENCE` — une facture définitive après acompte (cadre `*4`) doit référencer ses factures d'acompte (BT-25).
 
 ## Écarts du modèle : couverts
 

@@ -4,7 +4,7 @@
 
 SDK **TypeScript pur** — zéro dépendance native, compatible edge/serverless — pour **générer, embarquer et extraire** des factures **Factur-X** au profil **EN 16931**, avec les règles françaises intégrées.
 
-> État : **0.4.0 / conformité AFNOR** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3 validé veraPDF), guide réforme, exemples exécutables, mentions de la réforme, et les **règles françaises de la norme AFNOR XP Z12-012** (`BR-FR-01/02/03/04/05/06/08/09/10/11/14/15/16`, BT-23 et BT-8 confirmés). **Publié sur npm : `facturx-sdk`.**
+> État : **0.5.0 / conformité AFNOR** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3 validé veraPDF), guide réforme, exemples exécutables, mentions de la réforme, et les **règles françaises de la norme AFNOR XP Z12-012** (`BR-FR-01` à `16` hors 07, `20` à `26`, BT-23 et BT-8 confirmés). **Publié sur npm : `facturx-sdk`.**
 
 ## Vision
 

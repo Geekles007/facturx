@@ -18,7 +18,7 @@ export const seller = (): Party => ({
     countryCode: 'FR',
   },
   contact: { email: 'facturation@exemple.fr' },
-  electronicAddress: { value: SELLER_SIRET, scheme: '0225' },
+  electronicAddress: { value: SELLER_SIREN, scheme: '0225' },
 });
 
 export const buyer = (): Party => ({

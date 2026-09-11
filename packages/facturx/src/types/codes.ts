@@ -111,6 +111,23 @@ export const FRENCH_VAT_RATES_BPS: readonly number[] = [
   0, 90, 105, 175, 210, 550, 700, 850, 920, 960, 1000, 1300, 1960, 2000, 2060,
 ];
 
+/**
+ * BR-FR-20 — Traitement attendu de la facture, porté par une note `BAR` (BT-21/BT-22) :
+ * `B2B` e-invoicing, `B2BINT` e-reporting des ventes B2B internationales, `B2C` e-reporting B2C,
+ * `OUTOFSCOPE` hors réforme, `ARCHIVEONLY` avoir interne d'annulation (pas de transmission).
+ */
+export type ProcessingCode = 'B2B' | 'B2BINT' | 'B2C' | 'OUTOFSCOPE' | 'ARCHIVEONLY';
+export const PROCESSING_CODES: Readonly<Record<ProcessingCode, string>> = {
+  B2B: 'Relève du e-invoicing',
+  B2BINT: 'Relève du e-reporting des ventes B2B internationales',
+  B2C: 'Relève du e-reporting des ventes B2C',
+  OUTOFSCOPE: 'Hors réforme',
+  ARCHIVEONLY: "Avoir interne d'annulation, à ne pas transmettre",
+};
+export function isProcessingCode(value: string | undefined): value is ProcessingCode {
+  return value !== undefined && Object.hasOwn(PROCESSING_CODES, value);
+}
+
 /** BR-FR-05 — Codes de notes obligatoires : PMD pénalités de retard, PMT indemnité forfaitaire, AAB escompte. */
 export const LEGAL_NOTE_CODES = ['PMD', 'PMT', 'AAB'] as const;
 export type LegalNoteCode = (typeof LEGAL_NOTE_CODES)[number];

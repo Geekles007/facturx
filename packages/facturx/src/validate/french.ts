@@ -1,9 +1,17 @@
+import {
+  ELECTRONIC_ADDRESS_MAX_LENGTH,
+  isValidEmailAddress,
+  ROUTING_CHARS,
+  ROUTING_CODE_MAX_LENGTH,
+} from '../electronic-address.js';
 import { resolveNotes } from '../payment-terms.js';
 import {
   BUSINESS_PROCESS_CODES,
   FRENCH_TAX_CATEGORY_CODES,
   FRENCH_VAT_RATES_BPS,
   isBusinessProcessCode,
+  isProcessingCode,
+  isSelfBilledType,
   LEGAL_NOTE_CODES,
   OPERATION_CATEGORIES,
   operationCategoryFromBusinessProcess,
@@ -215,6 +223,111 @@ export function checkFrenchRules(inv: Invoice, c: IssueCollector): void {
         'La première lettre du cadre de facturation (B biens, S services, M mixte) doit correspondre à la nature de l’opération.',
         { expected: inv.operationCategory, actual: inv.businessProcess },
       );
+    }
+  }
+
+  // BR-FR-23 à BR-FR-26 : formats des adresses électroniques et codes de routage
+  for (const [path, party] of [
+    ['seller', inv.seller],
+    ['buyer', inv.buyer],
+  ] as const) {
+    const ea = party?.electronicAddress;
+    if (ea) {
+      if (ea.value.length > ELECTRONIC_ADDRESS_MAX_LENGTH) {
+        c.add(
+          'BR-FR-25',
+          `${path}.electronicAddress.value`,
+          `Une adresse électronique ne doit pas dépasser ${ELECTRONIC_ADDRESS_MAX_LENGTH} caractères.`,
+          {
+            actual: ea.value.length,
+          },
+        );
+      }
+      if (ea.scheme === '0225' && !ROUTING_CHARS.test(ea.value)) {
+        c.add(
+          'BR-FR-23',
+          `${path}.electronicAddress.value`,
+          'Une adresse électronique 0225 n’admet que A-Z, a-z, 0-9 et les caractères - _ .',
+          {
+            actual: ea.value,
+          },
+        );
+      }
+      if (ea.scheme === 'EM' && !isValidEmailAddress(ea.value)) {
+        c.add(
+          'FORMAT-EMAIL',
+          `${path}.electronicAddress.value`,
+          'Adresse e-mail attendue pour le schéma EM.',
+          { actual: ea.value },
+        );
+      }
+    }
+    const rc = party?.routingCode;
+    if (rc !== undefined) {
+      if (!ROUTING_CHARS.test(rc)) {
+        c.add(
+          'BR-FR-24',
+          `${path}.routingCode`,
+          'Un code de routage (0224) n’admet que A-Z, a-z, 0-9 et les caractères - _ .',
+          { actual: rc },
+        );
+      }
+      if (rc.length > ROUTING_CODE_MAX_LENGTH) {
+        c.add(
+          'BR-FR-26',
+          `${path}.routingCode`,
+          `Un code de routage (0224) ne doit pas dépasser ${ROUTING_CODE_MAX_LENGTH} caractères.`,
+          { actual: rc.length },
+        );
+      }
+    }
+  }
+
+  // BR-FR-20 / 21 / 22 / 12 / 13 : traitement attendu et adresse électronique 0225 du destinataire
+  if (inv.processing !== undefined) {
+    if (!isProcessingCode(inv.processing)) {
+      c.add(
+        'BR-FR-20',
+        'processing',
+        'Traitement attendu inconnu (B2B, B2BINT, B2C, OUTOFSCOPE, ARCHIVEONLY).',
+        { actual: inv.processing },
+      );
+    } else if (inv.processing === 'B2B') {
+      const selfBilled = isSelfBilledType(inv.typeCode);
+      const [path, party, rule, requiredRule] = selfBilled
+        ? (['seller', inv.seller, 'BR-FR-22', 'BR-FR-13'] as const)
+        : (['buyer', inv.buyer, 'BR-FR-21', 'BR-FR-12'] as const);
+      const ea = party?.electronicAddress;
+      if (!ea) {
+        c.add(
+          requiredRule,
+          `${path}.electronicAddress`,
+          `En e-invoicing, l’adresse électronique ${selfBilled ? 'du vendeur (BT-34)' : 'de l’acheteur (BT-49)'} est obligatoire (schéma 0225, forme SIREN ou SIREN_XXX).`,
+        );
+      } else {
+        if (ea.scheme !== '0225') {
+          c.add(
+            rule,
+            `${path}.electronicAddress.scheme`,
+            'En e-invoicing, l’adresse électronique du destinataire doit utiliser le schéma 0225.',
+            {
+              expected: '0225',
+              actual: ea.scheme,
+            },
+          );
+        }
+        if (isNonEmptyString(party?.siren) && !ea.value.startsWith(party.siren)) {
+          c.add(
+            rule,
+            `${path}.electronicAddress.value`,
+            'L’adresse électronique 0225 doit commencer par le SIREN de la partie.',
+            {
+              expected: `${party.siren}…`,
+              actual: ea.value,
+            },
+          );
+        }
+      }
     }
   }
 

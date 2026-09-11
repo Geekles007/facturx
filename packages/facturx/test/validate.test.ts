@@ -4,6 +4,7 @@ import {
   buildPaymentTermsText,
   cents,
   computeTotals,
+  electronicAddress0225,
   FacturXValidationError,
   INVOICE_TYPE_CODES,
   type Invoice,
@@ -538,5 +539,84 @@ describe('BR-FR-04 types de document et BR-FR-14 adresse de livraison', () => {
     expect(codesAndPaths(invoice)).toContain('FR-DEPOSIT-REFERENCE @ references.precedingInvoices');
     invoice.references = { precedingInvoices: [{ id: 'AC-2026-0001', issueDate: '2026-08-01' }] };
     expect(validateInvoice(invoice).ok).toBe(true);
+  });
+});
+
+describe('adresses électroniques et traitement attendu (BR-FR-12/13/20–26)', () => {
+  it('electronicAddress0225 produit SIREN ou SIREN_XXX', () => {
+    expect(electronicAddress0225('443061841')).toEqual({ value: '443061841', scheme: '0225' });
+    expect(electronicAddress0225('443061841', 'COMPTA')).toEqual({
+      value: '443061841_COMPTA',
+      scheme: '0225',
+    });
+  });
+
+  it('BR-FR-23/25 et BR-FR-24/26 : caractères et longueurs', () => {
+    const invoice = simpleInvoice();
+    invoice.seller = {
+      ...invoice.seller,
+      electronicAddress: { value: '443061841 COMPTA', scheme: '0225' },
+      routingCode: 'A/B',
+    };
+    invoice.buyer = {
+      ...invoice.buyer,
+      electronicAddress: { value: 'x'.repeat(126), scheme: '0088' },
+      routingCode: 'r'.repeat(101),
+    };
+    expect(codesAndPaths(invoice)).toEqual(
+      expect.arrayContaining([
+        'BR-FR-23 @ seller.electronicAddress.value',
+        'BR-FR-24 @ seller.routingCode',
+        'BR-FR-25 @ buyer.electronicAddress.value',
+        'BR-FR-26 @ buyer.routingCode',
+      ]),
+    );
+  });
+
+  it('schéma EM : format e-mail', () => {
+    const invoice = simpleInvoice();
+    invoice.buyer = { ...invoice.buyer, electronicAddress: { value: 'pas-un-mail', scheme: 'EM' } };
+    expect(codesAndPaths(invoice)).toContain('FORMAT-EMAIL @ buyer.electronicAddress.value');
+    invoice.buyer = {
+      ...invoice.buyer,
+      electronicAddress: { value: 'compta@client.fr', scheme: 'EM' },
+    };
+    expect(validateInvoice(invoice).ok).toBe(true);
+  });
+
+  it('B2B : l’adresse 0225 de l’acheteur est obligatoire et commence par son SIREN (BR-FR-12/21)', () => {
+    const invoice = { ...simpleInvoice(), processing: 'B2B' as const };
+    expect(codesAndPaths(invoice)).toContain('BR-FR-12 @ buyer.electronicAddress');
+    invoice.buyer = { ...invoice.buyer, electronicAddress: { value: '443061841', scheme: '0225' } };
+    expect(codesAndPaths(invoice)).toContain('BR-FR-21 @ buyer.electronicAddress.value');
+    invoice.buyer = { ...invoice.buyer, electronicAddress: { value: '732829320', scheme: '0009' } };
+    expect(codesAndPaths(invoice)).toContain('BR-FR-21 @ buyer.electronicAddress.scheme');
+    invoice.buyer = {
+      ...invoice.buyer,
+      electronicAddress: electronicAddress0225('732829320', 'COMPTA'),
+    };
+    expect(validateInvoice(invoice).ok).toBe(true);
+    const siret = {
+      ...invoice,
+      buyer: { ...invoice.buyer, electronicAddress: { value: '73282932010008', scheme: '0225' } },
+    };
+    expect(validateInvoice(siret).ok).toBe(true); // un SIRET commence par le SIREN : accepté
+  });
+
+  it('B2B en autofacturation : c’est l’adresse du vendeur qui est exigée (BR-FR-13/22)', () => {
+    const invoice = { ...simpleInvoice(), processing: 'B2B' as const, typeCode: '389' as const };
+    const { electronicAddress: _ea, ...sellerWithout } = invoice.seller;
+    invoice.seller = sellerWithout;
+    expect(codesAndPaths(invoice)).toContain('BR-FR-13 @ seller.electronicAddress');
+    invoice.seller = { ...invoice.seller, electronicAddress: electronicAddress0225('443061841') };
+    expect(validateInvoice(invoice).ok).toBe(true);
+  });
+
+  it('hors B2B, seuls les formats sont contrôlés ; un traitement inconnu est refusé', () => {
+    const b2c = { ...simpleInvoice(), processing: 'B2C' as const };
+    expect(validateInvoice(b2c).ok).toBe(true);
+    const unknown = { ...simpleInvoice(), processing: 'XYZ' as never };
+    expect(codesAndPaths(unknown)).toContain('BR-FR-20 @ processing');
+    expect(resolveNotes(b2c).find((n) => n.subjectCode === 'BAR')?.text).toBe('B2C');
   });
 });

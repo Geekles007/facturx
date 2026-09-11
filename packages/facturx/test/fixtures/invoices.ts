@@ -137,6 +137,7 @@ export function fullDraft(): InvoiceDraft {
     typeCode: '380',
     currency: 'EUR',
     operationCategory: 'mixed',
+    processing: 'B2B',
     taxPointDate: '2026-09-10',
     buyerReference: 'SERVICE-COMPTA-42',
     notes: [
@@ -156,7 +157,8 @@ export function fullDraft(): InvoiceDraft {
       ...buyer(),
       siret: '73282932010008',
       tradingName: 'Client Démo',
-      electronicAddress: { value: '73282932010008', scheme: '0225' },
+      electronicAddress: { value: '732829320_COMPTA', scheme: '0225' },
+      routingCode: 'SERVICE-COMPTA-42',
       contact: { email: 'achats@client.fr' },
     },
     payee: { name: "Société d'affacturage", id: '12345678900012', legalId: '123456789' },

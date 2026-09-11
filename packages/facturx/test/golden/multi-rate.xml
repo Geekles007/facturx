@@ -109,7 +109,7 @@
           <ram:CountryID>FR</ram:CountryID>
         </ram:PostalTradeAddress>
         <ram:URIUniversalCommunication>
-          <ram:URIID schemeID="0225">44306184110004</ram:URIID>
+          <ram:URIID schemeID="0225">443061841</ram:URIID>
         </ram:URIUniversalCommunication>
         <ram:SpecifiedTaxRegistration>
           <ram:ID schemeID="VA">FR64443061841</ram:ID>

@@ -2,6 +2,17 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Avant 1.0.0, une version mineure peut contenir des changements d'API.
 
+## [0.5.0] — 2026-09-11
+
+### Ajouté
+- `processing` (BR-FR-20) : traitement attendu (`B2B`, `B2BINT`, `B2C`, `OUTOFSCOPE`, `ARCHIVEONLY`), écrit comme note `BAR` et relu.
+- `Party.routingCode` (code de routage 0224, BT-29/BT-46) écrit en `ram:ID schemeID="0224"` et relu ; règles BR-FR-24/26.
+- `electronicAddress0225(siren, suffix?)` ; règles BR-FR-23/25 (caractères, 125 max), `FORMAT-EMAIL` pour le schéma `EM`.
+- BR-FR-12/13/21/22 : en `B2B`, adresse 0225 obligatoire pour l'acheteur (ou le vendeur en autofacturation), commençant par son SIREN.
+
+### Modifié
+- Fixtures et golden files : adresses 0225 au format `SIREN` / `SIREN_XXX`.
+
 ## [0.4.0] — 2026-09-11
 
 ### Ajouté
@@ -66,6 +77,7 @@ Première version publiée : la boucle complète émission → réception pour l
 ### Documentation
 - Guide de la réforme (`docs/reforme.md`), journal des décisions (`docs/decisions.md`), trois exemples exécutés en CI (émission Node, réception Node, handler HTTP Web standard).
 
+[0.5.0]: https://github.com/Geekles007/facturx/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Geekles007/facturx/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Geekles007/facturx/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Geekles007/facturx/releases/tag/v0.2.0

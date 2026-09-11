@@ -14,6 +14,7 @@ export type {
   NoteSubjectCode,
   OperationCategory,
   PaymentMeansCode,
+  ProcessingCode,
   TaxCategoryCode,
   UnitCode,
 } from './codes.js';
@@ -26,10 +27,12 @@ export {
   INVOICE_TYPE_LABELS,
   isBusinessProcessCode,
   isCreditNoteType,
+  isProcessingCode,
   isSelfBilledType,
   LEGAL_NOTE_CODES,
   OPERATION_CATEGORIES,
   operationCategoryFromBusinessProcess,
+  PROCESSING_CODES,
   TAX_CATEGORY_CODES,
 } from './codes.js';
 export type { Delivery, Invoice, InvoiceDraft, InvoiceNote, Totals } from './invoice.js';

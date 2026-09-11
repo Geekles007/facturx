@@ -178,7 +178,7 @@ describe('notes légales BR-FR-05 et cadre de facturation dans le XML', () => {
   it('conserve les notes fournies avant les notes générées, sans doublon', () => {
     const xml = toCiiXml(fullInvoice());
     const header = xml.slice(0, xml.indexOf('</rsm:ExchangedDocument>')); // hors notes de ligne (BT-127)
-    expect(header.match(/<ram:IncludedNote>/g)?.length).toBe(5); // REG + libre + PMD + PMT + AAB
+    expect(header.match(/<ram:IncludedNote>/g)?.length).toBe(6); // REG + libre + PMD + PMT + AAB + BAR (processing)
     expect(xml.indexOf('<ram:SubjectCode>REG</ram:SubjectCode>')).toBeLessThan(
       xml.indexOf('<ram:SubjectCode>PMD</ram:SubjectCode>'),
     );

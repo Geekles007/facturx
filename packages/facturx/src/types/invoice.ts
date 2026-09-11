@@ -8,6 +8,7 @@ import type {
   IsoDate,
   NoteSubjectCode,
   OperationCategory,
+  ProcessingCode,
 } from './codes.js';
 import type { Line } from './line.js';
 import type { Party, Payee } from './party.js';
@@ -108,6 +109,12 @@ export interface Invoice {
    * Par défaut, déduit de `operationCategory` ; s'il est fourni, sa première lettre doit lui correspondre.
    */
   businessProcess?: BusinessProcessCode;
+  /**
+   * Règle FR BR-FR-20 — Traitement attendu (`B2B` e-invoicing, `B2BINT`, `B2C`, `OUTOFSCOPE`, `ARCHIVEONLY`),
+   * écrit comme note `BAR`. En `B2B`, l'adresse électronique 0225 de l'acheteur (ou du vendeur en
+   * autofacturation) devient obligatoire et doit commencer par son SIREN (BR-FR-12/13/21/22).
+   */
+  processing?: ProcessingCode;
   /** BT-10 — Référence acheteur (ex. code service Chorus Pro). Règle FR : obligatoire vers le secteur public. */
   buyerReference?: string;
   /**

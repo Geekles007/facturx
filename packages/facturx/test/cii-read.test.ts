@@ -226,3 +226,27 @@ describe('notes légales à la lecture', () => {
     ).toBe('S2');
   });
 });
+
+describe('adresses électroniques, code de routage et note BAR', () => {
+  it('écrit et relit le code de routage 0224, l’adresse 0225 et le traitement attendu', () => {
+    const invoice = fullInvoice();
+    const xml = toCiiXml(invoice);
+    expect(xml).toContain('<ram:ID schemeID="0224">SERVICE-COMPTA-42</ram:ID>');
+    expect(xml).toContain('<ram:URIID schemeID="0225">732829320_COMPTA</ram:URIID>');
+    expect(xml).toContain(
+      '<ram:IncludedNote><ram:Content>B2B</ram:Content><ram:SubjectCode>BAR</ram:SubjectCode></ram:IncludedNote>',
+    );
+    const parsed = fromCiiXml(xml);
+    expect(parsed.processing).toBe('B2B');
+    expect(parsed.buyer.routingCode).toBe('SERVICE-COMPTA-42');
+    expect(parsed.notes?.some((n) => n.subjectCode === 'BAR')).toBe(false);
+  });
+
+  it('conserve une note BAR inconnue telle quelle', () => {
+    const invoice = simpleInvoice();
+    invoice.notes = [{ text: 'AUTRE', subjectCode: 'BAR' }];
+    const parsed = fromCiiXml(toCiiXml(invoice));
+    expect(parsed.processing).toBeUndefined();
+    expect(parsed.notes).toEqual([{ text: 'AUTRE', subjectCode: 'BAR' }]);
+  });
+});

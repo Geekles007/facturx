@@ -6,7 +6,7 @@ import {
   type Rate,
   type UnitPrice,
 } from '../money.js';
-import { buildPaymentTermsText, parseLegalNotes } from '../payment-terms.js';
+import { buildPaymentTermsText, parseLegalNotes, parseProcessingNote } from '../payment-terms.js';
 import type { Address } from '../types/address.js';
 import type { DocumentAllowance, DocumentCharge } from '../types/allowance.js';
 import {
@@ -249,6 +249,7 @@ function party(ctx: Ctx, role: 'seller' | 'buyer'): Party {
     if (scheme === 'VA') vatId ??= text(id);
     else if (scheme === 'FC') taxRegistrationId ??= text(id);
   }
+  const routing = children(ctx, 'ID').find((id) => attr(id, 'schemeID') === '0224');
   const uri = child(child(ctx, 'URIUniversalCommunication'), 'URIID');
   const uriValue = text(uri);
   return defined<Party>({
@@ -261,6 +262,7 @@ function party(ctx: Ctx, role: 'seller' | 'buyer'): Party {
     legalInfo: role === 'seller' ? textOf(ctx, 'Description') : undefined,
     address: address(child(ctx, 'PostalTradeAddress')) ?? { countryCode: '' },
     contact: contact(child(ctx, 'DefinedTradeContact')),
+    routingCode: text(routing),
     electronicAddress:
       uriValue === undefined ? undefined : { value: uriValue, scheme: attr(uri, 'schemeID') ?? '' },
   });
@@ -569,6 +571,7 @@ export function parseCiiDocument(xml: string | Uint8Array): ParsedCiiDocument {
     }),
   );
   const legal = parseLegalNotes(allNotes);
+  const bar = parseProcessingNote(legal.remaining);
   const dueDate = dateOf(terms, 'DueDateDateTime');
   const termsText = textOf(terms, 'Description');
   const paymentTerms = defined<PaymentTerms>({ dueDate, ...legal.terms });
@@ -590,7 +593,8 @@ export function parseCiiDocument(xml: string | Uint8Array): ParsedCiiDocument {
     operationCategory: operationCategoryFromBusinessProcess(businessProcessId),
     businessProcess: isBusinessProcessCode(businessProcessId) ? businessProcessId : undefined,
     buyerReference: textOf(agreement, 'BuyerReference'),
-    notes: nonEmpty(legal.remaining),
+    processing: bar.processing,
+    notes: nonEmpty(bar.remaining),
     seller: party(requireChild(agreement, 'SellerTradeParty'), 'seller'),
     buyer: party(requireChild(agreement, 'BuyerTradeParty'), 'buyer'),
     payee,

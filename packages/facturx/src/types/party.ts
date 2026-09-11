@@ -11,11 +11,16 @@ export interface Contact {
   email?: string;
 }
 
-/** Adresse électronique — BT-34/BT-35 (vendeur), BT-49/BT-50 (acheteur). */
+/**
+ * Adresse électronique — BT-34/BT-34-1 (vendeur), BT-49/BT-49-1 (acheteur).
+ * Règles FR : en e-invoicing, schéma `0225` et valeur `SIREN` ou `SIREN_XXX` (BR-FR-12/13/21/22, helper
+ * `electronicAddress0225`) ; caractères `A-Z a-z 0-9 - _ .` en 0225 (BR-FR-23) ; 125 caractères max (BR-FR-25) ;
+ * hors e-invoicing, tout schéma EAS, y compris un e-mail (`EM`).
+ */
 export interface ElectronicAddress {
-  /** BT-34 / BT-49 — Identifiant (ex. SIRET pour le routage sur la plateforme). */
+  /** BT-34 / BT-49 — Identifiant. */
   value: string;
-  /** BT-34-1 / BT-49-1 — Schéma de l'identifiant (liste EAS ; `0225` = FRCTC en France). */
+  /** BT-34-1 / BT-49-1 — Schéma de l'identifiant (liste EAS ; `0225` en France, `EM` pour un e-mail). */
   scheme: ElectronicAddressScheme;
 }
 
@@ -58,6 +63,11 @@ export interface Party {
   contact?: Contact;
   /** BT-34 / BT-49 — Adresse électronique pour le routage. */
   electronicAddress?: ElectronicAddress;
+  /**
+   * BT-29 / BT-46 — Code de routage (identifiant privé, schéma `0224`), ex. le service destinataire chez
+   * l'acheteur. Règles FR : `A-Z a-z 0-9 - _ .` (BR-FR-24), 100 caractères max (BR-FR-26).
+   */
+  routingCode?: string;
   /**
    * (acheteur uniquement) `true` si l'acheteur est un particulier (B2C) : ni SIREN (BT-47) ni TVA (BT-48)
    * ne sont exigés. Règle FR : sans ce drapeau, un acheteur établi en France doit porter son SIREN

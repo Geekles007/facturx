@@ -17,6 +17,7 @@ export {
   type WithDepositsResult,
   withDeposits,
 } from './deposit.js';
+export * from './electronic-address.js';
 export * from './money.js';
 export {
   buildLegalNotes,
@@ -25,6 +26,7 @@ export {
   hasStructuredTerms,
   type ParsedLegalNotes,
   parseLegalNotes,
+  parseProcessingNote,
   resolveNotes,
   resolvePaymentTermsText,
 } from './payment-terms.js';

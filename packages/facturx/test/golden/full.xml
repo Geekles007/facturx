@@ -33,6 +33,10 @@
       <ram:Content>Pas d'escompte pour paiement anticipé.</ram:Content>
       <ram:SubjectCode>AAB</ram:SubjectCode>
     </ram:IncludedNote>
+    <ram:IncludedNote>
+      <ram:Content>B2B</ram:Content>
+      <ram:SubjectCode>BAR</ram:SubjectCode>
+    </ram:IncludedNote>
   </rsm:ExchangedDocument>
   <rsm:SupplyChainTradeTransaction>
     <ram:IncludedSupplyChainTradeLineItem>
@@ -165,7 +169,7 @@
           <ram:CountryID>FR</ram:CountryID>
         </ram:PostalTradeAddress>
         <ram:URIUniversalCommunication>
-          <ram:URIID schemeID="0225">44306184110004</ram:URIID>
+          <ram:URIID schemeID="0225">443061841</ram:URIID>
         </ram:URIUniversalCommunication>
         <ram:SpecifiedTaxRegistration>
           <ram:ID schemeID="VA">FR64443061841</ram:ID>
@@ -175,6 +179,7 @@
         </ram:SpecifiedTaxRegistration>
       </ram:SellerTradeParty>
       <ram:BuyerTradeParty>
+        <ram:ID schemeID="0224">SERVICE-COMPTA-42</ram:ID>
         <ram:GlobalID schemeID="0009">73282932010008</ram:GlobalID>
         <ram:Name>Client Démo SARL</ram:Name>
         <ram:SpecifiedLegalOrganization>
@@ -193,7 +198,7 @@
           <ram:CountryID>FR</ram:CountryID>
         </ram:PostalTradeAddress>
         <ram:URIUniversalCommunication>
-          <ram:URIID schemeID="0225">73282932010008</ram:URIID>
+          <ram:URIID schemeID="0225">732829320_COMPTA</ram:URIID>
         </ram:URIUniversalCommunication>
         <ram:SpecifiedTaxRegistration>
           <ram:ID schemeID="VA">FR44732829320</ram:ID>

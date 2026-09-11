@@ -98,6 +98,7 @@ function tradeContact(c: Contact): XmlElement {
 function tradeParty(name: string, p: Party, role: 'seller' | 'buyer'): XmlElement {
   return el(
     name,
+    p.routingCode === undefined ? undefined : elA('ram:ID', { schemeID: '0224' }, p.routingCode),
     p.siret === undefined ? undefined : elA('ram:GlobalID', { schemeID: '0009' }, p.siret),
     el('ram:Name', p.name),
     role === 'seller' ? text('ram:Description', p.legalInfo) : undefined,

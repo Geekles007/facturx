@@ -6,7 +6,12 @@ import {
   type Rate,
   rateToString,
 } from './money.js';
-import { LEGAL_NOTE_CODES, type LegalNoteCode } from './types/codes.js';
+import {
+  isProcessingCode,
+  LEGAL_NOTE_CODES,
+  type LegalNoteCode,
+  type ProcessingCode,
+} from './types/codes.js';
 import type { InvoiceNote } from './types/invoice.js';
 import type { EarlyPaymentDiscount, PaymentTerms } from './types/payment.js';
 
@@ -107,19 +112,43 @@ export function resolvePaymentTermsText(terms: PaymentTerms): string | undefined
 
 /**
  * Notes effectives d'une facture : celles fournies par l'appelant, complétées par les notes légales
- * (`PMD`, `PMT`, `AAB`) générées depuis `paymentTerms` pour chaque code absent. Ne modifie rien.
+ * (`PMD`, `PMT`, `AAB`) générées depuis `paymentTerms` pour chaque code absent, et par la note `BAR`
+ * (traitement attendu, BR-FR-20) si `processing` est renseigné. Ne modifie rien.
  */
 export function resolveNotes(invoice: {
   notes?: InvoiceNote[];
   paymentTerms: PaymentTerms;
+  processing?: ProcessingCode;
 }): InvoiceNote[] {
   const given = invoice.notes ?? [];
-  if (!canBuildLegalNotes(invoice.paymentTerms)) return given;
   const present = new Set(given.map((n) => n.subjectCode));
-  const generated = buildLegalNotes(invoice.paymentTerms).filter(
-    (n) => !present.has(n.subjectCode as LegalNoteCode),
-  );
+  const generated: InvoiceNote[] = [];
+  if (canBuildLegalNotes(invoice.paymentTerms)) {
+    generated.push(
+      ...buildLegalNotes(invoice.paymentTerms).filter(
+        (n) => !present.has(n.subjectCode as LegalNoteCode),
+      ),
+    );
+  }
+  if (invoice.processing !== undefined && !present.has('BAR')) {
+    generated.push({ text: invoice.processing, subjectCode: 'BAR' });
+  }
   return [...given, ...generated];
+}
+
+/**
+ * Relecture de la note `BAR` (BR-FR-20) : si une seule note BAR porte un code de traitement connu,
+ * la retire (régénérée à l'identique) et renvoie le code.
+ */
+export function parseProcessingNote(notes: readonly InvoiceNote[]): {
+  processing: ProcessingCode | undefined;
+  remaining: InvoiceNote[];
+} {
+  const bar = notes.filter((n) => n.subjectCode === 'BAR');
+  const value = bar[0]?.text.trim();
+  if (bar.length !== 1 || !isProcessingCode(value))
+    return { processing: undefined, remaining: [...notes] };
+  return { processing: value, remaining: notes.filter((n) => n !== bar[0]) };
 }
 
 export interface ParsedLegalNotes {
