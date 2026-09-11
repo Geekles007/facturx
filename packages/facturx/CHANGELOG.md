@@ -2,6 +2,16 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Avant 1.0.0, une version mineure peut contenir des changements d'API.
 
+## [0.7.0] — 2026-09-12
+
+### Ajouté
+- Validation par les **schematrons officiels** en CI et en local (`pnpm schemas:fetch`, Saxon-JS, sans Java) : CEN EN 16931 CII, profil Factur-X EN 16931, règles françaises BR-FR Flux 2 V1.3.0 — zéro assertion en échec sur tous les fichiers de référence.
+- Règle CII-SR-467 : tous les moyens de paiement portent le même code (BT-81) en syntaxe CII.
+
+### Modifié
+- BR-FR-12 : l'adresse électronique de l'acheteur (BT-49) est exigée pour tout vendeur établi en France, sauf `buyer.consumer` (le schematron officiel l'exige inconditionnellement) ; en `B2B`, schéma 0225 et SIREN comme avant.
+- CII-SR-461 : la date d'exigibilité (BT-7) n'est plus répétée dans chaque ventilation de TVA, une seule fois dans le XML.
+
 ## [0.6.0] — 2026-09-12
 
 ### Ajouté
@@ -84,6 +94,7 @@ Première version publiée : la boucle complète émission → réception pour l
 ### Documentation
 - Guide de la réforme (`docs/reforme.md`), journal des décisions (`docs/decisions.md`), trois exemples exécutés en CI (émission Node, réception Node, handler HTTP Web standard).
 
+[0.7.0]: https://github.com/Geekles007/facturx/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Geekles007/facturx/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Geekles007/facturx/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Geekles007/facturx/releases/tag/v0.4.0

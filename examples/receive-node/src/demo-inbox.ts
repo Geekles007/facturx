@@ -35,6 +35,7 @@ function draft(id: string): InvoiceDraft {
     buyer: {
       name: 'Votre entreprise',
       siren: '732829320',
+      electronicAddress: { value: '732829320', scheme: '0225' },
       address: { postCode: '69002', city: 'Lyon', countryCode: 'FR' },
     },
     delivery: { date: '2026-09-10' },

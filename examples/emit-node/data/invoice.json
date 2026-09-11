@@ -23,6 +23,7 @@
     "name": "Client Démo SARL",
     "siren": "732829320",
     "vat": "FR44732829320",
+    "electronicAddress": "732829320",
     "address": { "street": "5 avenue du Client", "zip": "69002", "city": "Lyon", "country": "FR" },
     "reference": "PO-4587"
   },

@@ -27,7 +27,15 @@ export interface AppInvoice {
     iban: string;
     bic?: string;
   };
-  buyer: { name: string; siren?: string; vat?: string; address: AppAddress; reference?: string };
+  buyer: {
+    name: string;
+    siren?: string;
+    vat?: string;
+    /** Adresse électronique 0225 (SIREN ou SIREN_XXX), obligatoire pour l'e-invoicing. */
+    electronicAddress?: string;
+    address: AppAddress;
+    reference?: string;
+  };
   lines: { sku: string; label: string; qty: string; unit: string; price: string; vat: string }[];
   discount?: { amount: string; label: string; vat: string } | null;
   terms: {

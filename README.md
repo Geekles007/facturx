@@ -4,7 +4,7 @@
 
 SDK **TypeScript pur** — zéro dépendance native, compatible edge/serverless — pour **générer, embarquer et extraire** des factures **Factur-X** au profil **EN 16931**, avec les règles françaises intégrées.
 
-> État : **0.6.0 / conformité AFNOR** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3 validé veraPDF), guide réforme, exemples exécutables, mentions de la réforme, et les **règles françaises de la norme AFNOR XP Z12-012** (toutes les règles `BR-FR` vérifiables hors ligne, BT-23 et BT-8 confirmés). **Publié sur npm : `facturx-sdk`.**
+> État : **0.7.0 / conformité AFNOR** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3 validé veraPDF), guide réforme, exemples exécutables, mentions de la réforme, et les **règles françaises de la norme AFNOR XP Z12-012** (toutes les règles `BR-FR` vérifiables hors ligne), **contre-vérifiées par les schematrons officiels CEN, Factur-X et BR-FR V1.3.0 en CI**. **Publié sur npm : `facturx-sdk`.**
 
 ## Vision
 
@@ -75,7 +75,7 @@ const draft: InvoiceDraft = {
   operationCategory: 'services',                        // biens / services / mixte (réforme)
   seller: { name: 'Atelier Exemple SAS', siren: '443061841', vatId: 'FR64443061841',
             address: { line1: '12 rue de la Facture', postCode: '75011', city: 'Paris', countryCode: 'FR' } },
-  buyer:  { name: 'Client Démo SARL', siren: '732829320',
+  buyer:  { name: 'Client Démo SARL', siren: '732829320', electronicAddress: { value: '732829320', scheme: '0225' },
             address: { postCode: '69002', city: 'Lyon', countryCode: 'FR' } },
   delivery: { date: '2026-09-10' },
   lines: [{
@@ -118,7 +118,7 @@ const debug = toCiiXml(invoice, { pretty: true, businessProcessId: 'A1' });
 // { validate: false } pour générer malgré des anomalies (debug uniquement)
 ```
 
-Le XML produit est conforme au XSD Factur-X EN 16931 (`urn:cen.eu:en16931:2017`, CII D16B). Pour rejouer la validation XSD en local, déposer les XSD dans `packages/facturx/test/schemas/` (voir son README) : le test `xsd.test.ts` les utilise via `xmllint`.
+Le XML produit est conforme au XSD Factur-X EN 16931 (`urn:cen.eu:en16931:2017`, CII D16B) et passe **sans assertion en échec les schematrons officiels** CEN EN 16931, profil Factur-X et règles françaises BR-FR Flux 2 V1.3.0. Pour rejouer ces validations en local : `pnpm schemas:fetch` (fichiers git-ignorés, voir `packages/facturx/test/schemas/README.md`).
 
 ### PDF/A-3 : embarquer et extraire
 

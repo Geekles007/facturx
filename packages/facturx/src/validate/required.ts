@@ -286,6 +286,20 @@ export function checkRequired(inv: Invoice, c: IssueCollector): void {
     }
   }
 
+  // CII-SR-467 : tous les moyens de paiement (BG-16) portent le même code BT-81 en syntaxe CII
+  const means = inv.paymentMeans ?? [];
+  const codes = new Set(means.map((pm) => pm.typeCode));
+  if (codes.size > 1) {
+    c.add(
+      'CII-SR-467',
+      'paymentMeans',
+      'En CII, tous les moyens de paiement doivent avoir le même code (BT-81).',
+      {
+        actual: [...codes],
+      },
+    );
+  }
+
   // Documents justificatifs (BG-24)
   for (const [i, a] of (inv.attachments ?? []).entries()) {
     const p = `attachments[${i}]`;

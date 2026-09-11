@@ -1,16 +1,21 @@
-# Schémas XSD Factur-X (non versionnés)
+# Schémas et schematrons officiels (non versionnés)
 
-Déposer ici les XSD du profil **EN 16931** du paquet Factur-X (FNFE-MPE, téléchargement gratuit sur https://fnfe-mpe.org) :
+Ce dossier reçoit les fichiers de validation externes, récupérés par :
 
-```
-FACTUR-X_EN16931.xsd
-FACTUR-X_EN16931_urn_un_unece_uncefact_data_standard_QualifiedDataType_100.xsd
-FACTUR-X_EN16931_urn_un_unece_uncefact_data_standard_ReusableAggregateBusinessInformationEntity_100.xsd
-FACTUR-X_EN16931_urn_un_unece_uncefact_data_standard_UnqualifiedDataType_100.xsd
+```bash
+pnpm schemas:fetch
 ```
 
-Le test `test/xsd.test.ts` valide alors les golden files avec `xmllint --schema` (présent sur macOS et la plupart des Linux).
-Sans XSD ou sans `xmllint`, le test est ignoré proprement.
+depuis le dépôt [ZUGFeRD/mustangproject](https://github.com/ZUGFeRD/mustangproject) (Apache 2.0) à un **commit épinglé** dans `scripts/fetch-schemas.mjs` :
+
+| Fichiers | Origine | Test |
+|---|---|---|
+| `FACTUR-X_EN16931*.xsd` | XSD Factur-X EN 16931 (FNFE-MPE) | `xsd.test.ts` via `xmllint` |
+| `EN16931-CII-validation.xslt` | schematron CEN EN 16931, syntaxe CII | `schematron.test.ts` via Saxon-JS |
+| `FACTUR-X_EN16931.xslt` + `_codedb.xml` | schematron du profil Factur-X EN 16931 | idem |
+| `20260216_BR-FR-Flux2-Schematron-CII_V1.3.0.xsl` | schematron des règles françaises BR-FR (AFNOR XP Z12-012) | idem |
+
+Les XSLT sont compilées en `*.sef.json` par `xslt3` à la récupération. Sans ces fichiers (ou sans `xmllint`), les tests correspondants sont ignorés ; la CI les récupère (cache) et les rend bloquants.
 
 # Conformité PDF/A-3b (veraPDF)
 
@@ -20,4 +25,4 @@ Sans XSD ou sans `xmllint`, le test est ignoré proprement.
 PATH="$PWD/scripts:$PATH" pnpm --filter facturx-sdk test
 ```
 
-La CI installe ce shim : une non-conformité bloque le build. Le profil ICC `test/fixtures/sRGB.icc` (sRGB compact, CC0, dépôt saucecontrol/Compact-ICC-Profiles) sert d'OutputIntent.
+Le profil ICC `test/fixtures/sRGB.icc` (sRGB compact, CC0, dépôt saucecontrol/Compact-ICC-Profiles) sert d'OutputIntent.

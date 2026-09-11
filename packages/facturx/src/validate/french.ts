@@ -283,27 +283,42 @@ export function checkFrenchRules(inv: Invoice, c: IssueCollector): void {
     }
   }
 
-  // BR-FR-20 / 21 / 22 / 12 / 13 : traitement attendu et adresse électronique 0225 du destinataire
+  // BR-FR-12 : l'adresse électronique de l'acheteur (BT-49) est obligatoire (schematron officiel : inconditionnelle),
+  // sauf pour un particulier (hors e-invoicing)
+  const buyerEa = inv.buyer?.electronicAddress;
+  if (!buyerEa && inv.buyer?.consumer !== true) {
+    c.add(
+      'BR-FR-12',
+      'buyer.electronicAddress',
+      'L’adresse électronique de l’acheteur (BT-49) est obligatoire ; en e-invoicing, schéma 0225 (SIREN ou SIREN_XXX).',
+    );
+  }
+
+  // BR-FR-20 / 21 / 22 / 13 : traitement attendu et adresse électronique 0225 du destinataire
   if (inv.processing !== undefined) {
     if (!isProcessingCode(inv.processing)) {
       c.add(
         'BR-FR-20',
         'processing',
         'Traitement attendu inconnu (B2B, B2BINT, B2C, OUTOFSCOPE, ARCHIVEONLY).',
-        { actual: inv.processing },
+        {
+          actual: inv.processing,
+        },
       );
     } else if (inv.processing === 'B2B') {
       const selfBilled = isSelfBilledType(inv.typeCode);
-      const [path, party, rule, requiredRule] = selfBilled
-        ? (['seller', inv.seller, 'BR-FR-22', 'BR-FR-13'] as const)
-        : (['buyer', inv.buyer, 'BR-FR-21', 'BR-FR-12'] as const);
+      const [path, party, rule] = selfBilled
+        ? (['seller', inv.seller, 'BR-FR-22'] as const)
+        : (['buyer', inv.buyer, 'BR-FR-21'] as const);
       const ea = party?.electronicAddress;
       if (!ea) {
-        c.add(
-          requiredRule,
-          `${path}.electronicAddress`,
-          `En e-invoicing, l’adresse électronique ${selfBilled ? 'du vendeur (BT-34)' : 'de l’acheteur (BT-49)'} est obligatoire (schéma 0225, forme SIREN ou SIREN_XXX).`,
-        );
+        if (selfBilled) {
+          c.add(
+            'BR-FR-13',
+            'seller.electronicAddress',
+            'En autofacturation e-invoicing, l’adresse électronique du vendeur (BT-34) est obligatoire (schéma 0225, SIREN ou SIREN_XXX).',
+          );
+        }
       } else {
         if (ea.scheme !== '0225') {
           c.add(
@@ -338,7 +353,9 @@ export function checkFrenchRules(inv: Invoice, c: IssueCollector): void {
       'BR-FR-18',
       'attachments',
       'Il ne peut y avoir qu’une seule pièce jointe décrite « LISIBLE » (BT-123).',
-      { actual: readable },
+      {
+        actual: readable,
+      },
     );
   }
 

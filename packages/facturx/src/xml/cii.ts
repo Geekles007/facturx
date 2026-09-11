@@ -454,8 +454,9 @@ export function toCiiTree(
               ),
         ),
     (invoice.paymentMeans ?? []).map(paymentMeans),
-    invoice.taxBreakdown.map((tb) =>
-      headerTradeTax(tb, invoice.taxPointDate, invoice.vatOnDebits === true),
+    invoice.taxBreakdown.map((tb, i) =>
+      // CII-SR-461 : une seule TaxPointDate (BT-7) par document → sur la première ventilation
+      headerTradeTax(tb, i === 0 ? invoice.taxPointDate : undefined, invoice.vatOnDebits === true),
     ),
     d?.period === undefined
       ? undefined

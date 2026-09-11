@@ -22,6 +22,7 @@ export const seller = (): Party => ({
 });
 
 export const buyer = (): Party => ({
+  electronicAddress: { value: '732829320', scheme: '0225' },
   name: 'Client Démo SARL',
   siren: '732829320',
   vatId: 'FR44732829320',

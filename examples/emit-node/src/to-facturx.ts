@@ -3,6 +3,7 @@ import {
   centsFromDecimal,
   computeLineNetAmount,
   computeTotals,
+  electronicAddress0225,
   type Invoice,
   type InvoiceDraft,
   type IsoDate,
@@ -60,6 +61,9 @@ export function toFacturX(app: AppInvoice): Invoice {
       name: app.buyer.name,
       ...(app.buyer.siren ? { siren: app.buyer.siren } : {}),
       ...(app.buyer.vat ? { vatId: app.buyer.vat } : {}),
+      ...(app.buyer.electronicAddress
+        ? { electronicAddress: electronicAddress0225(app.buyer.electronicAddress) }
+        : {}),
       address: address(app.buyer.address),
     },
     ...(app.buyer.reference

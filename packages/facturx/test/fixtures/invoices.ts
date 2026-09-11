@@ -274,7 +274,6 @@ export function fullDraft(): InvoiceDraft {
           debitedIban: 'DE89370400440532013000',
         },
       },
-      { typeCode: '58', creditTransfer: { iban: 'FR7630006000011234567890189', bic: 'BNPAFRPP' } },
     ],
   };
 }

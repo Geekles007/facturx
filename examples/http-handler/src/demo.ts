@@ -21,6 +21,7 @@ const draft: InvoiceDraft = {
   buyer: {
     name: 'Client Démo SARL',
     siren: '732829320',
+    electronicAddress: { value: '732829320', scheme: '0225' },
     address: { postCode: '69002', city: 'Lyon', countryCode: 'FR' },
   },
   delivery: { date: '2026-09-10' },

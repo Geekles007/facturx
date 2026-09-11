@@ -40,6 +40,7 @@ const seller = {
 const buyer = {
   name: 'Client Démo SARL',
   siren: '732829320',
+  electronicAddress: { value: '732829320', scheme: '0225' },
   address: { line1: '5 avenue du Client', postCode: '69002', city: 'Lyon', countryCode: 'FR' },
 };
 const terms = {

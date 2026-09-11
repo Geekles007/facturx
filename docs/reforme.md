@@ -115,7 +115,7 @@ const finalInvoice = { ...draft, ...computeTotals(draft, { prepaidAmount }) };  
 
 ## Conformité AFNOR XP Z12-012 : ce qui est vérifié
 
-La norme **AFNOR XP Z12-012** (formats et profils du socle, juillet 2025) fixe les règles françaises `BR-FR-xx` que les plateformes agréées appliquent. Le SDK en implémente le noyau applicable à une facture EN 16931, avec les identifiants officiels comme codes d'anomalie :
+La norme **AFNOR XP Z12-012** (formats et profils du socle, juillet 2025) fixe les règles françaises `BR-FR-xx` que les plateformes agréées appliquent. Le SDK en implémente le noyau applicable à une facture EN 16931, avec les identifiants officiels comme codes d'anomalie. **Chaque fichier de référence du SDK est validé en CI par les schematrons officiels** — CEN EN 16931 (syntaxe CII), profil Factur-X EN 16931 et **BR-FR Flux 2 V1.3.0** — exécutés avec Saxon-JS (`test/schematron.test.ts`), en plus du XSD et de veraPDF :
 
 | Règle | Objet | Dans le SDK |
 |---|---|---|
@@ -126,7 +126,7 @@ La norme **AFNOR XP Z12-012** (formats et profils du socle, juillet 2025) fixe l
 | BR-FR-08 | cadre de facturation BT-23 ∈ {B1, S1, M1, B2, S2, M2, B4, S4, M4, S5, S6, B7, S7}, cohérent avec la nature de l'opération | `operationCategory`, `businessProcess` |
 | BR-FR-09 | SIRET cohérent avec le SIREN | `siret` / `siren` |
 | BR-FR-10 / 11 | SIREN vendeur obligatoire ; SIREN acheteur obligatoire (e-invoicing) | `seller.siren`, `buyer.siren` (`buyer.consumer` pour le B2C) |
-| BR-FR-12 / 13 / 21 / 22 | en e-invoicing (`processing: 'B2B'`), adresse électronique 0225 obligatoire pour l'acheteur (ou le vendeur en autofacturation), commençant par son SIREN | `electronicAddress`, `processing` |
+| BR-FR-12 / 13 / 21 / 22 | adresse électronique de l'acheteur (BT-49) obligatoire (sauf `buyer.consumer`) ; en e-invoicing (`processing: 'B2B'`), schéma 0225 commençant par le SIREN — du vendeur en autofacturation | `electronicAddress`, `processing` |
 | BR-FR-14 | adresse de livraison fournie ⇒ BT-75/77/78/80 présents ; jamais pour une prestation de services | `delivery.address` |
 | BR-FR-15 / 16 | catégories de TVA S, E, AE, K, G, O, Z ; taux dans la liste française | `tax.category`, `tax.rate` |
 | BR-FR-17 / 18 | pièces jointes BG-24 : qualificatifs (`BON_COMMANDE`, `RIB`, `LISIBLE`…), une seule `LISIBLE` | `attachments` |

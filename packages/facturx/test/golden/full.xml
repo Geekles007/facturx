@@ -281,15 +281,6 @@
           <ram:IBANID>DE89370400440532013000</ram:IBANID>
         </ram:PayerPartyDebtorFinancialAccount>
       </ram:SpecifiedTradeSettlementPaymentMeans>
-      <ram:SpecifiedTradeSettlementPaymentMeans>
-        <ram:TypeCode>58</ram:TypeCode>
-        <ram:PayeePartyCreditorFinancialAccount>
-          <ram:IBANID>FR7630006000011234567890189</ram:IBANID>
-        </ram:PayeePartyCreditorFinancialAccount>
-        <ram:PayeeSpecifiedCreditorFinancialInstitution>
-          <ram:BICID>BNPAFRPP</ram:BICID>
-        </ram:PayeeSpecifiedCreditorFinancialInstitution>
-      </ram:SpecifiedTradeSettlementPaymentMeans>
       <ram:ApplicableTradeTax>
         <ram:CalculatedAmount>7.50</ram:CalculatedAmount>
         <ram:TypeCode>VAT</ram:TypeCode>
@@ -307,9 +298,6 @@
         <ram:BasisAmount>500.00</ram:BasisAmount>
         <ram:CategoryCode>AE</ram:CategoryCode>
         <ram:ExemptionReasonCode>VATEX-EU-AE</ram:ExemptionReasonCode>
-        <ram:TaxPointDate>
-          <udt:DateString format="102">20260910</udt:DateString>
-        </ram:TaxPointDate>
         <ram:RateApplicablePercent>0.00</ram:RateApplicablePercent>
       </ram:ApplicableTradeTax>
       <ram:BillingSpecifiedPeriod>

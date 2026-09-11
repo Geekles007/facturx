@@ -14,11 +14,12 @@
     "examples:check": "pnpm -r --filter \"./examples/*\" run check",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm examples:check",
     "bump": "node scripts/bump.mjs",
-    "release:check": "node scripts/release-check.mjs"
+    "release:check": "node scripts/release-check.mjs",
+    "schemas:fetch": "node scripts/fetch-schemas.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
     "typescript": "^5.9.3"
   },
-  "version": "0.6.0"
+  "version": "0.7.0"
 }

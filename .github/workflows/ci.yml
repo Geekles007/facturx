@@ -19,6 +19,12 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Schémas et schematrons officiels (cache par commit épinglé)
+        uses: actions/cache@v4
+        with:
+          path: packages/facturx/test/schemas
+          key: schemas-${{ hashFiles('scripts/fetch-schemas.mjs') }}
+      - run: pnpm schemas:fetch
       - name: veraPDF (shim Docker) dans le PATH
         run: |
           docker pull --quiet ghcr.io/verapdf/cli:latest

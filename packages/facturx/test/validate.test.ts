@@ -587,7 +587,14 @@ describe('adresses électroniques et traitement attendu (BR-FR-12/13/20–26)', 
 
   it('B2B : l’adresse 0225 de l’acheteur est obligatoire et commence par son SIREN (BR-FR-12/21)', () => {
     const invoice = { ...simpleInvoice(), processing: 'B2B' as const };
+    const { electronicAddress: _buyerEa, ...buyerWithout } = invoice.buyer;
+    invoice.buyer = buyerWithout;
     expect(codesAndPaths(invoice)).toContain('BR-FR-12 @ buyer.electronicAddress');
+    // hors B2B aussi (schematron officiel : BT-49 inconditionnel), sauf particulier
+    const { processing: _processing, ...noProcessing } = invoice;
+    expect(codesAndPaths(noProcessing)).toContain('BR-FR-12 @ buyer.electronicAddress');
+    const consumer: Invoice = { ...noProcessing, buyer: { ...buyerWithout, consumer: true } };
+    expect(codesAndPaths(consumer)).not.toContain('BR-FR-12 @ buyer.electronicAddress');
     invoice.buyer = { ...invoice.buyer, electronicAddress: { value: '443061841', scheme: '0225' } };
     expect(codesAndPaths(invoice)).toContain('BR-FR-21 @ buyer.electronicAddress.value');
     invoice.buyer = { ...invoice.buyer, electronicAddress: { value: '732829320', scheme: '0009' } };
