@@ -256,11 +256,7 @@ export function checkFrenchRules(inv: Invoice, c: IssueCollector): void {
   }
 
   // Facture définitive après acompte (cadre *4) : la ou les factures d'acompte doivent être référencées (BT-25)
-  if (
-    inv.businessProcess !== undefined &&
-    inv.businessProcess.endsWith('4') &&
-    !inv.references?.precedingInvoices?.length
-  ) {
+  if (inv.businessProcess?.endsWith('4') && !inv.references?.precedingInvoices?.length) {
     c.add(
       'FR-DEPOSIT-REFERENCE',
       'references.precedingInvoices',
