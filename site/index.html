@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>facturx-sdk — Factur-X EN 16931 en TypeScript, vérifié par les validateurs officiels</title>
+<meta name="description" content="SDK TypeScript pur pour générer, valider, embarquer et lire des factures Factur-X au profil EN 16931, avec les règles françaises de la réforme. Vérifié par le XSD, les schematrons officiels et veraPDF.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="facturx-sdk">
+<meta property="og:description" content="Des factures Factur-X conformes, en TypeScript, sans rien deviner.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#contenu">Aller au contenu</a>
+
+<header class="nav">
+  <a class="brand" href="#" aria-label="facturx-sdk, accueil">
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="3" width="26" height="26" rx="4" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M9 11h14M9 16h14M9 21h8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><circle cx="23" cy="22" r="3.2" fill="var(--accent)"/></svg>
+    <span>facturx-sdk</span>
+  </a>
+  <nav aria-label="Liens principaux">
+    <a href="#preuves">Preuves</a>
+    <a href="#code">Code</a>
+    <a href="#reforme">Réforme</a>
+    <a href="https://github.com/Geekles007/facturx/blob/main/docs/reforme.md">Guide</a>
+    <a href="https://github.com/Geekles007/facturx">GitHub</a>
+    <a class="pill" href="https://www.npmjs.com/package/facturx-sdk">npm <span class="mono">1.0.0</span></a>
+  </nav>
+</header>
+
+<main id="contenu">
+
+<section class="hero">
+  <p class="eyebrow"><span>Factur-X</span><span>EN 16931</span><span>Réforme 2026–2027</span></p>
+  <h1>Des factures <span class="nb">Factur-X</span> conformes, en TypeScript, <em>sans rien deviner.</em></h1>
+  <p class="lede">Un SDK pur — zéro dépendance native, compatible edge et serverless — pour <strong>générer, valider, embarquer et lire</strong> des factures Factur-X au profil EN 16931, avec les règles françaises de la réforme. Chaque promesse est vérifiée par un validateur officiel, pas par nous.</p>
+  <div class="install" role="group" aria-label="Installation">
+    <code id="cmd">pnpm add facturx-sdk</code>
+    <button type="button" class="copy" data-copy="pnpm add facturx-sdk" aria-label="Copier la commande d'installation">Copier</button>
+  </div>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Geekles007/facturx/blob/main/docs/reforme.md">Lire le guide de la réforme</a>
+    <a class="btn" href="https://github.com/Geekles007/facturx#readme">Documentation sur GitHub</a>
+  </div>
+</section>
+
+<section id="preuves" class="proof">
+  <div class="proof-head">
+    <h2>Prouvé, pas promis</h2>
+    <p>Le SDK implémente les règles à la main, puis les fait juger par les outils de référence — les mêmes que ceux des plateformes agréées. Tout tourne en intégration continue, à chaque commit, avant chaque publication.</p>
+  </div>
+  <dl class="numbers">
+    <div><dt>tests</dt><dd>197</dd></div>
+    <div><dt>règles BR-FR</dt><dd>22<span class="of">/26</span></dd><small>les 4 autres relèvent de l'annuaire</small></div>
+    <div><dt>fichiers tiers lus et ré-émis</dt><dd>30</dd></div>
+    <div><dt>dépendance native</dt><dd>0</dd></div>
+  </dl>
+  <ul class="judges">
+    <li><b>XSD officiel</b> Factur-X EN 16931 — chaque XML de référence</li>
+    <li><b>Schematron CEN</b> EN 16931, syntaxe CII — zéro assertion en échec</li>
+    <li><b>Schematron Factur-X</b> profil EN 16931 (1.09)</li>
+    <li><b>Schematron BR-FR</b> Flux 2 V1.3.0 — les règles françaises officielles (XP Z12-012)</li>
+    <li><b>veraPDF</b> — PDF/A-3b, zéro règle violée sur la couche ajoutée</li>
+    <li><b>Corpus ZUGFeRD / KoSIT</b> — 30 factures d'autres outils : fidélité, ré-émission conforme, aucune perte d'élément signifiant</li>
+  </ul>
+</section>
+
+<section id="code" class="code">
+  <h2>Trois appels</h2>
+  <div class="steps">
+    <article>
+      <h3><span class="n">1</span>Décrire, puis calculer</h3>
+      <p>Montants en <strong>entiers</strong> (centimes, points de base) — jamais de flottant. Les totaux sont calculés explicitement, puis <em>vérifiés</em> : le SDK ne corrige jamais en silence.</p>
+<pre><code><span class="k">import</span> { cents, computeTotals, percent, quantity, unitPrice, assertValidInvoice } <span class="k">from</span> <span class="s">'facturx-sdk'</span>;
+
+<span class="k">const</span> draft = {
+  id: <span class="s">'F-2026-0001'</span>, issueDate: <span class="s">'2026-09-11'</span>, typeCode: <span class="s">'380'</span>, currency: <span class="s">'EUR'</span>,
+  operationCategory: <span class="s">'services'</span>,                      <span class="c">// nature de l'opération (réforme)</span>
+  seller: { name: <span class="s">'Atelier Exemple SAS'</span>, siren: <span class="s">'443061841'</span>, vatId: <span class="s">'FR64443061841'</span>, address: { <span class="c">/* … */</span> countryCode: <span class="s">'FR'</span> } },
+  buyer:  { name: <span class="s">'Client Démo SARL'</span>, siren: <span class="s">'732829320'</span>, electronicAddress: { value: <span class="s">'732829320'</span>, scheme: <span class="s">'0225'</span> }, address: { <span class="c">/* … */</span> } },
+  lines: [{ id: <span class="s">'1'</span>, name: <span class="s">'Conseil'</span>, quantity: quantity(<span class="d">20000</span>), unitCode: <span class="s">'DAY'</span>, unitPrice: unitPrice(<span class="d">8000000</span>),
+            netAmount: cents(<span class="d">160000</span>), tax: { category: <span class="s">'S'</span>, rate: percent(<span class="s">'20'</span>) } }],
+  paymentTerms: { dueDate: <span class="s">'2026-10-11'</span>, latePenaltyRate: percent(<span class="s">'10'</span>), recoveryIndemnity: cents(<span class="d">4000</span>), earlyPaymentDiscount: <span class="s">'none'</span> },
+};
+<span class="k">const</span> invoice = assertValidInvoice({ ...draft, ...computeTotals(draft) });
+<span class="c">// FacturXValidationError { issues: [{ code: 'BR-CO-15', path: 'totals.taxInclusiveAmount', … }] } sinon</span></code></pre>
+    </article>
+    <article>
+      <h3><span class="n">2</span>Émettre</h3>
+      <p>Le XML CII est produit par templating typé, dans l'ordre du XSD, puis embarqué dans <em>votre</em> PDF (déjà PDF/A) avec les métadonnées XMP Factur-X.</p>
+<pre><code><span class="k">import</span> { toCiiXml } <span class="k">from</span> <span class="s">'facturx-sdk'</span>;
+<span class="k">import</span> { embedFacturX } <span class="k">from</span> <span class="s">'facturx-sdk/pdf'</span>;
+
+<span class="k">const</span> xml = toCiiXml(invoice);                           <span class="c">// conforme XSD + schematrons</span>
+<span class="k">const</span> pdfA3 = <span class="k">await</span> embedFacturX(pdfBytes, { invoice });   <span class="c">// PDF/A-3, validé veraPDF</span></code></pre>
+    </article>
+    <article>
+      <h3><span class="n">3</span>Recevoir</h3>
+      <p>Dès le 1<sup>er</sup> septembre 2026, toute entreprise doit savoir lire ce qu'elle reçoit. Une facture incohérente est signalée avec le chemin exact de chaque anomalie — jamais intégrée telle quelle.</p>
+<pre><code><span class="k">import</span> { fromCiiXml, readCiiGuideline } <span class="k">from</span> <span class="s">'facturx-sdk'</span>;
+<span class="k">import</span> { extractInvoice } <span class="k">from</span> <span class="s">'facturx-sdk/pdf'</span>;
+
+<span class="k">const</span> received = <span class="k">await</span> extractInvoice(pdfBytes);          <span class="c">// { invoice, xml, conformanceLevel } | undefined</span>
+<span class="k">const</span> invoice  = fromCiiXml(xmlString);                  <span class="c">// validée, ou FacturXParseError { code, path }</span>
+<span class="k">const</span> { guidelineId } = readCiiGuideline(xmlString);     <span class="c">// router sans tout lire</span></code></pre>
+    </article>
+  </div>
+</section>
+
+<section id="reforme" class="reform">
+  <div class="reform-text">
+    <h2>Où le SDK se place dans la réforme</h2>
+    <p>La facturation électronique impose de <strong>recevoir</strong> les factures structurées dès le 1<sup>er</sup> septembre 2026 pour toutes les entreprises, et de les <strong>émettre</strong> selon la taille, via une plateforme agréée. Le SDK est la brique <em>format et conformité</em> ; la plateforme est la brique <em>transport</em>.</p>
+    <ol class="timeline">
+      <li><time datetime="2026-09-01">1<sup>er</sup> sept. 2026</time><span><b>Réception</b> pour toutes les entreprises · <b>émission</b> pour les grandes entreprises et ETI</span></li>
+      <li><time datetime="2027-09-01">1<sup>er</sup> sept. 2027</time><span><b>Émission</b> pour les PME, TPE et micro-entreprises</span></li>
+    </ol>
+  </div>
+  <div class="scope">
+    <div class="does">
+      <h3>Le SDK fait</h3>
+      <ul>
+        <li>XML CII EN 16931 et PDF/A-3 Factur-X</li>
+        <li>Validation EN 16931 + règles françaises, erreurs typées avec chemin</li>
+        <li>Lecture de tout profil, ré-émission fidèle</li>
+        <li>Mentions de la réforme : SIREN acheteur, nature de l'opération, TVA sur les débits, adresse 0225</li>
+        <li>Acomptes, avoirs, pièces jointes, notes légales générées</li>
+        <li>Limites de taille, pas de DTD : entrées non fiables bienvenues</li>
+      </ul>
+    </div>
+    <div class="doesnt">
+      <h3>Le SDK ne fait pas</h3>
+      <ul>
+        <li>Envoyer à une plateforme agréée, statuts, e-reporting</li>
+        <li>Convertir un PDF quelconque en PDF/A</li>
+        <li>UBL, autres profils Factur-X en écriture</li>
+      </ul>
+      <p class="fine">Tout est écrit noir sur blanc dans le <a href="https://github.com/Geekles007/facturx/blob/main/docs/reforme.md">guide de la réforme</a> et le <a href="https://github.com/Geekles007/facturx/blob/main/docs/decisions.md">journal des décisions</a>.</p>
+    </div>
+  </div>
+</section>
+
+<section class="examples">
+  <h2>Exemples exécutables</h2>
+  <p>Cinq programmes complets, exécutés en intégration continue : un modèle applicatif JSON transformé en Factur-X, un dossier de factures reçues trié en ok / invalide / sans Factur-X, un handler HTTP <code>Request → Response</code> pour Next.js, Hono ou Workers, et la chaîne acomptes → facture définitive.</p>
+  <a class="btn" href="https://github.com/Geekles007/facturx/tree/main/examples">Parcourir les exemples</a>
+</section>
+
+</main>
+
+<footer>
+  <p><b>facturx-sdk</b> · MIT · publié sur npm avec attestation de provenance · <a href="https://github.com/Geekles007/facturx/blob/main/CHANGELOG.md">CHANGELOG</a> · <a href="https://github.com/Geekles007/facturx/blob/main/SECURITY.md">Sécurité</a> · <a href="https://github.com/Geekles007/facturx/blob/main/docs/decisions.md">50 décisions documentées</a></p>
+  <p class="fine">Ce site et le SDK ne constituent pas un conseil juridique ; les textes de la réforme évoluent, vérifiez la version en vigueur sur impots.gouv.fr.</p>
+</footer>
+
+<script>
+for (const b of document.querySelectorAll('.copy')) {
+  b.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = 'Copié'; setTimeout(() => (b.textContent = 'Copier'), 1600); } catch { b.textContent = 'Sélectionnez'; }
+  });
+}
+</script>
+</body>
+</html>
