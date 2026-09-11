@@ -37,7 +37,11 @@ export interface Delivery {
   partyName?: string;
   /** BT-71 — Identifiant du lieu de livraison. */
   locationId?: string;
-  /** BG-15 — Adresse de livraison. */
+  /**
+   * BG-15 — Adresse de livraison, à fournir si elle diffère de celle de l'acheteur (BG-8).
+   * Règle FR BR-FR-14 : si fournie, `line1` (BT-75), `city` (BT-77), `postCode` (BT-78) et `countryCode` (BT-80)
+   * sont obligatoires ; ne pas la transmettre pour une prestation de services.
+   */
   address?: Address;
 }
 
@@ -76,7 +80,11 @@ export interface Invoice {
   id: string;
   /** BT-2 — Date d'émission. Obligatoire (BR-03). */
   issueDate: IsoDate;
-  /** BT-3 — Type de facture : `380` facture, `381` avoir (montants positifs, facture d'origine dans `references.precedingInvoices`). Obligatoire (BR-04). */
+  /**
+   * BT-3 — Type de facture (BR-FR-04) : `380` facture, `384` rectificative, `386` acompte, `389` auto-facturée,
+   * `393` affacturée, `381` / `261` / `262` / `396` avoirs. Montants positifs ; document d'origine dans
+   * `references.precedingInvoices`. Obligatoire (BR-04).
+   */
   typeCode: InvoiceTypeCode;
   /** BT-5 — Devise de la facture (ISO 4217). Obligatoire (BR-05). */
   currency: CurrencyCode;

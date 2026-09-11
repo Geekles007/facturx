@@ -110,7 +110,7 @@ export function checkRequired(inv: Invoice, c: IssueCollector): void {
     c.add(
       'BR-CL-01',
       'typeCode',
-      'Types de facture pris en charge : 380 (facture) et 381 (avoir).',
+      'Type de facture (BT-3) hors des codes pris en charge (BR-FR-04, codes intégrés à EN 16931).',
       {
         expected: INVOICE_TYPE_CODES,
         actual: inv.typeCode,

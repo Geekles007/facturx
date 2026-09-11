@@ -7,9 +7,36 @@
 /** Date calendaire ISO 8601 `YYYY-MM-DD` (format 102 en CII). */
 export type IsoDate = `${number}-${number}-${number}`;
 
-/** BT-3 — Code de type de facture (UNTDID 1001) : `380` facture commerciale, `381` avoir (même structure, montants positifs). */
-export type InvoiceTypeCode = '380' | '381';
-export const INVOICE_TYPE_CODES: readonly InvoiceTypeCode[] = ['380', '381'];
+/**
+ * BT-3 — Code de type de facture (UNTDID 1001), restreint aux codes de la règle BR-FR-04 déjà intégrés
+ * à EN 16931 : `380` facture, `384` rectificative, `386` acompte, `389` auto-facturée, `393` affacturée,
+ * `381` avoir, `261` avoir auto-facturé, `262` avoir pour remise globale, `396` avoir affacturé.
+ * Les codes « en attente d'intégration » (500, 501, 471–473, 502, 503) sont refusés jusqu'à leur adoption.
+ * Même structure pour tous ; montants positifs pour les avoirs.
+ */
+export type InvoiceTypeCode = '380' | '384' | '386' | '389' | '393' | '381' | '261' | '262' | '396';
+export const INVOICE_TYPE_LABELS: Readonly<Record<InvoiceTypeCode, string>> = {
+  '380': 'Facture commerciale',
+  '384': 'Facture rectificative',
+  '386': "Facture d'acompte",
+  '389': 'Facture auto-facturée',
+  '393': 'Facture affacturée',
+  '381': 'Avoir',
+  '261': 'Avoir auto-facturé',
+  '262': 'Avoir pour remise globale',
+  '396': 'Avoir affacturé',
+};
+export const INVOICE_TYPE_CODES: readonly InvoiceTypeCode[] = Object.keys(
+  INVOICE_TYPE_LABELS,
+) as InvoiceTypeCode[];
+/** Avoirs : 381, 261, 262, 396. */
+export function isCreditNoteType(code: string | undefined): boolean {
+  return code === '381' || code === '261' || code === '262' || code === '396';
+}
+/** Documents émis par l'acheteur (autofacturation, BT-3 = 389 / 261). */
+export function isSelfBilledType(code: string | undefined): boolean {
+  return code === '389' || code === '261';
+}
 
 /**
  * Règle FR (réforme, spécifications externes DGFiP) — Nature de l'opération facturée :

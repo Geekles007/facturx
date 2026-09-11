@@ -86,11 +86,13 @@ export type IssueCode =
   | 'BR-FR-09'
   | 'BR-FR-10'
   | 'BR-FR-11'
+  | 'BR-FR-14'
   | 'BR-FR-15'
   | 'BR-FR-16'
   // Règles françaises sans identifiant AFNOR (Code de commerce, CGI)
   | 'FR-VAT-ID'
   | 'FR-DELIVERY'
+  | 'FR-DEPOSIT-REFERENCE'
   | 'FR-LATE-PENALTY'
   | 'FR-RECOVERY-INDEMNITY'
   | 'FR-EARLY-PAYMENT-DISCOUNT'

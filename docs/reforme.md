@@ -41,7 +41,7 @@ Nouvelles mentions obligatoires (en plus de celles de l'art. L441-9 C. com.) :
 | Mention | Où dans Factur-X | Dans le SDK |
 |---|---|---|
 | **SIREN** du client | BT-47 (`0002`) | `buyer.siren` ✅ — **exigé** pour un acheteur professionnel établi en France (`FR-BUYER-SIREN`), clé de Luhn vérifiée ; `buyer.consumer: true` pour un particulier (B2C) |
-| **Adresse de livraison** si différente de l'adresse du client | BG-15 | `delivery.address` ✅ |
+| **Adresse de livraison** si différente de l'adresse du client | BG-15, règle **BR-FR-14** | `delivery.address` ✅ — si fournie : ligne 1, ville, code postal, pays exigés ; refusée pour une prestation de services |
 | **Nature de l'opération** : livraison de biens / prestation de services / mixte | cadre de facturation BT-23 (`B1` / `S1` / `M1`), règle **BR-FR-08** | `operationCategory` ✅ — exigée, écrite en BT-23 et relue ; `businessProcess` pour les 12 autres cadres (`*2` déjà payée, `*4` définitive après acompte, `S5`/`S6` sous-/cotraitance, `*7` déjà e-reportée). **Mapping confirmé** par la norme AFNOR XP Z12-012 |
 | **Option pour le paiement de la TVA d'après les débits** | BT-8 `DueDateTypeCode` = `5` (CII), règle **BR-FR-MAP-03** | `vatOnDebits: true` ✅ — écrit dans chaque ventilation, relu, exclusif de `taxPointDate` (BR-CO-03). **Confirmé** par XP Z12-012 (« valeurs 5 en CII et 3 en UBL ») ; la mention lisible est à imprimer par votre PDF |
 | Pénalités de retard, indemnité forfaitaire de 40 €, escompte | **notes BG-1 codées `PMD`, `PMT`, `AAB`** (règles **BR-FR-05/06** : une fois chacune) + texte BT-20 | ✅ générées depuis `paymentTerms` (`latePenaltyRate`, `recoveryIndemnity`, `earlyPaymentDiscount`) ou fournies dans `notes` ; validées |
@@ -97,14 +97,16 @@ La norme **AFNOR XP Z12-012** (formats et profils du socle, juillet 2025) fixe l
 |---|---|---|
 | BR-FR-01 / 02 | numéro de facture : 35 caractères max, `A-Z a-z 0-9 - + _ /` | `id` |
 | BR-FR-03 | années entre 2000 et 2099 | toutes les dates |
+| BR-FR-04 | types de document : 380, 384, 386, 389, 393, 381, 261, 262, 396 (les 7 codes « en attente d'intégration EN 16931 » restent refusés) | `typeCode` |
 | BR-FR-05 / 06 | notes `PMD`, `PMT`, `AAB` obligatoires, une fois chacune (+ `TXD` au plus une fois) | générées depuis `paymentTerms` ou fournies dans `notes` |
 | BR-FR-08 | cadre de facturation BT-23 ∈ {B1, S1, M1, B2, S2, M2, B4, S4, M4, S5, S6, B7, S7}, cohérent avec la nature de l'opération | `operationCategory`, `businessProcess` |
 | BR-FR-09 | SIRET cohérent avec le SIREN | `siret` / `siren` |
 | BR-FR-10 / 11 | SIREN vendeur obligatoire ; SIREN acheteur obligatoire (e-invoicing) | `seller.siren`, `buyer.siren` (`buyer.consumer` pour le B2C) |
+| BR-FR-14 | adresse de livraison fournie ⇒ BT-75/77/78/80 présents ; jamais pour une prestation de services | `delivery.address` |
 | BR-FR-15 / 16 | catégories de TVA S, E, AE, K, G, O, Z ; taux dans la liste française | `tax.category`, `tax.rate` |
 | BR-FR-MAP-03 | TVA sur les débits : BT-8 = 5 en CII | `vatOnDebits` |
 
-Non implémentées (hors périmètre ou nécessitant l'annuaire) : BR-FR-04 (codes de type élargis : 386, 389, 393…), BR-FR-07 (codes de notes libres — disponibles dans `NoteSubjectCode`), BR-FR-10/11 « présent et actif dans l'annuaire », BR-FR-12/13 (adresses électroniques), BR-FR-14 (adresse de livraison obligatoire dès 2027 pour les biens), BR-FR-17/18 (pièces jointes), BR-FR-20 à 26 (note `BAR`, codes de routage).
+Non implémentées (hors périmètre ou nécessitant l'annuaire) : BR-FR-07 (codes de notes libres — disponibles dans `NoteSubjectCode`), BR-FR-10/11 « présent et actif dans l'annuaire », BR-FR-12/13 (adresses électroniques), BR-FR-17/18 (pièces jointes), BR-FR-20 à 26 (note `BAR`, codes de routage). Règle maison en complément : `FR-DEPOSIT-REFERENCE` — une facture définitive après acompte (cadre `*4`) doit référencer ses factures d'acompte (BT-25).
 
 ## Écarts du modèle : couverts
 
@@ -113,6 +115,6 @@ Les quatre écarts identifiés en session 5 sont traités et, depuis la session 
 1. **Nature de l'opération** — `operationCategory` exigée, portée par le cadre de facturation BT-23 (`B1`/`S1`/`M1`, règle BR-FR-08) ; `businessProcess` pour les autres cadres.
 2. **Option TVA sur les débits** — `vatOnDebits`, BT-8 = 5 (règle BR-FR-MAP-03).
 3. **SIREN acheteur** — exigé pour un acheteur professionnel établi en France (BR-FR-11) ; `buyer.consumer` pour le B2C.
-4. **Avoirs (381)** — lus et écrits avec la même structure.
+4. **Avoirs (381)** — lus et écrits avec la même structure ; depuis 0.3.0, aussi les acomptes (386), rectificatives (384), documents auto-facturés (389, 261), affacturés (393, 396) et avoirs pour remise globale (262).
 
-Restent hors périmètre : autofacturation (BT-3 = 389), e-reporting, statuts, UBL.
+Restent hors périmètre : e-reporting, statuts, UBL.

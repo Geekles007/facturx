@@ -227,6 +227,47 @@ export function checkFrenchRules(inv: Invoice, c: IssueCollector): void {
     checkTax(tb, `taxBreakdown[${i}]`, c);
   }
 
+  // BR-FR-14 : adresse de livraison (BG-15) fournie ⇒ complète, et jamais pour une prestation de services
+  const shipTo = inv.delivery?.address;
+  if (shipTo) {
+    if (inv.operationCategory === 'services') {
+      c.add(
+        'BR-FR-14',
+        'delivery.address',
+        'L’adresse de livraison (BG-15) ne doit pas être transmise pour une prestation de services.',
+      );
+    } else {
+      const required: [keyof typeof shipTo, string][] = [
+        ['line1', 'BT-75'],
+        ['city', 'BT-77'],
+        ['postCode', 'BT-78'],
+        ['countryCode', 'BT-80'],
+      ];
+      for (const [key, bt] of required) {
+        if (!isNonEmptyString(shipTo[key])) {
+          c.add(
+            'BR-FR-14',
+            `delivery.address.${key}`,
+            `L’adresse de livraison (BG-15) doit comporter ${bt} (${key}).`,
+          );
+        }
+      }
+    }
+  }
+
+  // Facture définitive après acompte (cadre *4) : la ou les factures d'acompte doivent être référencées (BT-25)
+  if (
+    inv.businessProcess !== undefined &&
+    inv.businessProcess.endsWith('4') &&
+    !inv.references?.precedingInvoices?.length
+  ) {
+    c.add(
+      'FR-DEPOSIT-REFERENCE',
+      'references.precedingInvoices',
+      'Une facture définitive après acompte (cadre B4/S4/M4) doit référencer la ou les factures d’acompte (BT-25).',
+    );
+  }
+
   // Date de la vente / prestation : date de livraison OU période (L441-9)
   const d = inv.delivery;
   const hasDate = d?.date !== undefined;

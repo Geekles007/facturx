@@ -5,8 +5,11 @@ import {
   cents,
   computeTotals,
   FacturXValidationError,
+  INVOICE_TYPE_CODES,
   type Invoice,
   type Issue,
+  isCreditNoteType,
+  isSelfBilledType,
   percent,
   resolveNotes,
   validateInvoice,
@@ -482,9 +485,58 @@ describe('réforme : SIREN acheteur, nature de l’opération, TVA sur les débi
     creditNote.typeCode = '381';
     creditNote.references = { precedingInvoices: [{ id: 'F-2026-0000', issueDate: '2026-08-01' }] };
     expect(validateInvoice(creditNote).ok).toBe(true);
-    creditNote.typeCode = '384' as never;
+    creditNote.typeCode = '500' as never; // « en attente d'intégration EN 16931 »
     expect(issuesOf(creditNote)).toContainEqual(
-      expect.objectContaining({ code: 'BR-CL-01', path: 'typeCode', actual: '384' }),
+      expect.objectContaining({ code: 'BR-CL-01', path: 'typeCode', actual: '500' }),
     );
+  });
+});
+
+describe('BR-FR-04 types de document et BR-FR-14 adresse de livraison', () => {
+  it('accepte les neuf codes intégrés à EN 16931 et refuse les autres', () => {
+    for (const code of INVOICE_TYPE_CODES) {
+      const invoice = { ...simpleInvoice(), typeCode: code };
+      expect(validateInvoice(invoice).ok, code).toBe(true);
+    }
+    for (const code of ['500', '471', '503', '71']) {
+      const invoice = { ...simpleInvoice(), typeCode: code as never };
+      expect(codesAndPaths(invoice)).toContain('BR-CL-01 @ typeCode');
+    }
+    expect(isCreditNoteType('262')).toBe(true);
+    expect(isCreditNoteType('386')).toBe(false);
+    expect(isSelfBilledType('389')).toBe(true);
+  });
+
+  it('BR-FR-14 : une adresse de livraison fournie doit être complète (biens)', () => {
+    const invoice = { ...simpleInvoice(), operationCategory: 'goods' as const };
+    invoice.delivery = { date: '2026-09-10', address: { countryCode: 'FR' } };
+    expect(codesAndPaths(invoice)).toEqual(
+      expect.arrayContaining([
+        'BR-FR-14 @ delivery.address.line1',
+        'BR-FR-14 @ delivery.address.city',
+        'BR-FR-14 @ delivery.address.postCode',
+      ]),
+    );
+    invoice.delivery = {
+      date: '2026-09-10',
+      address: { line1: 'ZI des Docks', city: 'Lyon', postCode: '69007', countryCode: 'FR' },
+    };
+    expect(validateInvoice(invoice).ok).toBe(true);
+  });
+
+  it('BR-FR-14 : pas d’adresse de livraison pour une prestation de services', () => {
+    const invoice = simpleInvoice(); // services
+    invoice.delivery = {
+      date: '2026-09-10',
+      address: { line1: 'ZI des Docks', city: 'Lyon', postCode: '69007', countryCode: 'FR' },
+    };
+    expect(codesAndPaths(invoice)).toContain('BR-FR-14 @ delivery.address');
+  });
+
+  it('une facture définitive après acompte (cadre *4) référence ses factures d’acompte', () => {
+    const invoice = { ...simpleInvoice(), businessProcess: 'S4' as const };
+    expect(codesAndPaths(invoice)).toContain('FR-DEPOSIT-REFERENCE @ references.precedingInvoices');
+    invoice.references = { precedingInvoices: [{ id: 'AC-2026-0001', issueDate: '2026-08-01' }] };
+    expect(validateInvoice(invoice).ok).toBe(true);
   });
 });

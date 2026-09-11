@@ -2,6 +2,16 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Avant 1.0.0, une version mineure peut contenir des changements d'API.
 
+## [0.3.0] — 2026-09-11
+
+### Ajouté
+- BR-FR-04 : `typeCode` accepte les neuf codes de la norme déjà intégrés à EN 16931 — 380, 384 (rectificative), 386 (acompte), 389 (auto-facturée), 393 (affacturée), 381, 261, 262, 396 (avoirs) ; `INVOICE_TYPE_LABELS`, `isCreditNoteType`, `isSelfBilledType`.
+- BR-FR-14 : une adresse de livraison fournie doit comporter ligne 1, ville, code postal et pays ; refusée pour une prestation de services.
+- `FR-DEPOSIT-REFERENCE` : une facture définitive après acompte (cadre `B4`/`S4`/`M4`) doit référencer ses factures d'acompte.
+
+### Modifié
+- Le message BR-CL-01 renvoie à BR-FR-04 ; les codes « en attente d'intégration EN 16931 » (500, 501, 471–473, 502, 503) restent refusés.
+
 ## [0.2.0] — 2026-09-11
 
 Conformité aux règles françaises de la norme **AFNOR XP Z12-012** (celle qu'appliquent les plateformes agréées). Changements d'API : codes d'anomalie renommés, notes légales générées dans le XML.
@@ -50,6 +60,7 @@ Première version publiée : la boucle complète émission → réception pour l
 ### Documentation
 - Guide de la réforme (`docs/reforme.md`), journal des décisions (`docs/decisions.md`), trois exemples exécutés en CI (émission Node, réception Node, handler HTTP Web standard).
 
+[0.3.0]: https://github.com/Geekles007/facturx/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Geekles007/facturx/releases/tag/v0.2.0
 [0.1.1]: https://github.com/Geekles007/facturx/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Geekles007/facturx/releases/tag/v0.1.0
