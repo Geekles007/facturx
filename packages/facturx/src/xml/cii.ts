@@ -340,10 +340,7 @@ export function toCiiTree(
 ): XmlElement {
   const refs = invoice.references ?? {};
   const directDebit = invoice.paymentMeans?.find((pm) => pm.directDebit !== undefined)?.directDebit;
-  const remittance =
-    invoice.remittanceInformation ??
-    invoice.paymentMeans?.find((pm) => pm.remittanceInformation !== undefined)
-      ?.remittanceInformation;
+  const remittance = invoice.remittanceInformation;
   const totals = invoice.totals;
   // BT-23 : option explicite, sinon cadre de facturation du modèle, sinon déduit de la nature de l'opération (B1 / S1 / M1)
   const businessProcessId =

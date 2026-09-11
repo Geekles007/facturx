@@ -314,6 +314,6 @@ describe('identifiants de parties et guideline', () => {
   it('BT-83 est lue au niveau de la facture', () => {
     const parsed = fromCiiXml(toCiiXml(simpleInvoice()));
     expect(parsed.remittanceInformation).toBe('F-2026-0001');
-    expect(parsed.paymentMeans?.[0]?.remittanceInformation).toBeUndefined();
+    expect('remittanceInformation' in (parsed.paymentMeans?.[0] ?? {})).toBe(false);
   });
 });

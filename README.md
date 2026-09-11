@@ -4,7 +4,7 @@
 
 SDK **TypeScript pur** — zéro dépendance native, compatible edge/serverless — pour **générer, embarquer et extraire** des factures **Factur-X** au profil **EN 16931**, avec les règles françaises intégrées.
 
-> État : **0.9.0 / conformité AFNOR** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3 validé veraPDF), guide réforme, exemples exécutables, mentions de la réforme, et les **règles françaises de la norme AFNOR XP Z12-012** (toutes les règles `BR-FR` vérifiables hors ligne), **contre-vérifiées par les schematrons officiels CEN, Factur-X et BR-FR V1.3.0 en CI**. **Publié sur npm : `facturx-sdk`.**
+> État : **1.0.0** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3 validé veraPDF), guide réforme, exemples exécutables, mentions de la réforme, et les **règles françaises de la norme AFNOR XP Z12-012** (toutes les règles `BR-FR` vérifiables hors ligne), **contre-vérifiées par les schematrons officiels CEN, Factur-X et BR-FR V1.3.0 en CI**. **Publié sur npm : `facturx-sdk`.**
 
 ## Vision
 
@@ -38,6 +38,15 @@ pnpm --filter example-receive-node start -- --demo
 pnpm --filter example-http-handler start
 pnpm --filter example-deposit-node start
 ```
+
+## Stabilité et versions
+
+À partir de **1.0.0**, le paquet suit SemVer : une rupture d'API n'arrive que dans une version majeure.
+
+- **Stable** : le modèle `Invoice` et ses sous-types, les helpers monétaires, `validateInvoice` / `assertValidInvoice` et les **codes et chemins** d'anomalie, `computeTotals`, `withDeposits`, `toCiiXml` / `fromCiiXml` / `parseCiiDocument` / `readCiiGuideline`, `embedFacturX` / `extractFacturX` / `extractInvoice`, `DEFAULT_LIMITS` et l'option `{ limits }`.
+- **Stable mais bas niveau** (exposé pour étendre le SDK, à utiliser en connaissance de cause) : `parseXml`, `el` / `elA` / `serializeXml`, `toCiiTree`, `buildXmp`, `loadPdf`, base64.
+- **Non contractuel** : le texte des messages d'anomalie (les codes et chemins le sont), les libellés générés des notes légales (leur présence et leur code le sont).
+- Une règle ajoutée peut refuser une facture acceptée avant : c'est une version **mineure**, annoncée dans le CHANGELOG — la conformité prime sur la compatibilité.
 
 ## Sécurité
 

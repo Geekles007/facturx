@@ -17,7 +17,7 @@ const paymentTerms: Invoice['paymentTerms'] = {
   earlyPaymentDiscount: 'none',
 };
 
-const paymentMeans = (_invoiceId: string): PaymentMeans[] => [
+const paymentMeans = (): PaymentMeans[] => [
   {
     typeCode: '58',
     creditTransfer: { iban: 'FR7630006000011234567890189', bic: 'BNPAFRPP' },
@@ -48,7 +48,7 @@ export function simpleDraft(): InvoiceDraft {
       },
     ],
     paymentTerms,
-    paymentMeans: paymentMeans('F-2026-0001'),
+    paymentMeans: paymentMeans(),
   };
 }
 
@@ -116,7 +116,7 @@ export function multiRateDraft(): InvoiceDraft {
       },
     ],
     paymentTerms: { ...paymentTerms, earlyPaymentDiscount: { rate: percent('2'), withinDays: 10 } },
-    paymentMeans: paymentMeans('F-2026-0002'),
+    paymentMeans: paymentMeans(),
   };
 }
 

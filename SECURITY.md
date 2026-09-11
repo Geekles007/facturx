@@ -6,7 +6,7 @@ Utilisez le **signalement privé de vulnérabilité** de GitHub : [Security → 
 
 ## Versions supportées
 
-La dernière version mineure publiée sur npm (`facturx-sdk`). Avant 1.0, les versions antérieures ne reçoivent pas de correctif.
+La dernière version mineure de la branche 1.x publiée sur npm (`facturx-sdk`).
 
 ## Modèle de menace
 

@@ -1,6 +1,13 @@
 # Changelog
 
-Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Avant 1.0.0, une version mineure peut contenir des changements d'API.
+Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Depuis 1.0.0, une rupture d'API n'arrive que dans une version majeure ; une nouvelle règle de validation est une version mineure.
+
+## [1.0.0] — 2026-09-12
+
+Première version stable : API figée (voir « Stabilité et versions » dans le README).
+
+### Retiré
+- `PaymentMeans.remittanceInformation` (déprécié en 0.8.0) : utiliser `Invoice.remittanceInformation` (BT-83).
 
 ## [0.9.0] — 2026-09-12
 
@@ -111,6 +118,7 @@ Première version publiée : la boucle complète émission → réception pour l
 ### Documentation
 - Guide de la réforme (`docs/reforme.md`), journal des décisions (`docs/decisions.md`), trois exemples exécutés en CI (émission Node, réception Node, handler HTTP Web standard).
 
+[1.0.0]: https://github.com/Geekles007/facturx/releases/tag/v1.0.0
 [0.9.0]: https://github.com/Geekles007/facturx/releases/tag/v0.9.0
 [0.8.0]: https://github.com/Geekles007/facturx/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Geekles007/facturx/releases/tag/v0.7.0
