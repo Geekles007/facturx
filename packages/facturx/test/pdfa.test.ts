@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PDFDocument } from 'pdf-lib';
@@ -68,9 +68,11 @@ describe.skipIf(!available)('conformité PDF/A-3b (veraPDF)', () => {
       { invoice: multiRateInvoice() },
       { date: new Date('2026-09-11T10:00:00Z'), outputIntent: { iccProfile: new Uint8Array(icc) } },
     );
+    // Lisible par l'utilisateur du conteneur Docker (mkdtemp crée un dossier 0700 sous Linux)
     const dir = mkdtempSync(join(tmpdir(), 'facturx-verapdf-'));
+    chmodSync(dir, 0o755);
     const file = join(dir, 'facture.pdf');
-    writeFileSync(file, pdf);
+    writeFileSync(file, pdf, { mode: 0o644 });
 
     const run = spawnSync('verapdf', ['--flavour', '3b', '--format', 'json', file], {
       encoding: 'utf8',
