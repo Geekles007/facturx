@@ -120,3 +120,11 @@ Trois paquets `examples/*` dans le workspace (`workspace:*`, `tsx`), typechecké
 
 ### D35. Publication manuelle avec OTP, pas de token en CI (pour l'instant)
 Le compte npm est en 2FA `auth-and-writes` : le `publish` est lancé par le mainteneur avec son code OTP (`docs/release.md`). Un workflow de release sur tag (token granulaire « bypass 2FA » ou trusted publishing OIDC) sera envisagé quand la cadence de versions le justifiera ; le trusted publishing exige que le paquet existe déjà, ce qui est désormais le cas.
+
+## 2026-09-11 — Session 8 : workflow de release
+
+### D36. Trusted publishing npm (OIDC) déclenché par tag
+Aucun secret dans le dépôt : le workflow obtient un jeton OIDC (`id-token: write`) que npm échange contre une autorisation de publier, et signe une attestation de provenance visible sur npmjs.com. Un token granulaire aurait été un secret à faire tourner ; un `workflow_dispatch` aurait fait committer un bot. Le tag reste le geste humain ; tout le reste (check, garde-fous, publish, release GitHub) est reproductible. `npm publish` est utilisé directement (et non `pnpm publish`) : c'est le client que npm documente pour l'OIDC, et le paquet n'a pas de dépendance `workspace:*`.
+
+### D37. Garde-fous avant publication, pas de bump automatique
+`scripts/release-check.mjs` refuse un tag qui ne correspond pas aux deux `package.json`, une section de CHANGELOG absente, un CHANGELOG de paquet désynchronisé, ou une version déjà publiée. `pnpm bump` fait les écritures mécaniques mais **exige** que la section du CHANGELOG existe déjà : on ne publie pas sans avoir écrit ce qui change. Les source maps sont retirées du paquet (tarball ÷ 3, plus d'avertissements « source map manquante » chez les utilisateurs de bundlers).

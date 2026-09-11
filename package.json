@@ -12,11 +12,13 @@
     "test": "pnpm --filter facturx-sdk test",
     "build": "pnpm --filter facturx-sdk build",
     "examples:check": "pnpm -r --filter \"./examples/*\" run check",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm examples:check"
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm examples:check",
+    "bump": "node scripts/bump.mjs",
+    "release:check": "node scripts/release-check.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
     "typescript": "^5.9.3"
   },
-  "version": "0.1.0"
+  "version": "0.1.1"
 }

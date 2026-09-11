@@ -1,0 +1,44 @@
+name: Release
+
+# Déclenché par un tag vX.Y.Z (voir docs/release.md).
+# Publie sur npm par trusted publishing (OIDC, sans secret) avec attestation de provenance,
+# puis crée la release GitHub avec les notes du CHANGELOG.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # release GitHub
+  id-token: write # trusted publishing npm + provenance
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - name: npm ≥ 11.5 (requis pour le trusted publishing)
+        run: npm install -g npm@latest && npm --version
+      - run: pnpm install --frozen-lockfile
+      - name: Vérifications complètes
+        run: pnpm check
+      - name: Garde-fous de version
+        run: node scripts/release-check.mjs "$GITHUB_REF_NAME"
+      - name: Publication npm
+        working-directory: packages/facturx
+        run: npm publish --access public --provenance
+      - name: Release GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/release-notes.mjs "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"

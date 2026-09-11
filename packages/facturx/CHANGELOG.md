@@ -2,6 +2,13 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Avant 1.0.0, une version mineure peut contenir des changements d'API.
 
+## [0.1.1] — 2026-09-11
+
+### Publication
+- Workflow de release sur tag `v*` : vérifications complètes, garde-fous de version, publication npm par trusted publishing (OIDC) avec attestation de provenance, release GitHub automatique.
+- `pnpm bump X.Y.Z` et `pnpm release:check` pour préparer et vérifier une version.
+- Paquet allégé : plus de source maps dans le tarball.
+
 ## [0.1.0] — 2026-09-11
 
 Première version publiée : la boucle complète émission → réception pour le profil Factur-X EN 16931, sans dépendance runtime hors `pdf-lib` (entrée `./pdf` uniquement).
@@ -27,4 +34,5 @@ Première version publiée : la boucle complète émission → réception pour l
 ### Documentation
 - Guide de la réforme (`docs/reforme.md`), journal des décisions (`docs/decisions.md`), trois exemples exécutés en CI (émission Node, réception Node, handler HTTP Web standard).
 
+[0.1.1]: https://github.com/Geekles007/facturx/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Geekles007/facturx/releases/tag/v0.1.0

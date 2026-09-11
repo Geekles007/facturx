@@ -164,7 +164,7 @@ pnpm install
 pnpm check       # lint + typecheck + test + build + exemples (typecheck + exécution)
 ```
 
-Monorepo pnpm : `packages/facturx` (le SDK), `examples/*` (exemples exécutés en CI). Outils : TypeScript strict, tsup (ESM + CJS + d.ts), vitest, Biome, GitHub Actions (Node 22/24).
+Monorepo pnpm : `packages/facturx` (le SDK), `examples/*` (exemples exécutés en CI). Publication : tag `vX.Y.Z` → workflow de release (trusted publishing npm), voir [docs/release.md](docs/release.md). Outils : TypeScript strict, tsup (ESM + CJS + d.ts), vitest, Biome, GitHub Actions (Node 22/24).
 
 ## Licence
 

@@ -1,13 +1,29 @@
 # Publier une version
 
-Procédure manuelle, volontairement courte (< 5 min). Prérequis : `npm login` fait sur la machine (`npm whoami` répond), droits de publication sur le scope `@geekles`.
+Publication automatisée par **trusted publishing** npm (OIDC) : aucun token, pas d'OTP, attestation de provenance. Le workflow [`release.yml`](../.github/workflows/release.yml) se déclenche sur un tag `vX.Y.Z`, rejoue `pnpm check`, vérifie les garde-fous, publie, puis crée la release GitHub avec les notes du CHANGELOG.
 
-1. Mettre à jour `CHANGELOG.md` (racine) : section `## [x.y.z] — AAAA-MM-JJ` + lien en bas de fichier ; copier dans `packages/facturx/CHANGELOG.md`.
-2. Aligner la version : `packages/facturx/package.json` et `package.json` (racine).
-3. Vérifier : `pnpm check` (lint, typecheck, tests, build, exemples).
-4. Inspecter le tarball : `cd packages/facturx && pnpm pack --dry-run` — `dist/`, `README.md`, `LICENSE`, `CHANGELOG.md`, rien d'autre.
-5. Publier : `pnpm publish --filter facturx-sdk --access public` (depuis la racine ; `--dry-run` d'abord si doute).
-6. Tag et release : `git tag -a vx.y.z -m "vx.y.z" && git push origin vx.y.z`, puis `gh release create vx.y.z --notes-from-tag` (ou coller la section du CHANGELOG).
-7. Vérifier : `npm view facturx-sdk version` et `npx -y -p facturx-sdk@x.y.z node -e "console.log(require('facturx-sdk/package.json').version)"`.
+## Prérequis (une fois)
 
-Le `README.md` du paquet est la page npm : il est court et pointe vers le dépôt ; le README racine reste la documentation complète.
+Sur npmjs.com → paquet `facturx-sdk` → *Settings* → *Trusted Publisher* → **GitHub Actions** :
+
+| Champ | Valeur |
+|---|---|
+| Organization or user | `Geekles007` |
+| Repository | `facturx` |
+| Workflow filename | `release.yml` |
+| Environment name | *(vide)* |
+
+## À chaque version (4 étapes, ~3 min)
+
+1. Écrire la section `## [X.Y.Z] — AAAA-MM-JJ` dans `CHANGELOG.md` (racine) et ajouter le lien `[X.Y.Z]: …/releases/tag/vX.Y.Z` en bas.
+2. `pnpm bump X.Y.Z` — met à jour les deux `package.json`, copie le CHANGELOG dans le paquet, refuse si la section manque.
+3. `pnpm check`, puis `git add -A && git commit -m "vX.Y.Z"`.
+4. `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin main vX.Y.Z` → le workflow publie et crée la release.
+
+`pnpm release:check vX.Y.Z` rejoue localement les garde-fous du workflow (versions alignées, CHANGELOG, version non publiée).
+
+## Dépannage
+
+- **`npm publish` refuse (E404 / OIDC)** : le trusted publisher n'est pas configuré, ou le nom du workflow diffère de `release.yml`.
+- **Garde-fou en échec** : corriger, supprimer le tag (`git tag -d vX.Y.Z && git push origin :vX.Y.Z`), recommencer à l'étape 3.
+- **Publication manuelle de secours** : `cd packages/facturx && npm publish --access public` (OTP demandé), puis `gh release create vX.Y.Z --notes-file <(node scripts/release-notes.mjs vX.Y.Z)`.
