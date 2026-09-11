@@ -1,0 +1,27 @@
+name: OIDC debug
+
+# Affiche les claims du jeton OIDC GitHub (sans le jeton) pour les comparer au trusted publisher npm.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  claims:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Claims OIDC pour l'audience npm
+        run: |
+          curl -sS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=npm:registry.npmjs.org" \
+          | python3 -c '
+          import base64, json, sys
+          tok = json.load(sys.stdin)["value"]
+          payload = tok.split(".")[1]
+          payload += "=" * (-len(payload) % 4)
+          claims = json.loads(base64.urlsafe_b64decode(payload))
+          keep = ["iss", "aud", "sub", "repository", "repository_owner", "repository_id", "repository_owner_id", "workflow", "workflow_ref", "job_workflow_ref", "environment", "ref", "ref_type", "event_name", "runner_environment"]
+          print(json.dumps({k: claims.get(k) for k in keep}, indent=2))
+          '
