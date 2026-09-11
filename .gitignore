@@ -5,3 +5,4 @@ coverage/
 *.tsbuildinfo
 packages/facturx/test/schemas/*
 !packages/facturx/test/schemas/README.md
+packages/facturx/test/samples/

@@ -13,6 +13,7 @@ export {
   fromCiiXml,
   type ParsedCiiDocument,
   parseCiiDocument,
+  readCiiGuideline,
 } from './cii-read.js';
 export { assertXmlSafe, escapeXmlAttr, escapeXmlText, XmlError } from './escape.js';
 export {

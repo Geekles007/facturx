@@ -2,6 +2,17 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Avant 1.0.0, une version mineure peut contenir des changements d'API.
 
+## [0.8.0] — 2026-09-12
+
+### Ajouté
+- Lecture de 30 fichiers tiers (corpus ZUGFeRD / KoSIT, Factur-X FR de mustangproject) en CI : fidélité, ré-émission conforme, aucune perte d'élément signifiant (`pnpm samples:fetch`, `test/third-party.test.ts`).
+- `Party.identifiers` (BT-29/46 `ram:ID`), `Party.globalIds` (`GlobalID` hors SIRET), `Payee.globalId` (BT-60-1) : écrits et relus.
+- `readCiiGuideline(xml)` : profil (BT-24) et cadre (BT-23) sans lire la facture.
+- Pièce jointe sans contenu (attributs seuls) conservée à la lecture et à l'écriture.
+
+### Modifié
+- `Invoice.remittanceInformation` (BT-83) remplace `PaymentMeans.remittanceInformation`, déprécié mais encore lu à l'écriture ; la lecture renseigne désormais le niveau facture.
+
 ## [0.7.0] — 2026-09-12
 
 ### Ajouté
@@ -94,6 +105,7 @@ Première version publiée : la boucle complète émission → réception pour l
 ### Documentation
 - Guide de la réforme (`docs/reforme.md`), journal des décisions (`docs/decisions.md`), trois exemples exécutés en CI (émission Node, réception Node, handler HTTP Web standard).
 
+[0.8.0]: https://github.com/Geekles007/facturx/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Geekles007/facturx/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Geekles007/facturx/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Geekles007/facturx/releases/tag/v0.5.0

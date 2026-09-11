@@ -19,7 +19,7 @@ import {
 } from '../types/codes.js';
 import type { Delivery, Invoice, InvoiceNote, Totals } from '../types/invoice.js';
 import type { Line, LineAllowance, LineCharge } from '../types/line.js';
-import type { Contact, Party, Payee } from '../types/party.js';
+import type { Contact, Party, PartyIdentifier, Payee } from '../types/party.js';
 import type { PaymentMeans, PaymentTerms } from '../types/payment.js';
 import type { DocumentReferences, PrecedingInvoiceReference } from '../types/references.js';
 import type { TaxBreakdown, TaxInfo } from '../types/tax.js';
@@ -252,6 +252,16 @@ function party(ctx: Ctx, role: 'seller' | 'buyer'): Party {
     else if (scheme === 'FC') taxRegistrationId ??= text(id);
   }
   const routing = children(ctx, 'ID').find((id) => attr(id, 'schemeID') === '0224');
+  const identifiers: PartyIdentifier[] = children(ctx, 'ID')
+    .filter((id) => attr(id, 'schemeID') !== '0224' && text(id) !== undefined)
+    .map((id) =>
+      defined<PartyIdentifier>({ value: text(id) as string, scheme: attr(id, 'schemeID') }),
+    );
+  const globalIdsOther: PartyIdentifier[] = globalIds
+    .filter((g) => attr(g, 'schemeID') !== '0009' && text(g) !== undefined)
+    .map((g) =>
+      defined<PartyIdentifier>({ value: text(g) as string, scheme: attr(g, 'schemeID') }),
+    );
   const uri = child(child(ctx, 'URIUniversalCommunication'), 'URIID');
   const uriValue = text(uri);
   return defined<Party>({
@@ -265,6 +275,8 @@ function party(ctx: Ctx, role: 'seller' | 'buyer'): Party {
     address: address(child(ctx, 'PostalTradeAddress')) ?? { countryCode: '' },
     contact: contact(child(ctx, 'DefinedTradeContact')),
     routingCode: text(routing),
+    identifiers: nonEmpty(identifiers),
+    globalIds: nonEmpty(globalIdsOther),
     electronicAddress:
       uriValue === undefined ? undefined : { value: uriValue, scheme: attr(uri, 'schemeID') ?? '' },
   });
@@ -422,6 +434,48 @@ function paymentMeans(ctx: Ctx): PaymentMeans {
   });
 }
 
+/** Guideline (BT-24) et cadre (BT-23) d'un document CII, sans lire le reste — pour router une facture reçue. */
+export function readCiiGuideline(xml: string | Uint8Array): {
+  guidelineId: string;
+  businessProcessId?: string;
+} {
+  let rootNode: XmlNode;
+  try {
+    rootNode = parseXml(xml);
+  } catch (error) {
+    if (error instanceof XmlParseError)
+      throw new FacturXParseError('MALFORMED', '', error.message, { cause: error });
+    throw error;
+  }
+  if (rootNode.ns !== RSM || rootNode.local !== 'CrossIndustryInvoice') {
+    throw new FacturXParseError(
+      'NOT_CII',
+      rootNode.name,
+      'La racine doit être rsm:CrossIndustryInvoice (CII D16B)',
+    );
+  }
+  const root: Ctx = { node: rootNode, path: 'rsm:CrossIndustryInvoice' };
+  const context = requireChild(root, 'ExchangedDocumentContext', RSM);
+  const guidelineId = textOf(
+    requireChild(context, 'GuidelineSpecifiedDocumentContextParameter'),
+    'ID',
+  );
+  if (guidelineId === undefined) {
+    throw new FacturXParseError(
+      'MISSING',
+      `${context.path}/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID`,
+      'Identifiant de guideline (BT-24) absent',
+    );
+  }
+  return defined({
+    guidelineId,
+    businessProcessId: textOf(
+      child(context, 'BusinessProcessSpecifiedDocumentContextParameter'),
+      'ID',
+    ),
+  });
+}
+
 /**
  * Lit un document CII (Factur-X, tout profil) en `Invoice`, sans validation.
  * Les éléments inconnus sont ignorés ; les éléments structurellement indispensables manquants lèvent `FacturXParseError`.
@@ -475,7 +529,7 @@ export function parseCiiDocument(xml: string | Uint8Array): ParsedCiiDocument {
     .map((d) => {
       const binary = child(d, 'AttachmentBinaryObject');
       const raw = text(binary);
-      let bytes: Uint8Array | undefined;
+      let bytes: Uint8Array | undefined = binary === undefined ? undefined : new Uint8Array(0);
       if (binary && raw !== undefined) {
         try {
           bytes = decodeBase64(raw);
@@ -557,7 +611,6 @@ export function parseCiiDocument(xml: string | Uint8Array): ParsedCiiDocument {
   const creditorId = textOf(settlement, 'CreditorReferenceID');
   if (means.length > 0) {
     const first = means[0] as PaymentMeans;
-    if (remittance !== undefined) first.remittanceInformation = remittance;
     if (mandate !== undefined || creditorId !== undefined) {
       const target =
         means.find(
@@ -593,6 +646,13 @@ export function parseCiiDocument(xml: string | Uint8Array): ParsedCiiDocument {
           name: textOf(payeeCtx, 'Name') ?? '',
           id: textOf(payeeCtx, 'ID'),
           legalId: textOf(child(payeeCtx, 'SpecifiedLegalOrganization'), 'ID'),
+          globalId: (() => {
+            const g = child(payeeCtx, 'GlobalID');
+            const v = text(g);
+            return v === undefined
+              ? undefined
+              : defined<PartyIdentifier>({ value: v, scheme: attr(g, 'schemeID') });
+          })(),
         });
 
   // Notes BG-1 : les notes légales PMD/PMT/AAB au format du SDK redeviennent des champs structurés
@@ -625,6 +685,7 @@ export function parseCiiDocument(xml: string | Uint8Array): ParsedCiiDocument {
     operationCategory: operationCategoryFromBusinessProcess(businessProcessId),
     businessProcess: isBusinessProcessCode(businessProcessId) ? businessProcessId : undefined,
     buyerReference: textOf(agreement, 'BuyerReference'),
+    remittanceInformation: remittance,
     processing: bar.processing,
     notes: nonEmpty(bar.remaining),
     attachments: nonEmpty(attachments),

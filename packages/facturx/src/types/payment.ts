@@ -73,7 +73,7 @@ export interface PaymentMeans {
   typeCode: PaymentMeansCode;
   /** BT-82 — Libellé du moyen de paiement. */
   text?: string;
-  /** BT-83 — Référence de paiement (communication à reporter par l'acheteur). */
+  /** @deprecated BT-83 est une donnée de la facture : utiliser `Invoice.remittanceInformation` (encore lu ici, en repli, à l'écriture). Référence de paiement (communication à reporter par l'acheteur). */
   remittanceInformation?: string;
   /** BG-17 — Virement : compte à créditer. */
   creditTransfer?: CreditTransfer;

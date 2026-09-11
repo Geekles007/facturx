@@ -45,6 +45,7 @@ export function toFacturX(app: AppInvoice): Invoice {
 
   const draft: InvoiceDraft = {
     id: app.number,
+    remittanceInformation: app.number,
     issueDate: app.issuedOn as IsoDate,
     typeCode: '380',
     currency: 'EUR',
@@ -100,7 +101,6 @@ export function toFacturX(app: AppInvoice): Invoice {
           iban: app.seller.iban,
           ...(app.seller.bic ? { bic: app.seller.bic } : {}),
         },
-        remittanceInformation: app.number,
       },
     ],
   };

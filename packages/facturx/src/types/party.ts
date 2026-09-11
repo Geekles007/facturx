@@ -17,6 +17,13 @@ export interface Contact {
  * `electronicAddress0225`) ; caractères `A-Z a-z 0-9 - _ .` en 0225 (BR-FR-23) ; 125 caractères max (BR-FR-25) ;
  * hors e-invoicing, tout schéma EAS, y compris un e-mail (`EM`).
  */
+/** Identifiant qualifié ou non d'une partie (BT-29 / BT-46 / BT-60 et leurs schémas). */
+export interface PartyIdentifier {
+  value: string;
+  /** Schéma ISO 6523 (ex. `0088` GLN, `0160` GTIN) ; absent pour un identifiant privé sans schéma. */
+  scheme?: string;
+}
+
 export interface ElectronicAddress {
   /** BT-34 / BT-49 — Identifiant. */
   value: string;
@@ -68,6 +75,10 @@ export interface Party {
    * l'acheteur. Règles FR : `A-Z a-z 0-9 - _ .` (BR-FR-24), 100 caractères max (BR-FR-26).
    */
   routingCode?: string;
+  /** BT-29 / BT-46 — Autres identifiants privés (`ram:ID`, schéma optionnel), hors SIRET et code de routage. */
+  identifiers?: PartyIdentifier[];
+  /** BT-29-1 / BT-46-1 — Identifiants globaux (`ram:GlobalID`, schéma ISO 6523), hors SIRET (`0009`). */
+  globalIds?: PartyIdentifier[];
   /**
    * (acheteur uniquement) `true` si l'acheteur est un particulier (B2C) : ni SIREN (BT-47) ni TVA (BT-48)
    * ne sont exigés. Règle FR : sans ce drapeau, un acheteur établi en France doit porter son SIREN
@@ -84,4 +95,6 @@ export interface Payee {
   id?: string;
   /** BT-61 — Identifiant d'enregistrement légal du bénéficiaire (ex. SIREN, schéma 0002). */
   legalId?: string;
+  /** BT-60-1 — Identifiant global du bénéficiaire (`ram:GlobalID`, schéma ISO 6523). */
+  globalId?: PartyIdentifier;
 }

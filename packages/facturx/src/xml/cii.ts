@@ -100,7 +100,9 @@ function tradeParty(name: string, p: Party, role: 'seller' | 'buyer'): XmlElemen
   return el(
     name,
     p.routingCode === undefined ? undefined : elA('ram:ID', { schemeID: '0224' }, p.routingCode),
+    (p.identifiers ?? []).map((id) => elA('ram:ID', { schemeID: id.scheme }, id.value)),
     p.siret === undefined ? undefined : elA('ram:GlobalID', { schemeID: '0009' }, p.siret),
+    (p.globalIds ?? []).map((id) => elA('ram:GlobalID', { schemeID: id.scheme ?? '' }, id.value)),
     el('ram:Name', p.name),
     role === 'seller' ? text('ram:Description', p.legalInfo) : undefined,
     p.siren === undefined && p.tradingName === undefined
@@ -338,9 +340,10 @@ export function toCiiTree(
 ): XmlElement {
   const refs = invoice.references ?? {};
   const directDebit = invoice.paymentMeans?.find((pm) => pm.directDebit !== undefined)?.directDebit;
-  const remittance = invoice.paymentMeans?.find(
-    (pm) => pm.remittanceInformation !== undefined,
-  )?.remittanceInformation;
+  const remittance =
+    invoice.remittanceInformation ??
+    invoice.paymentMeans?.find((pm) => pm.remittanceInformation !== undefined)
+      ?.remittanceInformation;
   const totals = invoice.totals;
   // BT-23 : option explicite, sinon cadre de facturation du modèle, sinon déduit de la nature de l'opération (B1 / S1 / M1)
   const businessProcessId =
@@ -404,7 +407,7 @@ export function toCiiTree(
           : elA(
               'ram:AttachmentBinaryObject',
               { mimeCode: a.file.mimeType, filename: a.file.filename },
-              encodeBase64(a.file.bytes),
+              a.file.bytes.length === 0 ? [] : encodeBase64(a.file.bytes),
             ),
       ),
     ),
@@ -445,6 +448,13 @@ export function toCiiTree(
       : el(
           'ram:PayeeTradeParty',
           text('ram:ID', invoice.payee.id),
+          invoice.payee.globalId === undefined
+            ? undefined
+            : elA(
+                'ram:GlobalID',
+                { schemeID: invoice.payee.globalId.scheme ?? '' },
+                invoice.payee.globalId.value,
+              ),
           el('ram:Name', invoice.payee.name),
           invoice.payee.legalId === undefined
             ? undefined

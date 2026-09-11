@@ -7,6 +7,7 @@ import {
   fromCiiXml,
   type Invoice,
   parseCiiDocument,
+  readCiiGuideline,
   toCiiXml,
 } from '../src/index.js';
 import { fullInvoice, multiRateInvoice, simpleInvoice } from './fixtures/invoices.js';
@@ -275,5 +276,44 @@ describe('documents justificatifs BG-24', () => {
     );
     expect(() => fromCiiXml(xml)).toThrow(FacturXParseError);
     expect(() => fromCiiXml(xml)).toThrow(/AttachmentBinaryObject/);
+  });
+});
+
+describe('identifiants de parties et guideline', () => {
+  it('conserve les identifiants privés et globaux (BT-29/46/60) à l’aller-retour', () => {
+    const invoice = fullInvoice();
+    invoice.seller = {
+      ...invoice.seller,
+      identifiers: [{ value: '471102' }, { value: 'X-1', scheme: '0088' }],
+      globalIds: [{ value: '4012345001235', scheme: '0160' }],
+    };
+    invoice.payee = {
+      ...invoice.payee,
+      name: invoice.payee?.name ?? 'P',
+      globalId: { value: '4000001123452', scheme: '0088' },
+    };
+    const xml = toCiiXml(invoice);
+    expect(xml).toContain('<ram:ID>471102</ram:ID><ram:ID schemeID="0088">X-1</ram:ID>');
+    expect(xml).toContain(
+      '<ram:GlobalID schemeID="0009">44306184110004</ram:GlobalID><ram:GlobalID schemeID="0160">4012345001235</ram:GlobalID>',
+    );
+    const parsed = fromCiiXml(xml);
+    expect(parsed.seller.identifiers).toEqual(invoice.seller.identifiers);
+    expect(parsed.seller.globalIds).toEqual(invoice.seller.globalIds);
+    expect(parsed.payee?.globalId).toEqual({ value: '4000001123452', scheme: '0088' });
+  });
+
+  it('readCiiGuideline identifie le profil sans lire la facture', () => {
+    expect(readCiiGuideline(toCiiXml(simpleInvoice()))).toEqual({
+      guidelineId: 'urn:cen.eu:en16931:2017',
+      businessProcessId: 'S1',
+    });
+    expect(() => readCiiGuideline('<a/>')).toThrow(FacturXParseError);
+  });
+
+  it('BT-83 est lue au niveau de la facture', () => {
+    const parsed = fromCiiXml(toCiiXml(simpleInvoice()));
+    expect(parsed.remittanceInformation).toBe('F-2026-0001');
+    expect(parsed.paymentMeans?.[0]?.remittanceInformation).toBeUndefined();
   });
 });

@@ -45,7 +45,7 @@ export {
 } from './codes.js';
 export type { Delivery, Invoice, InvoiceDraft, InvoiceNote, Totals } from './invoice.js';
 export type { Line, LineAllowance, LineCharge, LinePeriod } from './line.js';
-export type { Contact, ElectronicAddress, Party, Payee } from './party.js';
+export type { Contact, ElectronicAddress, Party, PartyIdentifier, Payee } from './party.js';
 export type {
   CreditTransfer,
   DirectDebit,

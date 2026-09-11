@@ -15,11 +15,12 @@
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm examples:check",
     "bump": "node scripts/bump.mjs",
     "release:check": "node scripts/release-check.mjs",
-    "schemas:fetch": "node scripts/fetch-schemas.mjs"
+    "schemas:fetch": "node scripts/fetch-schemas.mjs",
+    "samples:fetch": "node scripts/fetch-samples.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
     "typescript": "^5.9.3"
   },
-  "version": "0.7.0"
+  "version": "0.8.0"
 }

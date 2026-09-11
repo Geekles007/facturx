@@ -17,11 +17,10 @@ const paymentTerms: Invoice['paymentTerms'] = {
   earlyPaymentDiscount: 'none',
 };
 
-const paymentMeans = (invoiceId: string): PaymentMeans[] => [
+const paymentMeans = (_invoiceId: string): PaymentMeans[] => [
   {
     typeCode: '58',
     creditTransfer: { iban: 'FR7630006000011234567890189', bic: 'BNPAFRPP' },
-    remittanceInformation: invoiceId,
   },
 ];
 
@@ -29,6 +28,7 @@ const paymentMeans = (invoiceId: string): PaymentMeans[] => [
 export function simpleDraft(): InvoiceDraft {
   return {
     id: 'F-2026-0001',
+    remittanceInformation: 'F-2026-0001',
     issueDate: '2026-09-11',
     typeCode: '380',
     currency: 'EUR',
@@ -68,6 +68,7 @@ export function simpleInvoice(): Invoice {
 export function multiRateDraft(): InvoiceDraft {
   return {
     id: 'F-2026-0002',
+    remittanceInformation: 'F-2026-0002',
     issueDate: '2026-09-11',
     typeCode: '380',
     currency: 'EUR',
@@ -133,6 +134,7 @@ export function multiRateInvoice(): Invoice {
 export function fullDraft(): InvoiceDraft {
   return {
     id: 'F-2026-0003',
+    remittanceInformation: 'F-2026-0003',
     issueDate: '2026-09-11',
     typeCode: '380',
     currency: 'EUR',
@@ -267,7 +269,6 @@ export function fullDraft(): InvoiceDraft {
       {
         typeCode: '59',
         text: 'Prélèvement SEPA',
-        remittanceInformation: 'F-2026-0003',
         directDebit: {
           mandateReference: 'RUM-2026-000123',
           creditorId: 'FR12ZZZ123456',

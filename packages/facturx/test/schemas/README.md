@@ -26,3 +26,7 @@ PATH="$PWD/scripts:$PATH" pnpm --filter facturx-sdk test
 ```
 
 Le profil ICC `test/fixtures/sRGB.icc` (sRGB compact, CC0, dépôt saucecontrol/Compact-ICC-Profiles) sert d'OutputIntent.
+
+# Fichiers tiers (non versionnés)
+
+`pnpm samples:fetch` récupère dans `test/samples/` (git-ignoré) des factures produites par d'autres outils — corpus [ZUGFeRD/corpus](https://github.com/ZUGFeRD/corpus) (Apache-2.0, suite KoSIT en CII et Factur-X) et échantillons Factur-X FR de mustangproject — à des commits épinglés dans `scripts/fetch-samples.mjs`. `test/third-party.test.ts` les lit, vérifie la fidélité, les ré-émet et mesure les pertes ; ignoré sans ces fichiers.

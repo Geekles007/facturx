@@ -34,6 +34,12 @@ jobs:
           path: packages/facturx/test/schemas
           key: schemas-${{ hashFiles('scripts/fetch-schemas.mjs') }}
       - run: pnpm schemas:fetch
+      - name: Fichiers tiers (cache par commits épinglés)
+        uses: actions/cache@v4
+        with:
+          path: packages/facturx/test/samples
+          key: samples-${{ hashFiles('scripts/fetch-samples.mjs') }}
+      - run: pnpm samples:fetch
       - name: xmllint (validation XSD)
         run: sudo apt-get install -y --no-install-recommends libxml2-utils >/dev/null
       - name: veraPDF (shim Docker) dans le PATH

@@ -148,6 +148,8 @@ export interface Invoice {
   totals: Totals;
   /** BT-9 / BT-20 + mentions FR — Conditions de paiement. */
   paymentTerms: PaymentTerms;
+  /** BT-83 — Référence de paiement (mention à rappeler par l'acheteur lors du règlement). */
+  remittanceInformation?: string;
   /** BG-16 — Instructions de paiement (0..n). */
   paymentMeans?: PaymentMeans[];
 }
