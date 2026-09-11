@@ -24,6 +24,6 @@ Sur npmjs.com → paquet `facturx-sdk` → *Settings* → *Trusted Publisher* �
 
 ## Dépannage
 
-- **`npm publish` refuse (E404 / OIDC)** : le trusted publisher n'est pas configuré, ou le nom du workflow diffère de `release.yml`.
+- **`npm publish` renvoie E404** : chez npm, c'est « non autorisé » — trusted publisher absent, propriétaire/dépôt/nom de workflow qui ne correspondent pas exactement, ou case « Allow npm publish » non cochée. Les lignes `npm verbose oidc …` du log donnent la raison de l'échec d'échange.
 - **Garde-fou en échec** : corriger, supprimer le tag (`git tag -d vX.Y.Z && git push origin :vX.Y.Z`), recommencer à l'étape 3.
 - **Publication manuelle de secours** : `cd packages/facturx && npm publish --access public` (OTP demandé), puis `gh release create vX.Y.Z --notes-file <(node scripts/release-notes.mjs vX.Y.Z)`.

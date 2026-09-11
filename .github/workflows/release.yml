@@ -34,8 +34,10 @@ jobs:
         run: node scripts/release-check.mjs "$GITHUB_REF_NAME"
       - name: Publication npm (trusted publishing OIDC)
         working-directory: packages/facturx
-        # loglevel verbose : les échecs d'échange OIDC ne sont visibles qu'à ce niveau
-        run: npm publish --access public --provenance --loglevel verbose 2>&1 | grep -vE "^npm (verbose|http) (title|argv|logfile|cli|node|npm|shrinkwrap|dry-run|title)" || exit 1
+        # loglevel verbose : les échecs d'échange OIDC ne sont visibles qu'à ce niveau ; pipefail pour ne pas masquer un échec de npm
+        run: |
+          set -o pipefail
+          npm publish --access public --provenance --loglevel verbose 2>&1 | grep -vE "^npm (verbose|http) (title|argv|logfile|cli|node|npm|shrinkwrap|dry-run)"
       - name: Release GitHub
         env:
           GH_TOKEN: ${{ github.token }}
