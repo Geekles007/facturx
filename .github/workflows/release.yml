@@ -28,6 +28,16 @@ jobs:
       - name: npm ≥ 11.5 (requis pour le trusted publishing)
         run: npm install -g npm@latest && npm --version
       - run: pnpm install --frozen-lockfile
+      - name: Schémas et schematrons officiels (cache par commit épinglé)
+        uses: actions/cache@v4
+        with:
+          path: packages/facturx/test/schemas
+          key: schemas-${{ hashFiles('scripts/fetch-schemas.mjs') }}
+      - run: pnpm schemas:fetch
+      - name: veraPDF (shim Docker) dans le PATH
+        run: |
+          docker pull --quiet ghcr.io/verapdf/cli:latest
+          echo "$GITHUB_WORKSPACE/scripts" >> "$GITHUB_PATH"
       - name: Vérifications complètes
         run: pnpm check
       - name: Garde-fous de version
