@@ -56,3 +56,23 @@ Les XSD Factur-X (FNFE-MPE) ne sont pas redistribués dans le dépôt : ils sont
 
 ### D17. Choix de mapping CII
 SIRET → `ram:GlobalID schemeID="0009"` ; SIREN → `ram:SpecifiedLegalOrganization/ram:ID schemeID="0002"` ; TVA → `ram:SpecifiedTaxRegistration/ram:ID schemeID="VA"` ; BT-7 (date d'exigibilité, document) répété dans chaque `ram:ApplicableTradeTax` ; `references.project` alimente `ID` et `Name` de `SpecifiedProcuringProject` (les deux sont obligatoires dans le XSD) ; le premier prélèvement fournit BT-89/BT-90, la première référence de paiement fournit BT-83. Quantités et prix : 4 décimales tronquées des zéros finaux au-delà de 2 (`2.00`, `0.1234`).
+
+## 2026-09-11 — Session 3 : embarquement / extraction PDF/A-3
+
+### D18. Entrée séparée `@geekles/facturx/pdf`, `pdf-lib` en dépendance classique
+`pdf-lib` est la seule dépendance runtime, déclarée en `dependencies` (zéro friction à l'installation) mais importée uniquement par `src/pdf/` et marquée `external` au build : `dist/index.js` ne la référence pas. Une `peerDependency` optionnelle aurait été plus « pure » au prix d'erreurs d'import obscures ; un fork (`@cantoo/pdf-lib`) n'apporte rien d'indispensable ici.
+
+### D19. Contrat PDF/A-3 : le SDK rend Factur-X un PDF déjà PDF/A, il ne convertit pas
+Convertir un PDF quelconque en PDF/A (polices non embarquées, transparence, chiffrement, JavaScript…) est hors de portée d'une lib légère et hors périmètre. `embedFacturX` ajoute ce qui distingue un Factur-X : pièce jointe `factur-x.xml` (`/EmbeddedFile`, `/Subtype /text#2Fxml`, `Params/ModDate`, `Filespec` avec `F`, `UF`, `Desc`, `EF/F` + `EF/UF`, `/AFRelationship /Alternative`), tableau `/AF`, XMP (`pdfaid:part 3`, `conformance B`, schéma d'extension `fx`), dictionnaire `Info` aligné sur le XMP, identifiant de fichier `/ID`. L'option `outputIntent { iccProfile }` ajoute l'`OutputIntent` sRGB si absent — souvent la seule pièce manquante — sans embarquer de profil ICC dans le bundle (licence et taille).
+
+### D20. Pièce jointe manuelle plutôt que `pdfDoc.attach()`
+`attach()` n'écrit ni `EF/UF` ni ne permet de remplacer une pièce existante avant la sauvegarde. L'implémentation maison reconstruit l'arbre de noms `EmbeddedFiles` à plat et trié (entrées existantes conservées, pièces Factur-X précédentes retirées de l'arbre et de `/AF`) : l'opération est idempotente.
+
+### D21. Sortie reproductible
+`options.date` fixe toutes les dates (Info, XMP, pièce jointe) et l'identifiant `/ID` est une empreinte FNV-1a 128 bits du PDF d'entrée, du XML et de la date : deux appels identiques produisent les mêmes octets — testable par comparaison binaire. Le XMP est réutilisé tel quel du templating `el()` (D12) ; le flux `Metadata` n'est pas compressé.
+
+### D22. Extraction tolérante, typée, sans parsing XML
+`extractFacturX` cherche `factur-x.xml` puis, en repli, `zugferd-invoice.xml` / `xrechnung.xml` (insensible à la casse) dans l'arbre de noms **et** dans `/AF`, décode le flux (Flate via pdf-lib) et lit `fx:ConformanceLevel` / `fx:DocumentType` dans le XMP par expression régulière (éléments ou attributs). Le XML est renvoyé brut ; le parsing XML → `Invoice` est une session ultérieure. Un PDF chiffré ou illisible lève `FacturXPdfError { code }`.
+
+### D23. Validation PDF/A externe : veraPDF, à brancher
+Le test structurel couvre les points que veraPDF vérifie sur les pièces jointes et les métadonnées (ISO 19005-3 §6.8, §6.6, §6.1.3). Une validation complète exige veraPDF (Java 11+) et un PDF d'entrée réellement PDF/A ; à ajouter sur le modèle du test xmllint (ignoré si `verapdf` absent) quand l'outil sera disponible sur la machine de dev.

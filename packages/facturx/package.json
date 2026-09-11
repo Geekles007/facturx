@@ -1,7 +1,7 @@
 {
   "name": "@geekles/facturx",
   "version": "0.0.1",
-  "description": "SDK TypeScript pur pour générer, embarquer et extraire des factures Factur-X (profil EN 16931).",
+  "description": "SDK TypeScript pur pour générer, embarquer et extraire des factures Factur-X (profil EN 16931). Entrée ./pdf basée sur pdf-lib.",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -17,6 +17,16 @@
       "require": {
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
+      }
+    },
+    "./pdf": {
+      "import": {
+        "types": "./dist/pdf.d.ts",
+        "default": "./dist/pdf.js"
+      },
+      "require": {
+        "types": "./dist/pdf.d.cts",
+        "default": "./dist/pdf.cjs"
       }
     }
   },
@@ -43,5 +53,8 @@
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "vitest": "^5.0.0"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
   }
 }

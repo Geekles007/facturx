@@ -2,7 +2,7 @@
 
 SDK **TypeScript pur** — zéro dépendance native, compatible edge/serverless — pour **générer, embarquer et extraire** des factures **Factur-X** au profil **EN 16931**, avec les règles françaises intégrées.
 
-> État : **session 2 / XML** — modèle de données typé, monnaie entière, validation, calcul des totaux et **génération XML CII** (validée contre le XSD officiel Factur-X EN 16931). Embarquement PDF/A-3 (pdf-lib) : session suivante.
+> État : **session 3 / PDF** — modèle typé, monnaie entière, validation, calcul des totaux, génération XML CII (validée contre le XSD officiel) et **embarquement / extraction PDF/A-3** via l'entrée `@geekles/facturx/pdf`. Prochaines étapes : parsing XML → `Invoice`, validation veraPDF.
 
 ## Vision
 
@@ -12,13 +12,14 @@ Une facture électronique française conforme ne devrait pas exiger une dépenda
 - une **arithmétique monétaire exacte** (entiers en centimes, `bigint` en intermédiaire, un seul arrondi commercial) ;
 - une **validation qui n'arrange jamais rien** : les totaux fournis sont vérifiés et chaque écart remonte avec son code de règle, le chemin du champ, l'attendu et le reçu ;
 - une **génération XML CII** par templating typé (ordre XSD garanti par construction, échappement manuel testé, sortie compacte déterministe) ;
-- à venir : `embed()` / `extract()` (PDF/A-3 via pdf-lib, entrée séparée).
+- un **embarquement PDF/A-3** (`embedFacturX`) qui écrit pièce jointe, `/AF`, XMP `pdfaid` + schéma `fx`, `Info` aligné et `/ID`, de façon idempotente et reproductible, et une **extraction** (`extractFacturX`) tolérante aux noms ZUGFeRD ;
+- une seule dépendance runtime, `pdf-lib`, chargée uniquement par l'entrée `./pdf` (l'entrée principale reste sans dépendance).
 
 ## Périmètre v1
 
 **Inclus** : profil EN 16931 (`urn:cen.eu:en16931:2017`), facture commerciale (380), TVA multi-taux, remises/frais ligne et document, exonérations (E, AE, K, G, O, Z), mentions FR (SIREN/SIRET/TVA, date ou période de livraison, pénalités de retard, indemnité forfaitaire de 40 €, escompte), moyens de paiement virement/prélèvement.
 
-**Hors périmètre** : avoirs (381), Order-X, UBL, rendu PDF de la facture, envoi à une plateforme (PA/PDP/PPF), autres profils Factur-X (MINIMUM, BASIC, EXTENDED).
+**Hors périmètre** : avoirs (381), Order-X, UBL, rendu PDF de la facture, conversion d'un PDF quelconque en PDF/A, envoi à une plateforme (PA/PDP/PPF), autres profils Factur-X (MINIMUM, BASIC, EXTENDED).
 
 ## Installation
 
@@ -91,6 +92,24 @@ const debug = toCiiXml(invoice, { pretty: true, businessProcessId: 'A1' });
 ```
 
 Le XML produit est conforme au XSD Factur-X EN 16931 (`urn:cen.eu:en16931:2017`, CII D16B). Pour rejouer la validation XSD en local, déposer les XSD dans `packages/facturx/test/schemas/` (voir son README) : le test `xsd.test.ts` les utilise via `xmllint`.
+
+### PDF/A-3 : embarquer et extraire
+
+```ts
+import { embedFacturX, extractFacturX } from '@geekles/facturx/pdf';
+
+// pdfBytes : un PDF déjà conforme PDF/A (polices embarquées, non chiffré), Uint8Array | ArrayBuffer
+const facturx = await embedFacturX(pdfBytes, { invoice }, {
+  date: new Date('2026-09-11T10:00:00Z'),          // optionnel : sortie reproductible
+  title: 'Facture F-2026-0001',                      // optionnel : Info/Title + dc:title
+  outputIntent: { iccProfile: srgbIccBytes },        // optionnel : OutputIntent sRGB si absent
+});
+
+const found = await extractFacturX(facturx);
+// { xml, bytes, filename: 'factur-x.xml', conformanceLevel: 'EN 16931', documentType: 'INVOICE' } | undefined
+```
+
+`embedFacturX` accepte `{ invoice }` (XML généré et validé) ou `{ xml }` (chaîne ou octets). Il **ne convertit pas** un PDF quelconque en PDF/A : il ajoute la pièce jointe `factur-x.xml` (`/AFRelationship /Alternative`), le tableau `/AF`, les métadonnées XMP (`pdfaid:part 3`, `pdfaid:conformance B`, schéma d'extension `fx`), aligne le dictionnaire `Info` et fixe l'identifiant `/ID`. Une pièce Factur-X déjà présente est remplacée, les autres pièces jointes sont conservées. Les erreurs sont typées : `FacturXPdfError { code: 'INVALID_PDF' | 'ENCRYPTED' | 'INVALID_XML' | 'UNSUPPORTED' }`.
 
 ### Monnaie
 
