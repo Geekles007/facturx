@@ -25,6 +25,8 @@ jobs:
           path: packages/facturx/test/schemas
           key: schemas-${{ hashFiles('scripts/fetch-schemas.mjs') }}
       - run: pnpm schemas:fetch
+      - name: xmllint (validation XSD)
+        run: sudo apt-get install -y --no-install-recommends libxml2-utils >/dev/null
       - name: veraPDF (shim Docker) dans le PATH
         run: |
           docker pull --quiet ghcr.io/verapdf/cli:latest
