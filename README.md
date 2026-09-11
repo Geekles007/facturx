@@ -2,7 +2,7 @@
 
 SDK **TypeScript pur** — zéro dépendance native, compatible edge/serverless — pour **générer, embarquer et extraire** des factures **Factur-X** au profil **EN 16931**, avec les règles françaises intégrées.
 
-> État : **session 1 / squelette** — modèle de données typé, monnaie entière, validation et calcul des totaux. Génération XML CII et embarquement PDF (pdf-lib) : sessions suivantes.
+> État : **session 2 / XML** — modèle de données typé, monnaie entière, validation, calcul des totaux et **génération XML CII** (validée contre le XSD officiel Factur-X EN 16931). Embarquement PDF/A-3 (pdf-lib) : session suivante.
 
 ## Vision
 
@@ -11,7 +11,8 @@ Une facture électronique française conforme ne devrait pas exiger une dépenda
 - un type `Invoice` **annoté champ par champ** avec le Business Term EN 16931 (`BT-xx`) et, quand elle s'applique, la règle française (Code de commerce, CGI) ;
 - une **arithmétique monétaire exacte** (entiers en centimes, `bigint` en intermédiaire, un seul arrondi commercial) ;
 - une **validation qui n'arrange jamais rien** : les totaux fournis sont vérifiés et chaque écart remonte avec son code de règle, le chemin du champ, l'attendu et le reçu ;
-- à venir : `toXml()` (CII par templating typé, échappement testé), `embed()` / `extract()` (PDF/A-3 via pdf-lib, entrée séparée).
+- une **génération XML CII** par templating typé (ordre XSD garanti par construction, échappement manuel testé, sortie compacte déterministe) ;
+- à venir : `embed()` / `extract()` (PDF/A-3 via pdf-lib, entrée séparée).
 
 ## Périmètre v1
 
@@ -78,6 +79,18 @@ if (!result.ok) {
 
 assertValidInvoice(invoice); // lève FacturXValidationError { issues } sinon
 ```
+
+### XML CII
+
+```ts
+import { toCiiXml } from '@geekles/facturx';
+
+const xml = toCiiXml(invoice);                  // compact, validé avant génération
+const debug = toCiiXml(invoice, { pretty: true, businessProcessId: 'A1' });
+// { validate: false } pour générer malgré des anomalies (debug uniquement)
+```
+
+Le XML produit est conforme au XSD Factur-X EN 16931 (`urn:cen.eu:en16931:2017`, CII D16B). Pour rejouer la validation XSD en local, déposer les XSD dans `packages/facturx/test/schemas/` (voir son README) : le test `xsd.test.ts` les utilise via `xmllint`.
 
 ### Monnaie
 

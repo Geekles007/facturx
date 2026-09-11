@@ -36,3 +36,23 @@ TypeScript **5.x épinglé** : `tsup`/`rollup-plugin-dts` ne gèrent pas encore 
 
 ### D11. Hors périmètre v1 (explicitement)
 Avoirs (381), Order-X, UBL, rendu PDF de la facture (on n'embarque que dans un PDF fourni), envoi à une plateforme (PDP/PPF), représentant fiscal (BG-11), devise de TVA différente (BT-6), factures à plusieurs devises.
+
+## 2026-09-11 — Session 2 : génération XML CII
+
+### D12. Templating typé maison : arbre `el()` + sérialiseur, pas de lib XML
+`el(name, ...children)` ignore `undefined`/`null`/`false` et aplatit les tableaux : les éléments optionnels s'écrivent en une expression conditionnelle, sans branche ni mutation, et l'ordre XSD est celui du code source. Le sérialiseur (~60 lignes) est déterministe et testé seul. Une lib générique (xmlbuilder2, fast-xml-parser) ajouterait 50–200 ko et n'apporterait ni le typage ni la garantie d'ordre.
+
+### D13. Échappement manuel + rejet des caractères interdits XML 1.0
+`&`, `<`, `>` en texte, `"` en plus dans les attributs. Tout caractère hors de l'ensemble `Char` de XML 1.0 (contrôles C0 sauf tab/LF/CR, surrogates isolés, U+FFFE/FFFF) lève une `XmlError` avec le code point et la position, plutôt que d'être remplacé en silence — un libellé corrompu ne doit pas produire un XML « presque bon ».
+
+### D14. `toCiiXml` valide par défaut, opt-out explicite `validate: false`
+Cohérent avec D4 : aucun XML n'est produit à partir de montants incohérents sans que l'appelant l'ait demandé noir sur blanc. L'opt-out sert au debug et aux fixtures d'erreur.
+
+### D15. Sortie compacte par défaut, `pretty` en option
+Le XML est destiné à être embarqué dans un PDF/A-3 : chaque octet compte. `pretty: true` sert à la lecture, aux diffs et aux golden files.
+
+### D16. Conformité XSD testée avec `xmllint`, XSD non versionnés
+Les XSD Factur-X (FNFE-MPE) ne sont pas redistribués dans le dépôt : ils sont git-ignorés dans `test/schemas/` et le test s'ignore proprement s'ils manquent (ou sans `xmllint`). Aucune dépendance de parsing XML n'est ajoutée, même en dev. Les trois golden files ont été validés localement contre `FACTUR-X_EN16931.xsd`.
+
+### D17. Choix de mapping CII
+SIRET → `ram:GlobalID schemeID="0009"` ; SIREN → `ram:SpecifiedLegalOrganization/ram:ID schemeID="0002"` ; TVA → `ram:SpecifiedTaxRegistration/ram:ID schemeID="VA"` ; BT-7 (date d'exigibilité, document) répété dans chaque `ram:ApplicableTradeTax` ; `references.project` alimente `ID` et `Name` de `SpecifiedProcuringProject` (les deux sont obligatoires dans le XSD) ; le premier prélèvement fournit BT-89/BT-90, la première référence de paiement fournit BT-83. Quantités et prix : 4 décimales tronquées des zéros finaux au-delà de 2 (`2.00`, `0.1234`).

@@ -3,3 +3,5 @@ dist/
 coverage/
 .DS_Store
 *.tsbuildinfo
+packages/facturx/test/schemas/*
+!packages/facturx/test/schemas/README.md
