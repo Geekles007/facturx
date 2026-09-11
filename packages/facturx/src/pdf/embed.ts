@@ -43,9 +43,9 @@ export interface EmbedOptions {
   subject?: string;
   /** `Info/Keywords` et `pdf:Keywords`. Défaut : mots-clés existants. */
   keywords?: string;
-  /** `Info/Creator` et `xmp:CreatorTool` (application d'origine). Défaut : valeur existante, sinon `facturx`. */
+  /** `Info/Creator` et `xmp:CreatorTool` (application d'origine). Défaut : valeur existante, sinon `facturx-sdk`. */
   creator?: string;
-  /** `Info/Producer` et `pdf:Producer`. Défaut : `facturx`. */
+  /** `Info/Producer` et `pdf:Producer`. Défaut : `facturx-sdk`. */
   producer?: string;
   /** Ajoute un `OutputIntent` PDF/A si le PDF n'en a pas (souvent la seule pièce manquante pour PDF/A-3b). */
   outputIntent?: OutputIntentOptions;

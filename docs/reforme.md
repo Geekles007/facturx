@@ -60,7 +60,7 @@ Chaque facture suit un cycle de statuts échangés entre plateformes : *déposé
 
 ## Ce que le SDK fait / ne fait pas
 
-| Besoin | `facturx` |
+| Besoin | `facturx-sdk` |
 |---|---|
 | Produire le XML CII EN 16931 et l'embarquer dans un PDF/A-3 | ✅ `toCiiXml`, `embedFacturX` |
 | Vérifier avant d'émettre (totaux, TVA, SIREN, IBAN, mentions FR) sans jamais « corriger » en silence | ✅ `validateInvoice` — erreurs typées avec chemin de champ |

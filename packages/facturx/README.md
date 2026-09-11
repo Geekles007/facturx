@@ -1,6 +1,6 @@
 # facturx-sdk
 
-SDK **TypeScript pur** pour **générer, valider, embarquer et lire** des factures **Factur-X** au profil **EN 16931**, avec les règles françaises de la réforme de la facturation électronique. Zéro dépendance native, compatible edge / serverless ; `pdf-lib` uniquement dans l'entrée `facturx/pdf`.
+SDK **TypeScript pur** pour **générer, valider, embarquer et lire** des factures **Factur-X** au profil **EN 16931**, avec les règles françaises de la réforme de la facturation électronique. Zéro dépendance native, compatible edge / serverless ; `pdf-lib` uniquement dans l'entrée `facturx-sdk/pdf`.
 
 ```bash
 pnpm add facturx-sdk
