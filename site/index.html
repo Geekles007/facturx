@@ -76,12 +76,18 @@
 
 <span class="k">const</span> draft = {
   id: <span class="s">'F-2026-0001'</span>, issueDate: <span class="s">'2026-09-11'</span>, typeCode: <span class="s">'380'</span>, currency: <span class="s">'EUR'</span>,
-  operationCategory: <span class="s">'services'</span>,                      <span class="c">// nature de l'opération (réforme)</span>
-  seller: { name: <span class="s">'Atelier Exemple SAS'</span>, siren: <span class="s">'443061841'</span>, vatId: <span class="s">'FR64443061841'</span>, address: { <span class="c">/* … */</span> countryCode: <span class="s">'FR'</span> } },
-  buyer:  { name: <span class="s">'Client Démo SARL'</span>, siren: <span class="s">'732829320'</span>, electronicAddress: { value: <span class="s">'732829320'</span>, scheme: <span class="s">'0225'</span> }, address: { <span class="c">/* … */</span> } },
-  lines: [{ id: <span class="s">'1'</span>, name: <span class="s">'Conseil'</span>, quantity: quantity(<span class="d">20000</span>), unitCode: <span class="s">'DAY'</span>, unitPrice: unitPrice(<span class="d">8000000</span>),
-            netAmount: cents(<span class="d">160000</span>), tax: { category: <span class="s">'S'</span>, rate: percent(<span class="s">'20'</span>) } }],
-  paymentTerms: { dueDate: <span class="s">'2026-10-11'</span>, latePenaltyRate: percent(<span class="s">'10'</span>), recoveryIndemnity: cents(<span class="d">4000</span>), earlyPaymentDiscount: <span class="s">'none'</span> },
+  operationCategory: <span class="s">'services'</span>,              <span class="c">// nature de l'opération (réforme)</span>
+  seller: { name: <span class="s">'Atelier Exemple SAS'</span>, siren: <span class="s">'443061841'</span>, vatId: <span class="s">'FR64443061841'</span>,
+            address: { postCode: <span class="s">'75011'</span>, city: <span class="s">'Paris'</span>, countryCode: <span class="s">'FR'</span> } },
+  buyer:  { name: <span class="s">'Client Démo SARL'</span>, siren: <span class="s">'732829320'</span>,
+            electronicAddress: { value: <span class="s">'732829320'</span>, scheme: <span class="s">'0225'</span> },  <span class="c">// routage 0225</span>
+            address: { postCode: <span class="s">'69002'</span>, city: <span class="s">'Lyon'</span>, countryCode: <span class="s">'FR'</span> } },
+  delivery: { date: <span class="s">'2026-09-10'</span> },
+  lines: [{ id: <span class="s">'1'</span>, name: <span class="s">'Conseil'</span>, quantity: quantity(<span class="d">20000</span>), unitCode: <span class="s">'DAY'</span>,
+            unitPrice: unitPrice(<span class="d">8000000</span>), netAmount: cents(<span class="d">160000</span>),
+            tax: { category: <span class="s">'S'</span>, rate: percent(<span class="s">'20'</span>) } }],
+  paymentTerms: { dueDate: <span class="s">'2026-10-11'</span>, latePenaltyRate: percent(<span class="s">'10'</span>),
+                  recoveryIndemnity: cents(<span class="d">4000</span>), earlyPaymentDiscount: <span class="s">'none'</span> },
 };
 <span class="k">const</span> invoice = assertValidInvoice({ ...draft, ...computeTotals(draft) });
 <span class="c">// FacturXValidationError { issues: [{ code: 'BR-CO-15', path: 'totals.taxInclusiveAmount', … }] } sinon</span></code></pre>
