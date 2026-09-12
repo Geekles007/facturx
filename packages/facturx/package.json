@@ -1,6 +1,6 @@
 {
   "name": "facturx-sdk",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "SDK TypeScript pur pour générer, embarquer et extraire des factures Factur-X (profil EN 16931). Entrée ./pdf basée sur pdf-lib.",
   "license": "MIT",
   "author": "geekles007",
