@@ -47,7 +47,7 @@ const invoice = fromCiiXml(xmlString);           // validée ; FacturXParseError
 - ✅ Modèle `Invoice` annoté BT-xx + règles FR, monnaie en entiers (jamais de flottant), validation qui **ne corrige jamais en silence**, XML CII écriture/lecture, PDF/A-3 embed/extract, mentions de la réforme (SIREN acheteur, nature de l'opération, TVA sur les débits, avoirs).
 - ❌ Envoi à une plateforme agréée, statuts, e-reporting, UBL, autres profils Factur-X, conversion d'un PDF quelconque en PDF/A.
 
-Documentation complète, guide de la réforme, exemples exécutables et journal des décisions : **https://github.com/Geekles007/facturx**
+Site : **https://facturx.ibird.dev/** · Documentation complète, guide de la réforme, exemples exécutables et journal des décisions : **https://github.com/Geekles007/facturx**
 
 ## Licence
 

@@ -1,6 +1,6 @@
 # facturx-sdk
 
-[![npm](https://img.shields.io/npm/v/facturx-sdk)](https://www.npmjs.com/package/facturx-sdk) [![CI](https://github.com/Geekles007/facturx/actions/workflows/ci.yml/badge.svg)](https://github.com/Geekles007/facturx/actions/workflows/ci.yml) ![licence MIT](https://img.shields.io/npm/l/facturx-sdk)
+[![npm](https://img.shields.io/npm/v/facturx-sdk)](https://www.npmjs.com/package/facturx-sdk) [![site](https://img.shields.io/badge/site-facturx.ibird.dev-b0413e)](https://facturx.ibird.dev/) [![CI](https://github.com/Geekles007/facturx/actions/workflows/ci.yml/badge.svg)](https://github.com/Geekles007/facturx/actions/workflows/ci.yml) ![licence MIT](https://img.shields.io/npm/l/facturx-sdk)
 
 SDK **TypeScript pur** — zéro dépendance native, compatible edge/serverless — pour **générer, embarquer et extraire** des factures **Factur-X** au profil **EN 16931**, avec les règles françaises intégrées.
 
