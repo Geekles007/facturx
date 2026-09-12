@@ -206,3 +206,20 @@ Le site restait sans build ; le validateur en impose un. Les sources vivent dans
 
 ### D53. L'outil a révélé un trou dans les erreurs typées du SDK
 Un PDF tronqué que `pdf-lib` accepte de charger (en-tête valide, catalogue absent) faisait remonter un `TypeError` brut au lieu d'une `FacturXPdfError` — la promesse « erreurs typées » tombait précisément sur le cas le plus courant d'un outil public : un fichier abîmé. `extractFacturX` enveloppe désormais toute l'exploration du document : code `INVALID_PDF`, cause conservée. Une interface publique est un banc d'essai que les tests unitaires ne remplacent pas.
+
+### D54. Une facture d'exemple produite par le SDK, irréprochable ou rien
+Le validateur ne pouvait pas démontrer sa lecture de PDF : ses exemples étaient des XML. Le site
+publie désormais un **PDF/A-3 Factur-X complet, généré par le SDK lui-même** à chaque construction
+(`scripts/example-invoice.mjs`) : facture de services française, mentions légales, adresse
+électronique 0225, cadre S1 — verdict vert sur les quatre juges, sans même une tolérance, et
+PDF/A-3b confirmé par veraPDF. Sortie déterministe (date fixée), donc deux constructions donnent
+le même octet.
+
+Fabriquer ce fichier a exigé deux corrections que seul un contrôle de conformité révèle. Le
+sous-ensemble de polices de pdf-lib laisse une référence au glyphe `.notdef`, refusée par
+ISO 19005-3 6.2.11.8-1 : les polices sont embarquées entières. Surtout, l'espace fine insécable
+(U+202F) employée comme séparateur de milliers **n'existe pas dans Geist** ; elle devenait un
+`.notdef` invisible à l'écran mais fatal pour PDF/A. D'où un garde-fou : le générateur refuse de
+dessiner un caractère absent de la police, plutôt que de produire un fichier qui *semble* correct.
+Les ligatures sont désactivées, pdf-lib écrivant les glyphes substitués sans reprendre leurs
+avances (« palette » s'affichait « palett e »).

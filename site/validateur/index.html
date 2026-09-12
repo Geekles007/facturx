@@ -59,7 +59,9 @@
       <input type="file" id="file" accept=".pdf,.xml,application/pdf,text/xml,application/xml">
       <p class="dz-examples">
         Sans fichier sous la main&nbsp;:
-        <button type="button" class="linkish" data-example="facture-conforme.xml">essayer une facture conforme</button>
+        <button type="button" class="linkish" data-example="facture-exemple.pdf">essayer un PDF Factur-X</button>
+        <span aria-hidden="true">·</span>
+        <button type="button" class="linkish" data-example="facture-conforme.xml">un XML conforme</button>
         <span aria-hidden="true">·</span>
         <button type="button" class="linkish" data-example="facture-non-conforme.xml">ou une facture fautive</button>
       </p>
@@ -82,6 +84,10 @@
         <div>
           <h3>Ce qui manque encore</h3>
           <p>Le contrôle PDF/A-3 par veraPDF réclame Java, donc un serveur&nbsp;: il n'est pas exécuté ici. Le SDK le passe en intégration continue sur chaque version publiée.</p>
+        </div>
+        <div>
+          <h3>Une facture d'exemple à récupérer</h3>
+          <p>Le <a href="exemples/facture-exemple.pdf" download>PDF Factur-X d'exemple</a> est produit par le SDK lui-même&nbsp;: profil EN 16931, mentions françaises, PDF/A-3b vérifié par veraPDF. De quoi essayer une chaîne de réception sans attendre une vraie facture.</p>
         </div>
         <div>
           <h3>Mêmes règles qu'en intégration continue</h3>

@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { buildExampleFacturX } from './example-invoice.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = join(root, 'site/validateur');
@@ -59,4 +60,9 @@ const broken = readFileSync(join(goldenDir, 'simple.xml'), 'utf8').replace(
 if (!broken.includes('242.00'))
   throw new Error('exemple non conforme : total introuvable dans simple.xml');
 writeFileSync(join(examplesDir, 'facture-non-conforme.xml'), broken);
-console.log('exemples/facture-conforme.xml, exemples/facture-non-conforme.xml');
+// PDF/A-3 Factur-X complet, produit par le SDK (couverture veraPDF assurée par les tests).
+const pdf = await buildExampleFacturX();
+writeFileSync(join(examplesDir, 'facture-exemple.pdf'), pdf);
+console.log(
+  `exemples/facture-conforme.xml, exemples/facture-non-conforme.xml, exemples/facture-exemple.pdf (${(pdf.length / 1024).toFixed(0)} Ko)`,
+);
