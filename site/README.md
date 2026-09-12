@@ -2,7 +2,36 @@
 
 Deux pages : la présentation (`index.html`) et le **validateur en ligne** (`validateur/`), qui exécute les schematrons officiels dans le navigateur de l'utilisateur — aucun fichier n'est transmis.
 
-## Déployer
+## Déployer avec Coolify
+
+Le dépôt contient un [`Dockerfile`](../Dockerfile) prêt à l'emploi : il installe les dépendances,
+construit le SDK, récupère le runtime Saxon-JS et les schematrons, bundle le validateur, puis sert
+le tout avec nginx ([`docker/nginx.conf`](../docker/nginx.conf)).
+
+Dans Coolify : **+ New → Resource → Public Repository**, dépôt `https://github.com/Geekles007/facturx`,
+branche `main`, **Build Pack : Dockerfile**, **Port Exposes : 80**, puis le domaine
+`https://facturx.ibird.dev` et *Deploy*. Rien d'autre à régler : ni commande de build, ni dossier de
+publication, ni variable d'environnement.
+
+Trois points à connaître.
+
+La construction a besoin du **réseau** : elle télécharge le runtime Saxon-JS depuis `saxonica.com`
+et les schematrons officiels depuis `raw.githubusercontent.com`. L'empreinte du runtime est épinglée,
+donc un fichier modifié en amont fait échouer la construction au lieu de passer inaperçu.
+
+Elle consomme de la **mémoire** au moment de générer les types du SDK. Sur un très petit serveur
+chargé, prévoir du swap ou un serveur de build dédié dans Coolify.
+
+Le conteneur ne sert que des fichiers statiques : aucune donnée n'y transite, le validateur
+s'exécutant entièrement chez le visiteur.
+
+Vérifier localement avant de pousser :
+
+```bash
+docker build -t facturx-site . && docker run --rm -p 8080:80 facturx-site
+```
+
+## Déployer sans Coolify (rsync)
 
 ### 1. Construire
 
@@ -29,37 +58,20 @@ sans l'exclure, elle serait lisible publiquement.
 ### 3. Servir
 
 Aucune configuration particulière n'est nécessaire : les jeux de règles sont servis pré-compressés
-et le navigateur les décompresse lui-même, que le serveur ajoute ou non `Content-Encoding`. Deux
-points valent tout de même d'être vérifiés sur l'hôte.
+et le navigateur les décompresse lui-même, que le serveur ajoute ou non `Content-Encoding`. Reprendre
+[`docker/nginx.conf`](../docker/nginx.conf), qui règle les deux points qui comptent : la redirection
+de `/validateur` vers `/validateur/` (sans quoi les chemins relatifs de la page remontent d'un cran)
+et la compression, qui fait passer le bundle d'environ 430 Ko à 195 Ko.
 
-```nginx
-server {
-    server_name facturx.ibird.dev;
-    root /chemin/vers/www;
-    index index.html;   # assure aussi la redirection /validateur → /validateur/
-
-    gzip on;
-    gzip_min_length 1024;
-    gzip_types text/css application/javascript application/xml image/svg+xml text/plain;
-
-    location /fonts/ { add_header Cache-Control "public, max-age=31536000, immutable"; }
-    location /validateur/vendor/  { add_header Cache-Control "public, max-age=31536000"; }
-    location /validateur/schemas/ { add_header Cache-Control "public, max-age=31536000"; }
-}
-```
-
-La redirection de `/validateur` vers `/validateur/` doit fonctionner, sans quoi les chemins relatifs
-de la page remonteraient d'un cran ; nginx s'en charge dès qu'`index` est défini, et le JavaScript
-rattrape le cas par sécurité. La compression concerne surtout le bundle du validateur, qui passe
-d'environ 430 Ko à 180 Ko.
-
-### 4. Vérifier
+## Vérifier après déploiement
 
 ```bash
-curl -sI https://facturx.ibird.dev/validateur/ | head -1
+curl -sI https://facturx.ibird.dev/validateur | sed -n '1p;/[Ll]ocation/p'
 curl -s -o /dev/null -w '%{http_code} %{size_download}\n' https://facturx.ibird.dev/validateur/vendor/SaxonJS2.rt.js
 curl -s -o /dev/null -w '%{http_code} %{size_download}\n' https://facturx.ibird.dev/validateur/schemas/EN16931-CII-validation.sef.json.gz
 ```
+
+La première commande doit renvoyer une redirection 301 vers `/validateur/`.
 
 Puis, dans un navigateur : ouvrir `/validateur/`, cliquer « essayer une facture conforme » et
 attendre le verdict « Conforme aux quatre jeux de règles ». Cela exerce d'un coup le bundle,

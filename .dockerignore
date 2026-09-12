@@ -1,0 +1,15 @@
+.git
+.github
+node_modules
+**/node_modules
+**/dist
+coverage
+# Ressources non versionnées : la construction les régénère dans l'image.
+packages/facturx/test/schemas
+packages/facturx/test/samples
+site/validateur/app.js
+site/validateur/chunk-*.js
+site/validateur/vendor
+site/validateur/schemas
+site/validateur/exemples
+**/.DS_Store

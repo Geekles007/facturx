@@ -185,7 +185,7 @@ pnpm install
 pnpm check       # lint + typecheck + test + build + site (types, tests, bundle) + exemples
 ```
 
-Monorepo pnpm : `packages/facturx` (le SDK), `examples/*` (exemples exécutés en CI), `site/` + `site-src/` (la page et le validateur en ligne, voir [site/README.md](site/README.md)). Publication : tag `vX.Y.Z` → workflow de release (trusted publishing npm), voir [docs/release.md](docs/release.md). Outils : TypeScript strict, tsup (ESM + CJS + d.ts), vitest, Biome, GitHub Actions (Node 22/24).
+Monorepo pnpm : `packages/facturx` (le SDK), `examples/*` (exemples exécutés en CI), `site/` + `site-src/` (la page et le validateur en ligne ; construction, déploiement Coolify ou rsync et vérifications dans [site/README.md](site/README.md)). Publication : tag `vX.Y.Z` → workflow de release (trusted publishing npm), voir [docs/release.md](docs/release.md). Outils : TypeScript strict, tsup (ESM + CJS + d.ts), vitest, Biome, GitHub Actions (Node 22/24).
 
 ## Licence
 
