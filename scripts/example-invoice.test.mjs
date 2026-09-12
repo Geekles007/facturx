@@ -1,7 +1,13 @@
 import { toCiiXml, validateInvoice } from 'facturx-sdk';
-import { extractInvoice } from 'facturx-sdk/pdf';
+import { extractFacturX, extractInvoice } from 'facturx-sdk/pdf';
 import { describe, expect, it } from 'vitest';
-import { buildExampleFacturX, exampleInvoice } from './example-invoice.mjs';
+import {
+  BROKEN_DEFECTS,
+  brokenInvoice,
+  buildBrokenFacturX,
+  buildExampleFacturX,
+  exampleInvoice,
+} from './example-invoice.mjs';
 
 /**
  * La facture d'exemple est publiée sur le site et téléchargée par des inconnus : elle doit rester
@@ -37,5 +43,26 @@ describe('facture d’exemple', () => {
   it('est déterministe : deux constructions donnent le même fichier', async () => {
     const [a, b] = await Promise.all([buildExampleFacturX(), buildExampleFacturX()]);
     expect(Buffer.from(a).equals(Buffer.from(b))).toBe(true);
+  }, 60_000);
+});
+
+describe('facture d’exemple non conforme', () => {
+  it('porte exactement les défauts annoncés sur le document', () => {
+    const issues = validateInvoice(brokenInvoice()).issues;
+    const codes = [...new Set(issues.map((i) => i.code))].sort();
+    expect(codes).toEqual(['BR-CO-15', 'BR-FR-05', 'BR-FR-11', 'BR-FR-12']);
+    // Chaque code annoncé au lecteur du PDF doit être réellement relevé.
+    for (const code of codes) {
+      expect(BROKEN_DEFECTS.join(' ')).toContain(code);
+    }
+    expect(BROKEN_DEFECTS).toHaveLength(4);
+  });
+
+  it('reste un PDF lisible : le défaut est dans la facture, pas dans le fichier', async () => {
+    const pdf = await buildBrokenFacturX();
+    const read = await extractFacturX(pdf);
+    expect(read?.filename).toBe('factur-x.xml');
+    expect(read?.xml).toContain('<ram:ID>FA-2026-0043</ram:ID>');
+    expect(read?.xml).toContain('<ram:GrandTotalAmount>5100.00</ram:GrandTotalAmount>');
   }, 60_000);
 });

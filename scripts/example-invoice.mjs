@@ -18,6 +18,7 @@ import {
   computeTotals,
   percent,
   quantity,
+  toCiiXml,
   unitPrice,
 } from 'facturx-sdk';
 import { embedFacturX } from 'facturx-sdk/pdf';
@@ -105,9 +106,11 @@ const day = (iso) => iso.split('-').reverse().join('/');
 const INK = rgb(0.04, 0.04, 0.04);
 const MUTED = rgb(0.42, 0.42, 0.42);
 const RULE = rgb(0.85, 0.85, 0.85);
+const WARN = rgb(0.62, 0.16, 0.14);
+const WARN_BG = rgb(0.99, 0.95, 0.94);
 
 /** Le PDF « visuel », tel que votre application le produit déjà. Polices embarquées (PDF/A). */
-async function renderInvoicePdf(invoice) {
+async function renderInvoicePdf(invoice, options = {}) {
   const doc = await PDFDocument.create({ updateMetadata: false });
   doc.registerFontkit(fontkit);
   const fonts = join(root, 'node_modules/geist/dist/fonts/geist-sans');
@@ -157,6 +160,23 @@ async function renderInvoicePdf(invoice) {
       color: RULE,
     });
 
+  if (options.banner) {
+    page.drawRectangle({
+      x: M,
+      y: y - 26,
+      width: right - M,
+      height: 34,
+      borderWidth: 1,
+      borderColor: WARN,
+      color: WARN_BG,
+    });
+    y -= 4;
+    text(options.banner, M + 12, 9.5, bold, WARN);
+    y -= 12;
+    text(options.bannerDetail ?? '', M + 12, 8.5, regular, WARN);
+    y -= 40;
+  }
+
   // En-tête : émetteur à gauche, facture à droite
   text(invoice.seller.name, M, 15, bold);
   textRight('FACTURE', right, 15, bold);
@@ -180,14 +200,16 @@ async function renderInvoicePdf(invoice) {
   text(invoice.buyer.address.line1, M, 9, regular, MUTED);
   y -= 12;
   text(`${invoice.buyer.address.postCode} ${invoice.buyer.address.city}`, M, 9, regular, MUTED);
-  y -= 12;
-  text(
-    `SIREN ${invoice.buyer.siren} — adresse électronique ${invoice.buyer.electronicAddress.value} (0225)`,
-    M,
-    9,
-    regular,
-    MUTED,
-  );
+  const buyerIds = [
+    invoice.buyer.siren ? `SIREN ${invoice.buyer.siren}` : undefined,
+    invoice.buyer.electronicAddress
+      ? `adresse électronique ${invoice.buyer.electronicAddress.value} (0225)`
+      : undefined,
+  ].filter(Boolean);
+  if (buyerIds.length > 0) {
+    y -= 12;
+    text(buyerIds.join(' — '), M, 9, regular, MUTED);
+  }
 
   // Lignes
   y -= 36;
@@ -237,12 +259,26 @@ async function renderInvoicePdf(invoice) {
   mention(
     `Virement sur ${invoice.paymentMeans[0].creditTransfer.iban} (${invoice.paymentMeans[0].creditTransfer.bic}) — référence ${invoice.remittanceInformation}.`,
   );
-  mention(
-    "Pénalités de retard : 10,00 % l'an, exigibles sans rappel dès le lendemain de l'échéance (art. L441-10 C. com.).",
-  );
-  mention('Indemnité forfaitaire pour frais de recouvrement : 40,00 € (art. D441-5 C. com.).');
-  mention("Pas d'escompte pour paiement anticipé.");
+  if (invoice.paymentTerms.latePenaltyRate !== undefined) {
+    mention(
+      "Pénalités de retard : 10,00 % l'an, exigibles sans rappel dès le lendemain de l'échéance (art. L441-10 C. com.).",
+    );
+    mention('Indemnité forfaitaire pour frais de recouvrement : 40,00 € (art. D441-5 C. com.).');
+    mention("Pas d'escompte pour paiement anticipé.");
+  } else if (invoice.paymentTerms.text) {
+    mention(invoice.paymentTerms.text);
+  }
   mention(invoice.seller.legalInfo);
+
+  if (options.defects) {
+    y -= 14;
+    text('DÉFAUTS VOLONTAIRES DE CE FICHIER DE TEST', M, 8, bold, WARN);
+    y -= 14;
+    for (const defect of options.defects) {
+      text(`•  ${defect}`, M, 8.5, regular, WARN);
+      y -= 12;
+    }
+  }
 
   y = M + 18;
   text(
@@ -272,9 +308,69 @@ export async function buildExampleFacturX() {
   );
 }
 
+/**
+ * Variante volontairement non conforme, pour éprouver une chaîne de réception : les défauts sont
+ * dans les données de la facture, pas dans le PDF, qui reste un PDF/A-3 valide. Chacun est le genre
+ * d'erreur qu'un émetteur commet réellement.
+ */
+export function brokenInvoice() {
+  const invoice = exampleInvoice();
+  const buyer = { ...invoice.buyer };
+  delete buyer.siren; // BR-FR : identification de l'acheteur
+  delete buyer.electronicAddress; // BR-FR-12 : adresse électronique de destination
+  return {
+    ...invoice,
+    id: 'FA-2026-0043',
+    remittanceInformation: 'FA-2026-0043',
+    buyer,
+    // BT-20 en texte libre : les trois mentions légales BR-FR-05 ne sont plus émises
+    paymentTerms: { dueDate: '2026-10-11', text: 'Paiement à 30 jours fin de mois.' },
+    totals: {
+      ...invoice.totals,
+      // TTC faux de 84,00 € : l'erreur d'arrondi la plus banale. Le net à payer suit le TTC,
+      // donc BR-CO-16 reste satisfaite : un seul défaut arithmétique, bien identifié.
+      taxInclusiveAmount: cents(510000),
+      amountDueForPayment: cents(510000),
+    },
+  };
+}
+
+/** Codes réellement relevés par le validateur — vérifiés par scripts/example-invoice.test.mjs. */
+export const BROKEN_DEFECTS = [
+  'Total TTC incohérent avec le total HT et la TVA (BR-CO-15)',
+  "Adresse électronique de l'acheteur absente, obligatoire pour la réforme (BR-FR-12)",
+  'Mentions légales de retard, indemnité et escompte absentes (BR-FR-05)',
+  "SIREN de l'acheteur absent, alors qu'il est une entreprise française (BR-FR-11)",
+];
+
+export async function buildBrokenFacturX() {
+  const invoice = brokenInvoice();
+  const icc = readFileSync(join(root, 'packages/facturx/test/fixtures/sRGB.icc'));
+  const pdf = await renderInvoicePdf(invoice, {
+    banner: 'EXEMPLE VOLONTAIREMENT NON CONFORME — fichier de test',
+    bannerDetail:
+      "Cette facture n'a aucune valeur : elle sert à vérifier qu'une chaîne de réception rejette ce qu'elle doit rejeter.",
+    defects: BROKEN_DEFECTS,
+  });
+  return await embedFacturX(
+    pdf,
+    // Validation désactivée : c'est précisément le but de ce fichier.
+    { xml: toCiiXml(invoice, { validate: false }) },
+    {
+      date: DATE,
+      title: `Facture ${invoice.id} (exemple non conforme)`,
+      subject: 'Facture d’exemple volontairement non conforme — profil EN 16931',
+      outputIntent: { iccProfile: new Uint8Array(icc) },
+    },
+  );
+}
+
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const target = process.argv[2] ?? join(root, 'facture-exemple-facturx.pdf');
-  const pdf = await buildExampleFacturX();
+  const broken = process.argv.includes('--non-conforme');
+  const target =
+    process.argv.find((a) => a.endsWith('.pdf')) ??
+    join(root, broken ? 'facture-exemple-non-conforme.pdf' : 'facture-exemple-facturx.pdf');
+  const pdf = broken ? await buildBrokenFacturX() : await buildExampleFacturX();
   writeFileSync(target, pdf);
   console.log(`${target} — ${(pdf.length / 1024).toFixed(0)} Ko`);
   if (!existsSync(target)) process.exit(1);

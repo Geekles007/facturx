@@ -223,3 +223,19 @@ ISO 19005-3 6.2.11.8-1 : les polices sont embarquées entières. Surtout, l'espa
 dessiner un caractère absent de la police, plutôt que de produire un fichier qui *semble* correct.
 Les ligatures sont désactivées, pdf-lib écrivant les glyphes substitués sans reprendre leurs
 avances (« palette » s'affichait « palett e »).
+
+### D55. Un jumeau fautif, dont les défauts sont écrits sur le document et vérifiés par un test
+Éprouver une chaîne de réception demande aussi un fichier qui doit être **rejeté**. Le site publie
+donc un second PDF/A-3, volontairement non conforme, portant quatre défauts que des émetteurs
+commettent réellement : total TTC incohérent (BR-CO-15), adresse électronique de l'acheteur absente
+(BR-FR-12), mentions légales de retard absentes (BR-FR-05), SIREN de l'acheteur absent (BR-FR-11).
+Les défauts sont dans **les données de la facture, pas dans le fichier** : le PDF reste un PDF/A-3
+valide et parfaitement lisible, pour que la chaîne testée atteigne bien l'étape de validation au lieu
+de trébucher avant.
+
+Deux garde-fous. Le PDF affiche un bandeau « exemple volontairement non conforme » et la liste de ses
+défauts : personne ne peut le prendre pour une facture réelle. Et un test compare cette liste aux
+codes que le validateur relève effectivement — la première version annonçait BR-CO-16, qui ne se
+déclenche pas quand le net à payer suit le TTC faux, et attribuait l'absence de SIREN à aucune règle
+alors qu'il s'agit de BR-FR-11. Un document d'exemple qui ment sur ce qu'il démontre est pire
+qu'aucun document.

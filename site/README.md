@@ -81,7 +81,7 @@ le runtime XSLT, les trois jeux de règles et la base de codes.
 
 Versionnés : les pages (`index.html`, `validateur/index.html`), les styles, `app.js` de la page d'accueil, les polices Geist (licence SIL OFL) et le favicon. Les sources du validateur sont dans `site-src/`, hors du dossier déployé.
 
-Générés (ignorés par git, à reconstruire avant chaque déploiement) : `validateur/app.js` et ses fragments, `validateur/vendor/` (runtime Saxon-JS et sa licence), `validateur/schemas/` (schematrons compilés, base de codes) et `validateur/exemples/` — dont `facture-exemple.pdf`, un PDF/A-3 Factur-X produit par le SDK à chaque construction (`scripts/example-invoice.mjs`, testé dans `pnpm site:check`).
+Générés (ignorés par git, à reconstruire avant chaque déploiement) : `validateur/app.js` et ses fragments, `validateur/vendor/` (runtime Saxon-JS et sa licence), `validateur/schemas/` (schematrons compilés, base de codes) et `validateur/exemples/` — dont `facture-exemple.pdf` et `facture-exemple-non-conforme.pdf`, deux PDF/A-3 Factur-X produits par le SDK à chaque construction (`scripts/example-invoice.mjs`, testés dans `pnpm site:check`).
 
 ## À tenir à jour
 
