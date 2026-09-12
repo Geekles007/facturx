@@ -260,6 +260,13 @@ describe('extractFacturX', () => {
     });
   });
 
+  it('garde une erreur typée sur un PDF tronqué que pdf-lib accepte de charger', async () => {
+    // pdf-lib charge cet en-tête sans catalogue ; l'exploration qui suit doit rester typée.
+    const truncated = new TextEncoder().encode('%PDF-1.4 document incomplet');
+    await expect(extractFacturX(truncated)).rejects.toMatchObject({ code: 'INVALID_PDF' });
+    await expect(extractFacturX(truncated)).rejects.toBeInstanceOf(FacturXPdfError);
+  });
+
   it('retrouve une pièce ZUGFeRD en repli, sans niveau de conformité', async () => {
     const doc = await PDFDocument.create({ updateMetadata: false });
     doc.addPage();

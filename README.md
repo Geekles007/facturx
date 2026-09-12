@@ -22,6 +22,12 @@ Une facture électronique française conforme ne devrait pas exiger une dépenda
 
 Réception obligatoire pour **toutes** les entreprises au 1er septembre 2026, émission en 2026 (grandes entreprises/ETI) puis 2027 (PME/micro), transit par une **plateforme agréée**. Le SDK est la brique **format + conformité** (produire, vérifier, lire du Factur-X) ; la plateforme agréée est la brique **transport** (envoi, statuts, e-reporting), hors périmètre. Guide complet, checklist et écarts connus : [docs/reforme.md](docs/reforme.md).
 
+## Validateur en ligne
+
+**[facturx.ibird.dev/validateur](https://facturx.ibird.dev/validateur/)** — déposez un PDF Factur-X ou un XML CII : le SDK le relit en objet typé, puis les trois schematrons officiels (EN 16931 CEN, Factur-X, BR-FR de la norme XP Z12-012) rendent leur verdict, avec le code de règle et l'emplacement exact de chaque anomalie.
+
+Tout s'exécute **dans le navigateur** : aucun fichier n'est transmis. Les jeux de règles sont ceux de la CI de ce dépôt. Le contrôle PDF/A-3 par veraPDF n'y figure pas — il exige Java, donc un serveur ; il reste exécuté ici à chaque commit.
+
 ## Exemples exécutables
 
 | Exemple | Ce qu'il montre |
@@ -176,10 +182,10 @@ Aucun flottant : `cents(1234)` = 12,34 €, `quantity(15000)` = 1,5, `unitPrice(
 
 ```bash
 pnpm install
-pnpm check       # lint + typecheck + test + build + exemples (typecheck + exécution)
+pnpm check       # lint + typecheck + test + build + site (types, tests, bundle) + exemples
 ```
 
-Monorepo pnpm : `packages/facturx` (le SDK), `examples/*` (exemples exécutés en CI). Publication : tag `vX.Y.Z` → workflow de release (trusted publishing npm), voir [docs/release.md](docs/release.md). Outils : TypeScript strict, tsup (ESM + CJS + d.ts), vitest, Biome, GitHub Actions (Node 22/24).
+Monorepo pnpm : `packages/facturx` (le SDK), `examples/*` (exemples exécutés en CI), `site/` + `site-src/` (la page et le validateur en ligne, voir [site/README.md](site/README.md)). Publication : tag `vX.Y.Z` → workflow de release (trusted publishing npm), voir [docs/release.md](docs/release.md). Outils : TypeScript strict, tsup (ESM + CJS + d.ts), vitest, Biome, GitHub Actions (Node 22/24).
 
 ## Licence
 

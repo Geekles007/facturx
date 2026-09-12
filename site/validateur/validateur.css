@@ -1,0 +1,330 @@
+/* Validateur — styles propres à l'outil ; les jetons et la navigation viennent de ../style.css */
+
+.tool {
+  padding: 56px 0 96px;
+}
+.tool h1 {
+  margin-top: 22px;
+  font-size: clamp(30px, 4.4vw, 48px);
+  letter-spacing: -0.035em;
+  max-width: 20ch;
+}
+.tool .lede {
+  margin-top: 18px;
+  max-width: 68ch;
+}
+
+.noscript {
+  margin-top: 28px;
+  padding: 16px 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+/* Zone de dépôt */
+.dropzone {
+  margin-top: 36px;
+  padding: 40px 24px 28px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 16px;
+  background: var(--surface);
+  text-align: center;
+  transition:
+    border-color 0.2s var(--ease),
+    background 0.2s var(--ease);
+}
+.dropzone.over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.dz-title {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.dz-sub {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 14.5px;
+}
+.dropzone .btn {
+  margin-top: 20px;
+  cursor: pointer;
+}
+.dropzone input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.dropzone input[type="file"]:focus-visible + .btn,
+.dropzone .btn:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.dz-examples {
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.linkish {
+  border: 0;
+  background: none;
+  padding: 4px 2px;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--border-strong);
+}
+.linkish:hover {
+  text-decoration-color: var(--fg);
+}
+
+/* Statut */
+.status {
+  margin-top: 20px;
+  color: var(--muted);
+  font: 500 13.5px / 1.5 var(--mono);
+  min-height: 1.5em;
+}
+.status[data-kind="busy"]::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1s ease-in-out infinite;
+}
+.status[data-kind="error"] {
+  color: var(--fg);
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Verdict */
+.rapport {
+  margin-top: 8px;
+}
+.verdict {
+  padding: 26px 26px 22px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--faint);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  animation: rise 0.35s var(--ease);
+}
+.verdict[data-state="ok"] {
+  border-left-color: #17864a;
+}
+.verdict[data-state="ko"],
+.verdict[data-state="error"] {
+  border-left-color: #b0413e;
+}
+.verdict h2 {
+  font-size: clamp(22px, 2.4vw, 28px);
+}
+.verdict h2:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.summary {
+  margin-top: 10px;
+  color: var(--muted);
+  font: 400 13.5px / 1.6 var(--mono);
+  overflow-wrap: anywhere;
+}
+.verdict-actions {
+  margin-top: 18px;
+}
+.error-box {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Juges */
+.judges {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  margin-top: 14px;
+}
+@media (max-width: 800px) {
+  .judges {
+    grid-template-columns: 1fr;
+  }
+}
+.judge {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 20px 20px 18px;
+  animation: rise 0.35s var(--ease) backwards;
+}
+.judge:nth-child(2) {
+  animation-delay: 60ms;
+}
+.judge:nth-child(3) {
+  animation-delay: 120ms;
+}
+.judge:nth-child(4) {
+  animation-delay: 180ms;
+}
+.judge-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+.judge-detail {
+  margin-top: 4px;
+  color: var(--faint);
+  font-size: 13px;
+}
+.badge {
+  flex: none;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font: 500 12px / 1 var(--sans);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.judge[data-status="ok"] .badge {
+  color: #17864a;
+  border-color: color-mix(in srgb, #17864a 35%, transparent);
+}
+.judge[data-status="failed"] .badge {
+  color: #b0413e;
+  border-color: color-mix(in srgb, #b0413e 35%, transparent);
+}
+.note,
+.none {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.findings {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.finding {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border-left: 2px solid var(--faint);
+}
+.finding.fatal {
+  border-left-color: #b0413e;
+}
+.finding.warning {
+  border-left-color: #b8860b;
+}
+.finding.tolerated {
+  border-left-color: var(--border-strong);
+  opacity: 0.85;
+}
+.finding-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.finding .code {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.finding .sev {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+}
+.finding .msg {
+  margin-top: 6px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.finding .path {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.finding .reason {
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* Notes de bas de page */
+.notes {
+  margin-top: 64px;
+  padding-top: 32px;
+  border-top: 1px solid var(--border);
+}
+.note-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px 32px;
+  margin-top: 24px;
+}
+@media (max-width: 800px) {
+  .note-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.note-grid p {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+.notes .fine {
+  margin-top: 28px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .verdict,
+  .judge {
+    animation: none;
+  }
+  .status[data-kind="busy"]::after {
+    animation: none;
+  }
+}

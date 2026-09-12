@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.base.json",
+  "include": ["site-src"],
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    // Node n'est là que pour les tests ; esbuild refuse toute API Node dans le code du navigateur.
+    "types": ["node"]
+  }
+}

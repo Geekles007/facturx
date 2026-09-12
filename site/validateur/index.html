@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Validateur Factur-X — contrôlez une facture sans l'envoyer nulle part</title>
+<meta name="description" content="Déposez un PDF ou un XML Factur-X : les schematrons officiels EN 16931, Factur-X et BR-FR s'exécutent dans votre navigateur. Aucun fichier n'est transmis.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#fafafa">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
+<meta property="og:title" content="Validateur Factur-X">
+<meta property="og:description" content="Contrôlez une facture Factur-X avec les règles officielles, sans quitter votre navigateur.">
+<meta property="og:url" content="https://facturx.ibird.dev/validateur/">
+<link rel="canonical" href="https://facturx.ibird.dev/validateur/">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="preload" href="../fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="validateur.css">
+<script>document.documentElement.classList.add("js")</script>
+</head>
+<body>
+<a class="skip" href="#contenu">Aller au contenu</a>
+
+<header class="nav" id="nav">
+  <div class="wrap">
+    <a class="brand" href="../" aria-label="facturx-sdk, accueil">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><title>facturx-sdk</title><path d="M4 3.5h11l5 5V20.5H4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M15 3.5v5h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 12h8M8 16h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <span>facturx-sdk</span>
+    </a>
+    <nav aria-label="Navigation principale">
+      <a href="../#preuves">Preuves</a>
+      <a href="../#code">Code</a>
+      <a href="../#reforme">Réforme</a>
+      <a href="https://github.com/Geekles007/facturx/blob/main/docs/reforme.md">Guide</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="ghost" href="https://github.com/Geekles007/facturx" aria-label="Dépôt GitHub">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><title>GitHub</title><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      </a>
+      <a class="btn small" href="https://www.npmjs.com/package/facturx-sdk">npm <span class="mono dim">1.0.1</span></a>
+    </div>
+  </div>
+</header>
+
+<main id="contenu" class="tool">
+  <div class="wrap">
+    <p class="chip"><span class="dot"></span>Rien n'est envoyé : tout s'exécute dans votre navigateur</p>
+    <h1>Votre facture passe-t-elle les validateurs officiels&nbsp;?</h1>
+    <p class="lede">Déposez un PDF Factur-X ou un XML CII. Le SDK le relit en objet typé, puis les trois schematrons officiels le jugent&nbsp;: <b>EN 16931 (CEN)</b>, <b>Factur-X</b> et les règles françaises <b>BR-FR</b> de la norme XP&nbsp;Z12-012.</p>
+
+    <noscript>
+      <p class="noscript">Ce validateur s'exécute entièrement dans votre navigateur : il a besoin de JavaScript pour lire le fichier et faire tourner les schematrons. Aucun envoi n'est fait pour autant. Sans JavaScript, le SDK reste utilisable en ligne de commande depuis <a href="https://www.npmjs.com/package/facturx-sdk">npm</a>.</p>
+    </noscript>
+
+    <div class="dropzone" id="dropzone">
+      <p class="dz-title">Glissez un fichier ici</p>
+      <p class="dz-sub">PDF Factur-X ou XML CII · il ne quitte pas votre machine</p>
+      <label class="btn primary" for="file">Choisir un fichier</label>
+      <input type="file" id="file" accept=".pdf,.xml,application/pdf,text/xml,application/xml">
+      <p class="dz-examples">
+        Sans fichier sous la main&nbsp;:
+        <button type="button" class="linkish" data-example="facture-conforme.xml">essayer une facture conforme</button>
+        <span aria-hidden="true">·</span>
+        <button type="button" class="linkish" data-example="facture-non-conforme.xml">ou une facture fautive</button>
+      </p>
+    </div>
+
+    <p id="status" class="status" role="status" aria-live="polite">Chargement…</p>
+    <div id="rapport" class="rapport"></div>
+
+    <section class="notes">
+      <h2>Ce que contrôle cet outil</h2>
+      <div class="note-grid">
+        <div>
+          <h3>Quatre juges</h3>
+          <p>Le SDK vérifie le modèle, l'arithmétique en centimes et les règles françaises, avec le chemin exact du champ fautif. Les trois schematrons officiels rendent leur verdict sur le XML tel quel, avec leurs propres codes de règle.</p>
+        </div>
+        <div>
+          <h3>Trois tolérances assumées</h3>
+          <p>Trois avertissements sont signalés comme tolérés, jamais masqués&nbsp;: ils opposent une règle PEPPOL ou CII à une exigence de la norme française. La raison est affichée avec chacun.</p>
+        </div>
+        <div>
+          <h3>Ce qui manque encore</h3>
+          <p>Le contrôle PDF/A-3 par veraPDF réclame Java, donc un serveur&nbsp;: il n'est pas exécuté ici. Le SDK le passe en intégration continue sur chaque version publiée.</p>
+        </div>
+        <div>
+          <h3>Mêmes règles qu'en intégration continue</h3>
+          <p>Les jeux de règles sont ceux du dépôt mustangproject à un commit épinglé, compilés puis exécutés par Saxon-JS — exactement ce qui juge le SDK à chaque commit.</p>
+        </div>
+      </div>
+      <p class="fine">Cet outil ne constitue pas un conseil juridique et ne remplace pas la plateforme agréée qui transmettra vos factures. Moteur XSLT&nbsp;: Saxon-JS 2.7 © Saxonica, redistribué sans modification (<a href="vendor/SaxonJS-LICENSE.txt">licence</a>).</p>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <p><b>facturx-sdk</b> · MIT · publié sur npm avec attestation de provenance</p>
+    <nav class="foot-links" aria-label="Liens secondaires">
+      <a class="foot-link" href="../">Accueil</a>
+      <a class="foot-link" href="https://github.com/Geekles007/facturx/blob/main/CHANGELOG.md">CHANGELOG</a>
+      <a class="foot-link" href="https://github.com/Geekles007/facturx/blob/main/SECURITY.md">Sécurité</a>
+      <a class="foot-link" href="https://github.com/Geekles007/facturx">GitHub</a>
+    </nav>
+  </div>
+</footer>
+
+<script src="app.js" type="module"></script>
+</body>
+</html>

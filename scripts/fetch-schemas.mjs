@@ -6,7 +6,7 @@
  *   pnpm schemas:fetch --force    # retélécharge tout
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -74,7 +74,10 @@ async function main() {
   console.log(`✓ schémas et schematrons prêts (mustangproject@${MUSTANG_COMMIT.slice(0, 7)})`);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+// Exécuté directement : on télécharge. Importé (fetch-validator-assets.mjs) : on n'expose que les métadonnées.
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

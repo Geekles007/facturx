@@ -6,3 +6,10 @@ coverage/
 packages/facturx/test/schemas/*
 !packages/facturx/test/schemas/README.md
 packages/facturx/test/samples/
+
+# Validateur en ligne : bundle et ressources générés (pnpm validator:fetch puis pnpm site:build)
+site/validateur/app.js
+site/validateur/chunk-*.js
+site/validateur/vendor/
+site/validateur/schemas/
+site/validateur/exemples/

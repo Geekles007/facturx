@@ -2,6 +2,11 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Depuis 1.0.0, une rupture d'API n'arrive que dans une version majeure ; une nouvelle règle de validation est une version mineure.
 
+## [Non publié]
+
+### Corrigé
+- `extractFacturX` : un PDF tronqué que `pdf-lib` accepte de charger (en-tête valide, catalogue absent) levait une erreur non typée ; toute anomalie de structure rencontrée après le chargement est désormais une `FacturXPdfError` de code `INVALID_PDF`, cause conservée.
+
 ## [1.0.1] — 2026-09-12
 
 ### Modifié

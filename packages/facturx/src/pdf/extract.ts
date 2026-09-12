@@ -69,6 +69,19 @@ export async function extractFacturX(
 ): Promise<ExtractedFacturX | undefined> {
   const limits = resolveLimits(options.limits);
   const doc = await loadPdf(pdf, limits);
+  try {
+    return readFacturX(doc, limits);
+  } catch (error) {
+    // pdf-lib accepte des documents tronqués que `loadPdf` ne peut pas rejeter : toute erreur
+    // de structure rencontrée ensuite reste une erreur typée, jamais une exception brute.
+    if (error instanceof FacturXPdfError) throw error;
+    throw new FacturXPdfError('INVALID_PDF', 'Structure PDF inattendue : document illisible.', {
+      cause: error,
+    });
+  }
+}
+
+function readFacturX(doc: PDFDocument, limits: Limits): ExtractedFacturX | undefined {
   const candidates: { name: string; spec: PDFDict }[] = listEmbeddedFiles(doc).map(
     ({ name, spec }) => ({ name, spec }),
   );

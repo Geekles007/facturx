@@ -479,6 +479,50 @@ pre,
   }
 }
 
+/* Bandeau validateur */
+.tryout {
+  padding: 0 0 88px;
+}
+.tryout-card {
+  display: grid;
+  grid-template-columns: 1.35fr 0.65fr;
+  gap: 40px;
+  align-items: center;
+  padding: 34px 34px 32px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, var(--accent-soft), transparent 58%), var(--surface);
+  box-shadow: var(--shadow);
+}
+.tryout-card h2 {
+  margin-top: 12px;
+  font-size: clamp(24px, 2.7vw, 33px);
+  max-width: 22ch;
+}
+.tryout-card .pitch {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 15.5px;
+  line-height: 1.55;
+  max-width: 62ch;
+}
+.tryout-card b {
+  color: var(--fg);
+  font-weight: 600;
+}
+.tryout-actions {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+@media (max-width: 860px) {
+  .tryout-card {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+}
+
 /* Showcase */
 .showcase {
   padding: 24px 0 96px;
