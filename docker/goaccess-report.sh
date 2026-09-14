@@ -5,6 +5,9 @@ set -eu
 
 LOG=/var/log/nginx/access.log
 OUT=/var/lib/goaccess/report.html
+# GoAccess déduit le format de l'extension et refuse tout ce qui n'est ni .html, .json ni .csv :
+# le fichier intermédiaire de l'écriture atomique doit donc lui aussi finir par .html.
+OUT_EN_COURS=/var/lib/goaccess/.report-en-cours.html
 
 mkdir -p /var/lib/goaccess
 
@@ -29,7 +32,7 @@ goaccess "$LOG" \
     --log-format=COMBINED \
     --ignore-crawlers \
     --html-report-title="facturx.ibird.dev" \
-    -o "$OUT.tmp"
+    -o "$OUT_EN_COURS"
 
 # Remplacement atomique : jamais de rapport à moitié écrit servi à un lecteur.
-mv "$OUT.tmp" "$OUT"
+mv "$OUT_EN_COURS" "$OUT"
