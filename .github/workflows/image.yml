@@ -1,0 +1,85 @@
+name: Image du site
+
+# L'image du site n'était jusqu'ici construite que par Coolify, au déploiement : une erreur de
+# configuration nginx ne se voyait donc qu'en production. Ce contrôle la rattrape avant.
+# Limité aux chemins qui la composent : inutile de reconstruire une image à chaque commit du SDK.
+on:
+  push:
+    paths:
+      - Dockerfile
+      - docker/**
+      - .dockerignore
+      - .github/workflows/image.yml
+  pull_request:
+    paths:
+      - Dockerfile
+      - docker/**
+      - .dockerignore
+      - .github/workflows/image.yml
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Contient « nginx -t » : une configuration invalide fait échouer la construction ici.
+      - name: Construire
+        run: docker build -t facturx-site .
+
+      - name: Démarrer, statistiques activées
+        run: |
+          docker run -d --name site -e STATS_PASSWORD=motdepassedetest -p 8080:80 facturx-site
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null http://localhost:8080/ && break
+            sleep 1
+          done
+          docker logs site
+
+      - name: Le site répond
+        run: |
+          curl -fsS -o /dev/null http://localhost:8080/
+          curl -fsS -o /dev/null http://localhost:8080/validateur/
+
+      - name: /stats/ est fermé sans mot de passe
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/stats/)
+          [ "$code" = "401" ] || { echo "attendu 401, reçu $code"; exit 1; }
+
+      - name: /stats/ s'ouvre avec le mot de passe
+        run: |
+          curl -fsS -u stats:motdepassedetest -o /dev/null http://localhost:8080/stats/
+
+      - name: Le rapport contient les visites, et pas d'adresse complète
+        run: |
+          for i in $(seq 1 5); do curl -fsS -o /dev/null http://localhost:8080/; done
+          docker exec site /usr/local/bin/goaccess-report.sh
+          curl -fsS -u stats:motdepassedetest http://localhost:8080/stats/ >/tmp/rapport.html
+          # Le rapport de repli s'affiche quand le journal est vide : ce n'est pas ce qu'on veut ici.
+          if grep -q 'Aucune visite enregistrée' /tmp/rapport.html; then
+            echo "GoAccess n'a rien analysé : rapport de repli servi"
+            exit 1
+          fi
+          grep -q 'facturx.ibird.dev' /tmp/rapport.html
+          echo "— journal analysé par GoAccess —"
+          docker exec site head -3 /var/log/nginx/access.log
+          # Toutes les adresses du journal doivent finir par .0 (ou ::) : anonymisées à l'écriture.
+          docker exec site sh -c 'cut -d" " -f1 /var/log/nginx/access.log | sort -u' >/tmp/ips
+          cat /tmp/ips
+          if grep -qvE '(\.0|::)$' /tmp/ips; then
+            echo "adresse non anonymisée dans le journal"
+            exit 1
+          fi
+          echo "toutes les adresses sont tronquées"
+
+      - name: Sans mot de passe, /stats/ n'existe pas
+        run: |
+          docker rm -f site >/dev/null
+          docker run -d --name nu -p 8081:80 facturx-site
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null http://localhost:8081/ && break
+            sleep 1
+          done
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/stats/)
+          [ "$code" = "404" ] || { echo "attendu 404, reçu $code"; exit 1; }
+          docker logs nu
