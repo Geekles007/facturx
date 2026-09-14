@@ -2,6 +2,12 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Depuis 1.0.0, une rupture d'API n'arrive que dans une version majeure ; une nouvelle règle de validation est une version mineure.
 
+## [1.1.0] — 2026-09-14
+
+### Ajouté
+- **Statuts du cycle de vie** (`lifecycle`) : `LifecycleStatus` typé, `validateLifecycleStatus` / `assertValidLifecycleStatus`, listes closes `LIFECYCLE_STATUS_CODES` (200 Déposée, 210 Refusée, 212 Encaissée, 213 Rejetée), `REFUSAL_REASON_LABELS` (40 motifs normalisés) et `AMOUNT_LABELS` (G7.12). Règles vérifiées : **G7.44** (statut transmissible), **G7.08** (motif sur 210/213), **G7.25** (commentaire sur 210), **G7.39** (motifs restreints au cadre S6), **G6.27** (montant encaissé en euros), **G7.17** (SIREN du fournisseur). Sources : dossier de spécifications externes DGFiP **v3.2**, annexe 2 « Format sémantique FE CDV — Flux 6 » et annexe 7 « Règles de gestion » v1.9.
+- Anomalies de statut distinctes de celles des factures : `LifecycleIssue`, `LifecycleIssueCode`, `FacturXLifecycleError` — `Issue` et `IssueCode` restent réservés aux factures, leur contrat est inchangé.
+
 ## [1.0.2] — 2026-09-12
 
 ### Corrigé
@@ -128,6 +134,7 @@ Première version publiée : la boucle complète émission → réception pour l
 ### Documentation
 - Guide de la réforme (`docs/reforme.md`), journal des décisions (`docs/decisions.md`), trois exemples exécutés en CI (émission Node, réception Node, handler HTTP Web standard).
 
+[1.1.0]: https://github.com/Geekles007/facturx/releases/tag/v1.1.0
 [1.0.2]: https://github.com/Geekles007/facturx/releases/tag/v1.0.2
 [1.0.1]: https://github.com/Geekles007/facturx/releases/tag/v1.0.1
 [1.0.0]: https://github.com/Geekles007/facturx/releases/tag/v1.0.0
