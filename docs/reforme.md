@@ -54,7 +54,18 @@ En parallèle des factures B2B domestiques, les entreprises transmettent à l'ad
 
 ## Statuts du cycle de vie
 
-Chaque facture suit un cycle de statuts échangés entre plateformes : *déposée*, *rejetée* (par la plateforme), *refusée* (par le client), *encaissée*… Certains sont obligatoires. Ils sont **gérés par la PA** ; votre app les consomme via l'API de la PA. **Hors périmètre du SDK.**
+Chaque facture suit un cycle de statuts échangés entre plateformes. Contrairement à ce qu'on lit souvent, l'annexe 2 du dossier de spécifications externes (onglet *Statuts*) n'en énumère que **quatre** pour l'objet « facture » :
+
+| Code | Statut | Qui le pose |
+|---|---|---|
+| **200** | Déposée | la plateforme du fournisseur, après contrôle technique |
+| **210** | Refusée | l'acheteur, pour un motif normalisé, commentaire obligatoire |
+| **212** | Encaissée | le fournisseur ; porte le montant encaissé TTC, en euros |
+| **213** | Rejetée | une plateforme, rejet technique avant que l'acheteur ne voie la facture |
+
+La règle **G7.44** est sans ambiguïté : un cycle de vie qui référencerait un autre statut est rejeté (motif `REJ_RG`). Les statuts intermédiaires (« mise à disposition », « approuvée », « suspendue »…) circulent entre plateformes mais ne remontent pas à l'administration.
+
+Le SDK modélise et **valide le contenu** de ces statuts (`validateLifecycleStatus`) : motif exigé sur un refus ou un rejet, commentaire exigé sur un refus, motifs restreints au cadre `S6`, euro imposé sur le montant encaissé, SIREN du fournisseur obligatoire. **Leur transport reste géré par la PA**, comme l'envoi des factures.
 
 ## Sanctions
 
@@ -147,4 +158,4 @@ Les quatre écarts identifiés en session 5 sont traités et, depuis la session 
 3. **SIREN acheteur** — exigé pour un acheteur professionnel établi en France (BR-FR-11) ; `buyer.consumer` pour le B2C.
 4. **Avoirs (381)** — lus et écrits avec la même structure ; depuis 0.3.0, aussi les acomptes (386), rectificatives (384), documents auto-facturés (389, 261), affacturés (393, 396) et avoirs pour remise globale (262).
 
-Restent hors périmètre : e-reporting, statuts, UBL.
+Restent hors périmètre : e-reporting, UBL, et le **transport** (dépôt auprès d'une plateforme agréée) — le contenu des statuts du cycle de vie, lui, est couvert depuis la session 11.
