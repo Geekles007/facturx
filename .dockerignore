@@ -13,3 +13,5 @@ site/validateur/vendor
 site/validateur/schemas
 site/validateur/exemples
 **/.DS_Store
+# Visuels de communication : sans objet dans l'image du site.
+media
