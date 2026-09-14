@@ -1,0 +1,147 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  @font-face {
+    font-family: "Geist";
+    src: url("../site/fonts/Geist-Variable.woff2") format("woff2");
+    font-weight: 100 900;
+  }
+  @font-face {
+    font-family: "Geist Mono";
+    src: url("../site/fonts/GeistMono-Variable.woff2") format("woff2");
+    font-weight: 100 900;
+  }
+
+  :root {
+    --bg: #fafafa;
+    --fg: #0a0a0a;
+    --muted: #666;
+    --faint: #8a8a8a;
+    --border: rgba(0, 0, 0, 0.08);
+    --accent: #2f4bd8;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 1200px;
+    height: 1200px;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "Geist", system-ui, sans-serif;
+    font-feature-settings: "ss01";
+    padding: 80px 76px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .eyebrow {
+    font-family: "Geist Mono", monospace;
+    font-size: 26px;
+    letter-spacing: 0.12em;
+    color: var(--faint);
+    text-transform: uppercase;
+  }
+
+  h1 {
+    margin-top: 30px;
+    font-size: 98px;
+    font-weight: 620;
+    letter-spacing: -0.045em;
+    line-height: 0.96;
+  }
+
+  .sous {
+    margin-top: 24px;
+    font-size: 31px;
+    font-weight: 400;
+    color: var(--muted);
+    letter-spacing: -0.01em;
+    line-height: 1.35;
+  }
+
+  .sous b { font-weight: 600; color: var(--fg); }
+
+  table {
+    margin-top: 48px;
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  td {
+    padding: 23px 0;
+    border-top: 1px solid var(--border);
+    vertical-align: baseline;
+  }
+
+  tr:last-child td { border-bottom: 1px solid var(--border); }
+
+  .nom {
+    font-size: 42px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: -0.03em;
+    width: 330px;
+  }
+
+  .quoi {
+    font-size: 28px;
+    color: var(--muted);
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+  }
+
+  footer {
+    margin-top: auto;
+    padding-top: 40px;
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    gap: 32px;
+    align-items: baseline;
+    font-family: "Geist Mono", monospace;
+    font-size: 22px;
+    color: var(--faint);
+    letter-spacing: -0.01em;
+  }
+</style>
+
+<div class="eyebrow">Factur-X · conformité</div>
+
+<h1>Six juges,<br>à chaque commit.</h1>
+
+<div class="sous">
+  Ce ne sont pas mes tests qui disent si le code est conforme.<br><b>Zéro assertion en échec.</b>
+</div>
+
+<table>
+  <tr>
+    <td class="nom">XSD</td>
+    <td class="quoi">Factur-X EN 16931</td>
+  </tr>
+  <tr>
+    <td class="nom">CEN</td>
+    <td class="quoi">schematron EN 16931 · CII</td>
+  </tr>
+  <tr>
+    <td class="nom">Factur-X</td>
+    <td class="quoi">schematron profil 1.09</td>
+  </tr>
+  <tr>
+    <td class="nom">BR-FR</td>
+    <td class="quoi">schematron Flux 2 V1.3.0</td>
+  </tr>
+  <tr>
+    <td class="nom">veraPDF</td>
+    <td class="quoi">PDF/A-3b</td>
+  </tr>
+  <tr>
+    <td class="nom">ZUGFeRD</td>
+    <td class="quoi">corpus KoSIT, 30 fichiers</td>
+  </tr>
+</table>
+
+<footer>
+  <span>Si une règle tombe, la CI casse et rien ne se publie</span>
+  <span>facturx.ibird.dev</span>
+</footer>
