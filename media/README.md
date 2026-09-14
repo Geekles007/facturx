@@ -6,6 +6,7 @@ Docker et ne part pas sur le site.
 | Fichier | Quoi |
 |---|---|
 | `jury-conformite.png` | Les six outils officiels qui jugent chaque commit |
+| `ordre-cdar.png` | L'ordre des balises du message CDV, déduit puis corrigé par le XSD |
 | `statuts-cycle-de-vie.png` | Les quatre statuts du cycle de vie |
 
 Tous en carré 2400 × 2400 : c'est le format qui occupe le plus de hauteur dans un fil mobile.
