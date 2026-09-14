@@ -25,8 +25,24 @@ RUN pnpm site:dist
 
 # --- Étape 2 : servir
 FROM nginx:1.27-alpine
+ENV TZ=Europe/Paris
+# goaccess : rapport de fréquentation ; apache2-utils : htpasswd ; tzdata : horodatage local.
+RUN apk add --no-cache goaccess apache2-utils tzdata
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+COPY docker/entrypoint.sh docker/goaccess-report.sh /usr/local/bin/
+# Dans l'image nginx, access.log est un lien vers /dev/stdout : GoAccess a besoin d'un vrai fichier.
+# Le stats.conf écrit ici est une valeur de repli : la configuration nginx reste valide même si
+# l'entrypoint ne s'exécutait pas. Le « nginx -t » final fait échouer la construction plutôt que
+# le démarrage du site — une erreur de configuration ne peut donc pas atteindre la production.
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/goaccess-report.sh \
+    && rm -f /var/log/nginx/access.log \
+    && mkdir -p /var/lib/goaccess \
+    && echo '*/5 * * * * /usr/local/bin/goaccess-report.sh' >/etc/crontabs/root \
+    && echo 'location /stats/ { return 404; }' >/etc/nginx/stats.conf \
+    && nginx -t
 COPY --from=build /app/site /usr/share/nginx/html
 # Documentation de développement : pas de raison de la publier.
 RUN rm -f /usr/share/nginx/html/README.md
 EXPOSE 80
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["nginx", "-g", "daemon off;"]

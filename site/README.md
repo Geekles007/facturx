@@ -31,6 +31,59 @@ Vérifier localement avant de pousser :
 docker build -t facturx-site . && docker run --rm -p 8080:80 facturx-site
 ```
 
+## Mesurer la fréquentation (GoAccess)
+
+L'image embarque [GoAccess](https://goaccess.io) : il lit le journal d'accès de nginx et en tire un
+rapport HTML — pages vues, référents, pays, navigateurs, codes de retour. **Rien n'est ajouté aux
+pages** : pas de script, pas de cookie, pas de tiers, donc pas de bandeau de consentement à afficher,
+et la promesse du validateur (« rien n'est envoyé ») reste littéralement vraie.
+
+Le rapport est servi sur `/stats/`, protégé par mot de passe, et régénéré toutes les cinq minutes.
+
+### Activer
+
+Une variable d'environnement à définir dans Coolify :
+
+| Variable | Effet |
+|---|---|
+| `STATS_PASSWORD` | active `/stats/` et fixe le mot de passe. **Non définie, la page renvoie 404** — un tableau de bord ouvert à tous serait pire que pas de tableau de bord. |
+| `STATS_USER` | nom d'utilisateur, `stats` par défaut. |
+
+Et un volume persistant sur **`/var/log/nginx`**, sans quoi l'historique repart de zéro à chaque
+redéploiement : c'est le journal qui porte les données, le rapport n'en est qu'un rendu, refait
+toutes les cinq minutes.
+
+### Ce que le rapport compte, et ce qu'il ne compte pas
+
+Les robots d'indexation sont exclus (`--ignore-crawlers`) : sans cela, le nombre de visites serait
+flatteur et faux.
+
+Les adresses IP sont **tronquées de leur dernier octet à l'écriture même du journal** : le fichier
+analysé ne contient jamais d'adresse complète, il n'y a donc rien à purger et aucune durée de
+conservation à surveiller. Contrepartie assumée : deux visiteurs partageant un même `/24` comptent
+pour un seul, le nombre de visiteurs uniques est donc légèrement sous-estimé. Le journal
+d'exploitation envoyé à Coolify, lui, garde les adresses complètes — il est éphémère et sert au
+diagnostic, pas à la mesure.
+
+Derrière le proxy de Coolify, toutes les requêtes arrivent avec l'adresse du proxy ; la
+configuration nginx rétablit l'adresse réelle depuis `X-Forwarded-For`, sans quoi le rapport
+n'afficherait qu'un seul visiteur pour la Terre entière.
+
+Le journal entier est relu à chaque régénération. Aucun état n'est conservé entre deux passages,
+donc aucune visite ne peut être comptée deux fois.
+
+### Consulter
+
+`https://facturx.ibird.dev/stats/`, utilisateur `stats` et le mot de passe choisi. Consulter la page
+n'alimente pas les compteurs.
+
+### Si quelque chose cloche
+
+Les statistiques sont un agrément, le site est l'essentiel : toute la mise en place peut échouer
+sans empêcher nginx de démarrer, et la configuration est vérifiée par `nginx -t` **pendant la
+construction de l'image** — une erreur fait échouer la construction, jamais le site en production.
+Le message affiché au démarrage du conteneur dit dans quel état se trouvent les statistiques.
+
 ## Déployer sans Coolify (rsync)
 
 ### 1. Construire
