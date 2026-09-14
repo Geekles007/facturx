@@ -2,6 +2,15 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Depuis 1.0.0, une rupture d'API n'arrive que dans une version majeure ; une nouvelle règle de validation est une version mineure.
 
+## [1.2.0] — 2026-09-14
+
+### Ajouté
+- **Sérialisation du message de cycle de vie** : `toCdvXml(status, options)` produit un message CDV (flux 6) complet, et `toFormat204` l'horodatage UNTDID 204. Constantes `CDAR_NAMESPACES` et `CDV_PROFILES` (urn par objet, **G7.14**). Le message repose sur le **CDAR d'UN/CEFACT D22B** — *Cross Domain Acknowledgement and Response* —, pas sur un schéma français : le paquet DGFiP n'en contient donc aucun XSD.
+- Le XML produit est **validé contre le XSD CDAR D22B officiel** en CI (`xmllint`), schéma récupéré par `pnpm schemas:fetch` depuis le miroir FNFE-MPE à un commit épinglé (l'UNECE refuse tout téléchargement automatisé).
+
+### À savoir
+- Un message CDV est émis par une **plateforme** : l'émetteur est identifié par un matricule PDP/PPF (qualifiant `0238`, rôle `WK` ou `DFH`). Une application de facturation ordinaire n'en possède pas — `toCdvXml` s'adresse à qui construit ou teste une plateforme.
+
 ## [1.1.0] — 2026-09-14
 
 ### Ajouté
@@ -134,6 +143,7 @@ Première version publiée : la boucle complète émission → réception pour l
 ### Documentation
 - Guide de la réforme (`docs/reforme.md`), journal des décisions (`docs/decisions.md`), trois exemples exécutés en CI (émission Node, réception Node, handler HTTP Web standard).
 
+[1.2.0]: https://github.com/Geekles007/facturx/releases/tag/v1.2.0
 [1.1.0]: https://github.com/Geekles007/facturx/releases/tag/v1.1.0
 [1.0.2]: https://github.com/Geekles007/facturx/releases/tag/v1.0.2
 [1.0.1]: https://github.com/Geekles007/facturx/releases/tag/v1.0.1
