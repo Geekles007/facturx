@@ -65,7 +65,11 @@ Chaque facture suit un cycle de statuts échangés entre plateformes. Contrairem
 
 La règle **G7.44** est sans ambiguïté : un cycle de vie qui référencerait un autre statut est rejeté (motif `REJ_RG`). Les statuts intermédiaires (« mise à disposition », « approuvée », « suspendue »…) circulent entre plateformes mais ne remontent pas à l'administration.
 
-Le SDK modélise et **valide le contenu** de ces statuts (`validateLifecycleStatus`) : motif exigé sur un refus ou un rejet, commentaire exigé sur un refus, motifs restreints au cadre `S6`, euro imposé sur le montant encaissé, SIREN du fournisseur obligatoire. **Leur transport reste géré par la PA**, comme l'envoi des factures.
+Le SDK modélise et **valide le contenu** de ces statuts (`validateLifecycleStatus`) : motif exigé sur un refus ou un rejet, commentaire exigé sur un refus, motifs restreints au cadre `S6`, euro imposé sur le montant encaissé, SIREN du fournisseur obligatoire. Il les **sérialise** aussi en message CDV (`toCdvXml`), validé contre le XSD officiel.
+
+Le message ne suit pas un schéma français : la norme XP Z12-012 le fonde sur le **CDAR d'UN/CEFACT** (*Cross Domain Acknowledgement and Response*, D22B), ce qui explique qu'aucun XSD de cycle de vie ne figure dans le paquet de la DGFiP — la structure est internationale, seules les valeurs sont françaises.
+
+Attention à qui émet : un message CDV est produit par une **plateforme**, identifiée par un matricule PDP/PPF (qualifiant `0238`, rôle `WK`). Une application de facturation ordinaire n'en possède pas ; `toCdvXml` sert à qui construit ou teste une plateforme. **Le transport reste géré par la PA**, comme l'envoi des factures.
 
 ## Sanctions
 
