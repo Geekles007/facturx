@@ -2,6 +2,18 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Depuis 1.0.0, une rupture d'API n'arrive que dans une version majeure ; une nouvelle règle de validation est une version mineure.
 
+## [Non publié]
+
+### Ajouté
+- **Lecture d'un message de cycle de vie** : `fromCdvXml` (statut validé) et `parseCdvDocument` (statut + enveloppe : profil, plateforme émettrice, parties, type et date de réception de la facture, numéro de séquence), plus `fromFormat204`, inverse de `toFormat204`. `toCdvXml` était la seule écriture sans lecture de l'API ; l'asymétrie est levée.
+- Code d'erreur `NOT_CDAR` (`FacturXParseErrorCode`) quand la racine n'est pas `rsm:CrossDomainAcknowledgementAndResponse`.
+
+### Modifié
+- `toCdvXml` écrit désormais le cadre de facturation (`MDG-2`) quand `status.businessProcess` est renseigné : sans lui, la règle **G7.39** (motifs restreints au cadre `S6`) ne survivait pas à un aller-retour.
+
+### Vérification
+- Douze tests d'aller-retour et d'erreurs localisées. Le XSD ne juge que la structure : un code de statut écrit dans la mauvaise balise le validerait. Vérifié par mutation — remplacer `status.code` par une constante fait tomber quatre tests d'aller-retour, sans que les contrôles XSD ne bronchent.
+
 ## [1.2.0] — 2026-09-14
 
 ### Ajouté

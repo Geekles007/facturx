@@ -35,6 +35,8 @@ export type FacturXParseErrorCode =
   | 'MALFORMED'
   /** La racine n'est pas `rsm:CrossIndustryInvoice`. */
   | 'NOT_CII'
+  /** La racine n'est pas `rsm:CrossDomainAcknowledgementAndResponse` (lecture d'un message CDV). */
+  | 'NOT_CDAR'
   /** Élément obligatoire absent. */
   | 'MISSING'
   /** Valeur mal formée (nombre, date, indicateur). */

@@ -166,6 +166,12 @@ export function toCdvXml(status: LifecycleStatus, options: ToCdvXmlOptions): str
     // MDB-1 — contrôle du processus : le profil du message (G7.14).
     el(
       'rsm:ExchangedDocumentContext',
+      // MDG-2 — cadre de facturation de la facture visée, s'il est connu (utile à G7.39).
+      status.businessProcess &&
+        el(
+          'ram:BusinessProcessSpecifiedDocumentContextParameter',
+          el('ram:ID', status.businessProcess),
+        ),
       el('ram:GuidelineSpecifiedDocumentContextParameter', el('ram:ID', profil)),
     ),
     // MDB-2 — document d'échange : qui envoie, à qui, quand.
