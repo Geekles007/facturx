@@ -97,6 +97,11 @@
   };
   for (const b of document.querySelectorAll('.copy')) {
     const label = b.querySelector('span');
+    // Les libellés viennent du document, pas du script : une seule version de ce fichier sert
+    // la page française et la page anglaise, sans risque qu'elles divergent.
+    const repos = label.textContent;
+    const copie = b.dataset.copied ?? 'Copié';
+    const selection = b.dataset.selected ?? 'Sélectionné';
     let timer;
     const flash = (text) => {
       b.classList.add('done');
@@ -104,15 +109,15 @@
       clearTimeout(timer);
       timer = setTimeout(() => {
         b.classList.remove('done');
-        label.textContent = 'Copier';
+        label.textContent = repos;
       }, 1600);
     };
     b.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(b.dataset.copy);
-        flash('Copié');
+        flash(copie);
       } catch {
-        flash(fallbackCopy(b) ? 'Copié' : 'Sélectionné');
+        flash(fallbackCopy(b) ? copie : selection);
       }
     });
   }
