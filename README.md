@@ -80,6 +80,24 @@ npx facturx-sdk extract facture.pdf -o facture.xml
 
 La syntaxe est reconnue seule — Factur-X, CII ou UBL. Codes de sortie : `0` conforme, `1` anomalies, `2` illisible, `64` usage. `--json` pour une chaîne d'intégration. Les schematrons ne sont pas exécutés là (ils réclament Saxon-JS) : pour un verdict complet, le [validateur en ligne](https://facturx.ibird.dev/validateur/).
 
+## Rendre la facture
+
+```ts
+import { renderInvoicePdf, embedFacturX } from 'facturx-sdk/pdf';
+
+// La police est à fournir : les polices standard du PDF ne s'embarquent pas,
+// et un PDF/A doit embarquer tout ce qu'il affiche.
+const pdf = await renderInvoicePdf(invoice, {
+  fonts: { regular: ttfBytes, bold: ttfBoldBytes },
+  labels: 'fr',                                  // ou 'en', ou votre propre table
+  footer: 'SARL au capital de 10 000 € · RCS Paris 443 061 841',
+});
+
+const facturX = await embedFacturX(pdf, { invoice }, { outputIntent: { iccProfile: srgb } });
+```
+
+Les mentions légales de la page viennent de la même source que le XML : le lisible et le structuré ne peuvent pas diverger. La chaîne complète — rendu puis embarquement — est vérifiée par veraPDF en intégration continue.
+
 ## Installation
 
 ```bash
