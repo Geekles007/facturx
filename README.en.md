@@ -8,7 +8,7 @@ A **pure TypeScript** SDK — no native dependencies, edge/serverless friendly �
 
 **Factur-X is ZUGFeRD.** Same standard, two names: a hybrid file where a human-readable PDF/A-3 carries the machine-readable CII XML inside it. A file produced here is a valid ZUGFeRD 2.x EN 16931 file, and the reader is exercised against the German **ZUGFeRD / KoSIT** corpus in CI. What is specific to France is the *rule set* on top (`BR-FR`), not the format.
 
-> Status: **1.3.0** — complete loop (typed model, validation, CII XML validated against the XSD, XML → `Invoice` reading, PDF/A-3 validated by veraPDF), **lifecycle statuses** (validated against the official business rules, CDV message validated against the UN/CEFACT CDAR D22B schema), executable examples, and the **French rules of the AFNOR XP Z12-012 standard** (every `BR-FR` rule that can be checked offline), **cross-checked in CI by the official CEN, Factur-X and BR-FR V1.3.0 schematrons**.
+> Status: **1.4.0** — complete loop (typed model, validation, CII XML validated against the XSD, XML → `Invoice` reading, PDF/A-3 validated by veraPDF), **lifecycle statuses** (validated against the official business rules, CDV message validated against the UN/CEFACT CDAR D22B schema), executable examples, and the **French rules of the AFNOR XP Z12-012 standard** (every `BR-FR` rule that can be checked offline), **cross-checked in CI by the official CEN, Factur-X and BR-FR V1.3.0 schematrons**.
 
 ## Why
 
