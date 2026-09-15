@@ -1,6 +1,6 @@
 {
   "name": "facturx-sdk",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Pure TypeScript SDK to generate, embed, extract and validate Factur-X / ZUGFeRD invoices (EN 16931 profile) with the French BR-FR rules built in. No native dependencies; the ./pdf entry uses pdf-lib.",
   "license": "MIT",
   "author": "geekles007",
