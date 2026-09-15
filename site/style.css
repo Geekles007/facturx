@@ -209,6 +209,17 @@ pre,
   align-items: center;
   gap: 8px;
 }
+/* Lien de langue : même bouton discret que GitHub, mais en largeur de texte.
+   Il vit dans .nav-actions, qui survit au repli mobile — la navigation, elle, disparaît. */
+.ghost.lang {
+  width: auto;
+  padding: 0 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
 .ghost {
   display: inline-grid;
   place-items: center;
