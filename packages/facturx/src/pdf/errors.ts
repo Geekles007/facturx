@@ -8,7 +8,11 @@ export type FacturXPdfErrorCode =
   /** Structure PDF non prise en charge (ex. arbre de noms corrompu). */
   | 'UNSUPPORTED'
   /** PDF ou XML au-delà des limites (`Limits`). */
-  | 'TOO_LARGE';
+  | 'TOO_LARGE'
+  /** `renderInvoicePdf` sans police : les polices standard du PDF ne s'embarquent pas. */
+  | 'FONT_REQUIRED'
+  /** `renderInvoicePdf` sans `@pdf-lib/fontkit`, requis pour embarquer une police. */
+  | 'FONTKIT_REQUIRED';
 
 /** Erreur typée levée par `embedFacturX` / `extractFacturX`. */
 export class FacturXPdfError extends Error {

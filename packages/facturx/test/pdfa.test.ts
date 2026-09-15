@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
-import { embedFacturX } from '../src/pdf/index.js';
-import { multiRateInvoice } from './fixtures/invoices.js';
+import { embedFacturX, renderInvoicePdf } from '../src/pdf/index.js';
+import { multiRateInvoice, simpleInvoice } from './fixtures/invoices.js';
 
 /**
  * Conformité PDF/A-3b vérifiée par veraPDF (référence ISO 19005), sur la couche que le SDK ajoute :
@@ -68,29 +68,53 @@ describe.skipIf(!available)('conformité PDF/A-3b (veraPDF)', () => {
       { invoice: multiRateInvoice() },
       { date: new Date('2026-09-11T10:00:00Z'), outputIntent: { iccProfile: new Uint8Array(icc) } },
     );
-    // Lisible par l'utilisateur du conteneur Docker (mkdtemp crée un dossier 0700 sous Linux)
-    const dir = mkdtempSync(join(tmpdir(), 'facturx-verapdf-'));
-    chmodSync(dir, 0o755);
-    const file = join(dir, 'facture.pdf');
-    writeFileSync(file, pdf, { mode: 0o644 });
+    expectPdfA3b(pdf);
+  }, 120_000);
 
-    const run = spawnSync('verapdf', ['--flavour', '3b', '--format', 'json', file], {
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-    });
-    const start = run.stdout.indexOf('{');
-    expect(
-      start,
-      `veraPDF n'a pas produit de JSON :\n${run.stdout.slice(0, 500)}\n${run.stderr.slice(0, 500)}`,
-    ).toBeGreaterThanOrEqual(0);
-    const { compliant, failed } = readReport(JSON.parse(run.stdout.slice(start)));
-    const detail = failed
-      .map(
-        (f) =>
-          `  - ${f.specification ?? ''} ${f.clause ?? ''}-${f.testNumber ?? ''} : ${f.description ?? ''}`,
-      )
-      .join('\n');
-    expect(compliant, `Non conforme PDF/A-3b :\n${detail}`).toBe(true);
-    expect(failed).toEqual([]);
+  /**
+   * La chaîne complète : rendre la page lisible depuis le modèle, puis y embarquer le XML.
+   * C'est le seul endroit qui prouve que la police est bien embarquée — un PDF/A est rejeté sinon.
+   */
+  it('le PDF rendu puis embarqué est PDF/A-3b', async () => {
+    const icc = readFileSync(new URL('./fixtures/sRGB.icc', import.meta.url));
+    const font = new Uint8Array(
+      readFileSync(new URL('../../../site/fonts/Geist-Variable.woff2', import.meta.url)),
+    );
+    const invoice = simpleInvoice();
+    const rendu = await renderInvoicePdf(invoice, { fonts: { regular: font } });
+    const pdf = await embedFacturX(
+      rendu,
+      { invoice },
+      { date: new Date('2026-09-11T10:00:00Z'), outputIntent: { iccProfile: new Uint8Array(icc) } },
+    );
+    expectPdfA3b(pdf);
   }, 120_000);
 });
+
+/** Écrit le PDF puis oppose veraPDF à sa conformité, en nommant chaque règle en échec. */
+function expectPdfA3b(pdf: Uint8Array): void {
+  // Lisible par l'utilisateur du conteneur Docker (mkdtemp crée un dossier 0700 sous Linux)
+  const dir = mkdtempSync(join(tmpdir(), 'facturx-verapdf-'));
+  chmodSync(dir, 0o755);
+  const file = join(dir, 'facture.pdf');
+  writeFileSync(file, pdf, { mode: 0o644 });
+
+  const run = spawnSync('verapdf', ['--flavour', '3b', '--format', 'json', file], {
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  const start = run.stdout.indexOf('{');
+  expect(
+    start,
+    `veraPDF n'a pas produit de JSON :\n${run.stdout.slice(0, 500)}\n${run.stderr.slice(0, 500)}`,
+  ).toBeGreaterThanOrEqual(0);
+  const { compliant, failed } = readReport(JSON.parse(run.stdout.slice(start)));
+  const detail = failed
+    .map(
+      (f) =>
+        `  - ${f.specification ?? ''} ${f.clause ?? ''}-${f.testNumber ?? ''} : ${f.description ?? ''}`,
+    )
+    .join('\n');
+  expect(compliant, `Non conforme PDF/A-3b :\n${detail}`).toBe(true);
+  expect(failed).toEqual([]);
+}

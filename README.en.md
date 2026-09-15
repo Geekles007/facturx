@@ -52,6 +52,24 @@ npx facturx-sdk extract invoice.pdf -o invoice.xml
 
 The syntax is detected on its own — Factur-X, CII or UBL. Exit codes: `0` conformant, `1` findings, `2` unreadable, `64` usage. Add `--json` for a pipeline. The schematrons are not run here (they would need Saxon-JS): for a full verdict, use the [online validator](https://facturx.ibird.dev/validateur/).
 
+## Rendering the invoice
+
+```ts
+import { renderInvoicePdf, embedFacturX } from 'facturx-sdk/pdf';
+
+// You supply the font: the PDF standard fonts cannot be embedded,
+// and a PDF/A must embed everything it displays.
+const pdf = await renderInvoicePdf(invoice, {
+  fonts: { regular: ttfBytes, bold: ttfBoldBytes },
+  labels: 'en',                                  // or 'fr', or your own table
+  footer: 'Acme Ltd · VAT GB123456789',
+});
+
+const facturX = await embedFacturX(pdf, { invoice }, { outputIntent: { iccProfile: srgb } });
+```
+
+The legal statements on the page come from the same source as the XML, so the human-readable page and the structured data cannot drift apart. The full chain — render then embed — is checked by veraPDF in continuous integration.
+
 ## Quick start
 
 ```ts
