@@ -18,4 +18,10 @@ export {
   readXmp,
 } from './extract.js';
 export { FACTURX_FILENAME, KNOWN_FILENAMES } from './names.js';
+export {
+  RENDER_LABELS,
+  type RenderInvoicePdfOptions,
+  type RenderLabels,
+  renderInvoicePdf,
+} from './render.js';
 export { buildXmp, FACTURX_XMP_NAMESPACE, readXmpProperty, type XmpMetadata } from './xmp.js';

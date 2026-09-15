@@ -2,6 +2,18 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Depuis 1.0.0, une rupture d'API n'arrive que dans une version majeure ; une nouvelle règle de validation est une version mineure.
 
+## [Non publié]
+
+### Ajouté
+- **`renderInvoicePdf(invoice, { fonts })`** (`facturx-sdk/pdf`) : produit la page lisible d'une facture depuis le modèle typé — en-tête, parties, tableau des lignes avec retour à la ligne, totaux, ventilation de TVA, mentions légales, pagination. Jusqu'ici `embedFacturX` exigeait un PDF déjà fabriqué. Libellés français ou anglais (`labels`), table sur mesure acceptée, logo et pied de page optionnels.
+- Les mentions légales du PDF viennent de `resolveNotes`, la **même source que le XML** : la page lisible et les données structurées ne peuvent pas diverger.
+- Codes d'erreur `FONT_REQUIRED` et `FONTKIT_REQUIRED` sur `FacturXPdfError`.
+- `@pdf-lib/fontkit` en dépendance **pair optionnelle** : seul qui rend un PDF l'installe.
+
+### À savoir
+- **La police est à fournir.** Les quatorze polices standard du PDF ne s'embarquent pas, et un PDF/A doit embarquer tout ce qu'il affiche : un rendu à l'Helvetica serait rejeté par veraPDF, donc le Factur-X produit ensuite ne serait pas conforme.
+- Le sous-ensemblage de police est **désactivé par défaut** (`subset`) : celui de `@pdf-lib/fontkit` échoue sur les polices variables, dans une file asynchrone — l'échec n'est pas rattrapable et emporte le processus.
+
 ## [1.4.0] — 2026-09-16
 
 ### Ajouté
