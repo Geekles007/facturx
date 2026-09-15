@@ -509,6 +509,34 @@ function drawFooters(ctx: Ctx): void {
   });
 }
 
+/**
+ * Embarque une police en refusant les **polices variables**.
+ *
+ * Elles se chargent sans broncher, mais le document obtenu est rejeté par veraPDF —
+ * « the font programs for all fonts used for rendering shall be embedded ». L'erreur n'apparaîtrait
+ * donc qu'au contrôle de conformité, voire au dépôt sur une plateforme : autant la lever ici.
+ *
+ * La plupart des familles publient une version statique à côté de la variable (`Geist-Regular.ttf`
+ * plutôt que `Geist-Variable.woff2`) ; c'est celle-là qu'il faut.
+ */
+async function embedStatic(
+  doc: PDFDocument,
+  bytes: Uint8Array,
+  subset: boolean,
+  field: string,
+): Promise<PDFFont> {
+  const font = await doc.embedFont(bytes, { subset });
+  const axes = (font as unknown as { embedder?: { font?: { variationAxes?: object } } }).embedder
+    ?.font?.variationAxes;
+  if (axes && Object.keys(axes).length > 0) {
+    throw new FacturXPdfError(
+      'FONT_VARIABLE',
+      `La police fournie en ${field} est une police variable (axes : ${Object.keys(axes).join(', ')}). Le PDF produit serait refusé comme PDF/A, faute de programme de police embarquable : fournissez la version statique de cette famille.`,
+    );
+  }
+  return font;
+}
+
 // ---------- entrée ----------
 
 /**
@@ -539,8 +567,10 @@ export async function renderInvoicePdf(
   doc.registerFontkit(fontkit);
 
   const subset = options.subset ?? false;
-  const regular = await doc.embedFont(options.fonts.regular, { subset });
-  const bold = options.fonts.bold ? await doc.embedFont(options.fonts.bold, { subset }) : regular;
+  const regular = await embedStatic(doc, options.fonts.regular, subset, 'fonts.regular');
+  const bold = options.fonts.bold
+    ? await embedStatic(doc, options.fonts.bold, subset, 'fonts.bold')
+    : regular;
 
   const labels =
     typeof options.labels === 'object' ? options.labels : RENDER_LABELS[options.labels ?? 'fr'];

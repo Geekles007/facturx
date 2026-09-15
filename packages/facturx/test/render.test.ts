@@ -4,16 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { cents, percent, quantity, unitPrice } from '../src/index.js';
 import { FacturXPdfError, RENDER_LABELS, renderInvoicePdf } from '../src/pdf/index.js';
 import type { Invoice } from '../src/types/invoice.js';
+import { testFonts } from './fixtures/fonts.js';
 import { multiRateInvoice, simpleInvoice } from './fixtures/invoices.js';
 
-/**
- * La police vient du site. Contrairement à ses exemples — git-ignorés et régénérés, ce qui avait
- * fait échouer les tests du CLI en CI — les fontes sont versionnées.
- */
-const FONT = new Uint8Array(
-  readFileSync(new URL('../../../site/fonts/Geist-Variable.woff2', import.meta.url)),
-);
-const fonts = { regular: FONT };
+const fonts = { regular: testFonts.regular };
 
 const pageCount = async (pdf: Uint8Array): Promise<number> =>
   (await PDFDocument.load(pdf, { updateMetadata: false })).getPageCount();
@@ -104,6 +98,19 @@ describe('options', () => {
 });
 
 describe('refus explicites', () => {
+  it('refuse une police variable : le PDF produit ne serait pas un PDF/A', async () => {
+    const variable = new Uint8Array(
+      readFileSync(new URL('../../../site/fonts/Geist-Variable.woff2', import.meta.url)),
+    );
+    try {
+      await renderInvoicePdf(simpleInvoice(), { fonts: { regular: variable } });
+      throw new Error('attendu en échec');
+    } catch (error) {
+      expect((error as FacturXPdfError).code).toBe('FONT_VARIABLE');
+      expect((error as Error).message).toMatch(/statique/);
+    }
+  });
+
   it('exige une police, et dit pourquoi', async () => {
     await expect(
       renderInvoicePdf(simpleInvoice(), { fonts: { regular: new Uint8Array() } }),
