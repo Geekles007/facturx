@@ -5,6 +5,8 @@ Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Cha
 ## [Non publié]
 
 ### Ajouté
+- **Lecture UBL 2.1** (profil EN 16931) : `fromUblXml` et `parseUblDocument`, plus `UBL_NAMESPACES` et le code d'erreur `NOT_UBL`. Le socle de la réforme accepte trois syntaxes — Factur-X, CII nu et UBL — et la réception est obligatoire pour toutes les entreprises depuis le 1er septembre 2026 : sans UBL, un tiers du socle restait illisible. Lecture seule, délibérément : le SDK écrit du Factur-X, cible d'un émetteur français.
+- Le XSD UBL 2.1 et le schematron **CEN EN 16931 UBL** rejoignent `pnpm schemas:fetch`, au même commit épinglé.
 - **Lecture d'un message de cycle de vie** : `fromCdvXml` (statut validé) et `parseCdvDocument` (statut + enveloppe : profil, plateforme émettrice, parties, type et date de réception de la facture, numéro de séquence), plus `fromFormat204`, inverse de `toFormat204`. `toCdvXml` était la seule écriture sans lecture de l'API ; l'asymétrie est levée.
 - Code d'erreur `NOT_CDAR` (`FacturXParseErrorCode`) quand la racine n'est pas `rsm:CrossDomainAcknowledgementAndResponse`.
 
