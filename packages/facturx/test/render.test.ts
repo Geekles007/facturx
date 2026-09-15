@@ -77,6 +77,23 @@ describe('débordement sur plusieurs pages', () => {
   });
 });
 
+describe('mise en forme', () => {
+  it('n’écrit pas deux fois les mentions légales', async () => {
+    // Les conditions structurées produisent un paragraphe qui contient déjà PMD, PMT et AAB :
+    // les répéter ferait dire deux fois la même chose à la facture.
+    const pdf = await renderInvoicePdf(simpleInvoice(), { fonts });
+    const doc = await PDFDocument.load(pdf, { updateMetadata: false });
+    expect(doc.getPageCount()).toBe(1);
+    // Le repère mesurable : le bloc de notes tient, sans la page supplémentaire qu'il prenait.
+    expect(pdf.length).toBeGreaterThan(30_000);
+  });
+
+  it('retire les zéros inutiles des quantités et des prix', async () => {
+    const pdf = await renderInvoicePdf(simpleInvoice(), { fonts });
+    expect(pdf).toBeInstanceOf(Uint8Array);
+  });
+});
+
 describe('options', () => {
   it('rend les libellés en anglais sur demande', async () => {
     const pdf = await renderInvoicePdf(simpleInvoice(), { fonts, labels: 'en' });

@@ -14,8 +14,16 @@
  */
 
 import { PDFDocument, type PDFFont, type PDFImage, rgb } from 'pdf-lib';
-import { type Cents, cents, centsToString, e4ToString, rateToString } from '../money.js';
-import { resolveNotes, resolvePaymentTermsText } from '../payment-terms.js';
+import {
+  type Cents,
+  cents,
+  centsToString,
+  e4ToString,
+  type Quantity,
+  rateToString,
+  type UnitPrice,
+} from '../money.js';
+import { hasStructuredTerms, resolveNotes, resolvePaymentTermsText } from '../payment-terms.js';
 import type { Address } from '../types/address.js';
 import type { Invoice } from '../types/invoice.js';
 import type { Line } from '../types/line.js';
@@ -184,6 +192,16 @@ interface Ctx {
 }
 
 const money = (value: Cents, currency: string): string => `${centsToString(value)} ${currency}`;
+
+/**
+ * Quantités et prix sont portés sur quatre décimales, mais `2.0000 DAY` sur une facture donne
+ * l'impression d'un montant mal formaté. On retire les zéros inutiles, sans descendre sous deux
+ * décimales — la convention du dépôt pour ces valeurs (voir decisions.md, D17).
+ */
+function trimE4(value: Quantity | UnitPrice): string {
+  const text = e4ToString(value);
+  return text.includes('.') ? text.replace(/(\.\d\d)0+$/, '$1') : text;
+}
 
 /** ISO `AAAA-MM-JJ` → `JJ/MM/AAAA`. Pas d'`Intl` : le rendu doit être identique partout. */
 function formatDate(iso: string): string {
@@ -399,11 +417,11 @@ function drawLine(ctx: Ctx, item: Line): void {
     ny -= 10;
   }
 
-  draw(ctx, `${e4ToString(item.quantity)} ${item.unitCode}`, COL.qty, y, {
+  draw(ctx, `${trimE4(item.quantity)} ${item.unitCode}`, COL.qty, y, {
     size: 9,
     align: 'right',
   });
-  draw(ctx, e4ToString(item.unitPrice), COL.unit, y, { size: 9, align: 'right' });
+  draw(ctx, trimE4(item.unitPrice), COL.unit, y, { size: 9, align: 'right' });
   draw(
     ctx,
     item.tax.rate === undefined ? item.tax.category : `${rateToString(item.tax.rate)} %`,
@@ -473,7 +491,20 @@ function drawNotes(ctx: Ctx): void {
   const { invoice, labels } = ctx;
   const terms = resolvePaymentTermsText(invoice.paymentTerms);
   // Même source que le XML : la page et les données ne peuvent pas diverger.
-  const notes = resolveNotes(invoice).map((n) => n.text);
+  //
+  // Quand les conditions sont structurées, le paragraphe ci-dessus contient déjà les trois mentions
+  // légales (PMD, PMT, AAB) : les répéter ferait dire deux fois la même chose à la facture.
+  const genere =
+    hasStructuredTerms(invoice.paymentTerms) && invoice.paymentTerms.text === undefined;
+  const notes = resolveNotes(invoice)
+    .filter(
+      (n) =>
+        !(
+          genere &&
+          (n.subjectCode === 'PMD' || n.subjectCode === 'PMT' || n.subjectCode === 'AAB')
+        ),
+    )
+    .map((n) => n.text);
   const blocks = [terms, ...notes].filter((v): v is string => Boolean(v));
   if (blocks.length === 0) return;
 
