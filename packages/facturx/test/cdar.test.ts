@@ -3,7 +3,17 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } fro
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { CDV_PROFILES, cents, type LifecycleStatus, toCdvXml, toFormat204 } from '../src/index.js';
+import {
+  CDV_PROFILES,
+  cents,
+  FacturXParseError,
+  fromCdvXml,
+  fromFormat204,
+  type LifecycleStatus,
+  parseCdvDocument,
+  toCdvXml,
+  toFormat204,
+} from '../src/index.js';
 
 const invoice = {
   id: 'F-2026-0042',
@@ -174,5 +184,111 @@ describe.skipIf(!available)('conformité au XSD CDAR D22B (xmllint)', () => {
     expect(() =>
       execFileSync('xmllint', ['--noout', '--schema', xsd as string, file], { stdio: 'pipe' }),
     ).not.toThrow();
+  });
+});
+
+describe('lecture (fromFormat204)', () => {
+  it('est l’inverse exact de toFormat204', () => {
+    expect(fromFormat204('20260915083000')).toBe('2026-09-15T08:30:00Z');
+    expect(fromFormat204(toFormat204('2026-09-15T10:30:00+02:00'))).toBe('2026-09-15T08:30:00Z');
+  });
+
+  it('refuse une longueur ou un calendrier impossibles', () => {
+    expect(() => fromFormat204('2026-09-15')).toThrow(TypeError);
+    // Le 31 septembre n'existe pas : Date « déborde » en silence, ce qu'on refuse.
+    expect(() => fromFormat204('20260931083000')).toThrow(TypeError);
+  });
+});
+
+/**
+ * L'aller-retour est ce que le XSD ne vérifie pas : qu'on ait mis la bonne valeur dans la bonne
+ * balise. Un code écrit dans ReasonCode au lieu de ProcessConditionCode validerait le schéma et
+ * échouerait ici.
+ */
+describe('aller-retour toCdvXml → parseCdvDocument', () => {
+  const enveloppeAttendue = {
+    profile: CDV_PROFILES.factureEinvoicing,
+    messageId: options.messageId,
+    messageName: 'Cycle de vie',
+    sender: { id: 'PDP0000001', roleCode: 'WK' },
+    issuer: { ...options.issuer, schemeId: '0002' },
+    recipient: { ...options.recipient, schemeId: '0002' },
+    invoiceTypeCode: '380',
+    invoiceReceivedAt: options.invoiceReceivedAt,
+    sequence: 1,
+  };
+
+  it.each([
+    ['déposée', depose],
+    ['refusée', refuse],
+    ['encaissée', encaisse],
+  ])('un statut %s revient identique, enveloppe comprise', (_nom, status) => {
+    const lu = parseCdvDocument(toCdvXml(status, options));
+    expect(lu.status).toEqual(status);
+    expect(lu).toMatchObject({ ...enveloppeAttendue, messageDateTime: status.dateTime });
+  });
+
+  it('conserve le cadre de facturation, sans quoi G7.39 ne survivrait pas au transport', () => {
+    const s6: LifecycleStatus = { ...refuse, reasonCode: 'ROUTAGE_ERR', businessProcess: 'S6' };
+    const lu = parseCdvDocument(toCdvXml(s6, { ...options, sequence: 7, messageName: 'Refus' }));
+    expect(lu.status).toEqual(s6);
+    expect(lu.sequence).toBe(7);
+    expect(lu.messageName).toBe('Refus');
+  });
+
+  it('fromCdvXml valide ce qu’il lit : un refus sans motif est refusé à la lecture', () => {
+    const xml = toCdvXml({ ...depose, code: '210' }, { ...options, validate: false });
+    expect(() => fromCdvXml(xml)).toThrow(/G7\.08/);
+    expect(fromCdvXml(xml, { validate: false }).code).toBe('210');
+  });
+});
+
+describe('lecture : erreurs localisées', () => {
+  const codeDe = (fn: () => unknown) => {
+    try {
+      fn();
+    } catch (error) {
+      if (error instanceof FacturXParseError) return { code: error.code, path: error.path };
+      throw error;
+    }
+    throw new Error('attendu une FacturXParseError');
+  };
+
+  it('refuse un XML mal formé', () => {
+    expect(codeDe(() => parseCdvDocument('<rsm:Cross')).code).toBe('MALFORMED');
+  });
+
+  it('refuse une racine qui n’est pas un CDAR — une facture CII, par exemple', () => {
+    const cii =
+      '<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"/>';
+    expect(codeDe(() => parseCdvDocument(cii)).code).toBe('NOT_CDAR');
+  });
+
+  it('nomme la balise manquante par son chemin canonique', () => {
+    const xml = toCdvXml(depose, options).replace(
+      '<ram:ProcessConditionCode>200</ram:ProcessConditionCode>',
+      '',
+    );
+    const e = codeDe(() => parseCdvDocument(xml));
+    expect(e.code).toBe('MISSING');
+    expect(e.path).toMatch(/ReferenceReferencedDocument\/ram:ProcessConditionCode$/);
+  });
+
+  it('refuse un émetteur qui n’est pas une plateforme (rôle ni WK ni DFH)', () => {
+    const xml = toCdvXml(depose, options).replace(
+      '<ram:RoleCode>WK</ram:RoleCode>',
+      '<ram:RoleCode>BY</ram:RoleCode>',
+    );
+    const e = codeDe(() => parseCdvDocument(xml));
+    expect(e.code).toBe('FORMAT');
+    expect(e.path).toMatch(/SenderTradeParty\/ram:RoleCode$/);
+  });
+
+  it('refuse un horodatage qui n’est pas au format 204', () => {
+    const xml = toCdvXml(depose, options).replace(
+      'format="204">20260915083000',
+      'format="102">20260915',
+    );
+    expect(codeDe(() => parseCdvDocument(xml)).code).toBe('FORMAT');
   });
 });
