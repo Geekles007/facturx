@@ -41,6 +41,17 @@ const VERSIONED_FILES = [
     pattern: /(<span class="dot"><\/span>v)\d+\.\d+( ·)/,
     short: true,
   },
+  {
+    path: join(root, 'site', 'en', 'index.html'),
+    label: 'badge npm de la page anglaise',
+    pattern: /(>npm <span class="mono dim">)\d+\.\d+\.\d+(<\/span>)/,
+  },
+  {
+    path: join(root, 'site', 'en', 'index.html'),
+    label: 'bandeau de version de la page anglaise (« vX.Y »)',
+    pattern: /(<span class="dot"><\/span>v)\d+\.\d+( ·)/,
+    short: true,
+  },
 ];
 
 const version = versionFromRef(process.argv[2] ?? '');

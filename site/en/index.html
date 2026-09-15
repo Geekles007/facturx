@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>facturx-sdk — Factur-X / ZUGFeRD EN 16931 in TypeScript, judged by the official validators</title>
+<meta name="description" content="Pure TypeScript SDK to generate, validate, embed and read Factur-X / ZUGFeRD invoices at the EN 16931 profile, with the French rules built in. Checked by the XSD, the official schematrons and veraPDF.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#fafafa">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
+<meta property="og:title" content="facturx-sdk">
+<meta property="og:description" content="Conformant Factur-X invoices, in TypeScript, with nothing left to guesswork.">
+<meta property="og:url" content="https://facturx.ibird.dev/en/">
+<link rel="canonical" href="https://facturx.ibird.dev/en/">
+<link rel="alternate" hreflang="fr" href="https://facturx.ibird.dev/">
+<link rel="alternate" hreflang="en" href="https://facturx.ibird.dev/en/">
+<link rel="alternate" hreflang="x-default" href="https://facturx.ibird.dev/">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="preload" href="../fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../style.css">
+<script>document.documentElement.classList.add("js")</script>
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<div class="glow" aria-hidden="true"></div>
+
+<header class="nav" id="nav">
+  <div class="wrap">
+    <a class="brand" href="./" aria-label="facturx-sdk, home">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><title>facturx-sdk</title><path d="M4 3.5h11l5 5V20.5H4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M15 3.5v5h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 12h8M8 16h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <span>facturx-sdk</span>
+    </a>
+    <nav aria-label="Main navigation">
+      <a href="../validateur/">Validator</a>
+      <a href="#proof">Proof</a>
+      <a href="#code">Code</a>
+      <a href="#capabilities">Capabilities</a>
+      <a href="#reform">Reform</a>
+      <a href="https://github.com/Geekles007/facturx/blob/main/README.en.md">Docs</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="ghost lang" href="../" hreflang="fr" lang="fr" title="Version française">FR</a>
+      <a class="ghost" href="https://github.com/Geekles007/facturx" aria-label="GitHub repository">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><title>GitHub</title><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      </a>
+      <a class="btn small" href="https://www.npmjs.com/package/facturx-sdk">npm <span class="mono dim">1.3.0</span></a>
+    </div>
+  </div>
+</header>
+
+<main id="content">
+
+<section class="hero">
+  <div class="wrap">
+    <p class="chip reveal" style="--i:0"><span class="dot"></span>v1.3 · judged by the official validators</p>
+    <h1 class="reveal" style="--i:1">Conformant <span class="nb">Factur-X</span> invoices,<br class="br-wide"> in TypeScript, <span class="shine">nothing left to guesswork.</span></h1>
+    <p class="lede reveal" style="--i:2">A pure SDK — no native dependencies, edge and serverless friendly — to <b>generate, validate, embed and read</b> Factur-X invoices at the EN 16931 profile, with the French rules built in. Every promise here is judged by an official validator, not by us.</p>
+    <div class="actions reveal" style="--i:3">
+      <div class="install">
+        <span class="prompt" aria-hidden="true">$</span>
+        <code id="cmd">npm add facturx-sdk</code>
+        <button type="button" class="copy" data-copy="npm add facturx-sdk" data-copied="Copied" data-selected="Selected" aria-label="Copy the install command">
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><title>Copy</title><rect x="5" y="5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M3 11V3.5A.5.5 0 0 1 3.5 3H11" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+          <span>Copy</span>
+        </button>
+      </div>
+      <a class="btn primary" href="https://github.com/Geekles007/facturx/blob/main/README.en.md">Read the documentation <span aria-hidden="true">→</span></a>
+    </div>
+    <p class="fine reveal" style="--i:4"><b>Factur-X is ZUGFeRD</b> — same standard, two names. A file produced here is a valid ZUGFeRD 2.x EN 16931 file, and the reader is exercised against the German KoSIT corpus on every commit.</p>
+  </div>
+</section>
+
+<section id="proof" class="proof">
+  <div class="wrap">
+    <p class="label reveal">Judged by the reference tools, on every commit</p>
+    <ul class="judges reveal" style="--i:1" aria-label="Official validators run in continuous integration">
+      <li><b>XSD</b><span class="sub">Factur-X EN 16931</span></li>
+      <li><b>CEN</b><span class="sub">EN 16931 schematron · CII &amp; UBL</span></li>
+      <li><b>Factur-X</b><span class="sub">profile schematron 1.09</span></li>
+      <li><b>BR-FR</b><span class="sub">Flux 2 schematron V1.3.0</span></li>
+      <li><b>veraPDF</b><span class="sub">PDF/A-3b</span></li>
+      <li><b>ZUGFeRD</b><span class="sub">KoSIT corpus, 30 files</span></li>
+    </ul>
+    <dl class="stats">
+      <div class="reveal" style="--i:2"><dd data-count="264">0</dd><dt>tests, every one of them run before publishing</dt></div>
+      <div class="reveal" style="--i:3"><dd><span data-count="22">0</span><small>/26</small></dd><dt>French BR-FR rules — the other four need the directory</dt></div>
+      <div class="reveal" style="--i:4"><dd data-count="30">0</dd><dt>invoices from other tools, read and re-emitted losslessly</dt></div>
+      <div class="reveal" style="--i:5"><dd>0</dd><dt>native dependencies — edge, serverless, browser</dt></div>
+    </dl>
+  </div>
+</section>
+
+<section class="tryout">
+  <div class="wrap reveal">
+    <div class="tryout-card">
+      <div>
+        <p class="label">Online validator · free</p>
+        <h2>Drop in an invoice, get the verdict of the official rules.</h2>
+        <p class="pitch">The three schematrons — EN 16931, Factur-X and BR-FR — run <b>in your browser</b>. The file is never uploaded anywhere, and each finding comes with its rule code and the exact place in the document.</p>
+      </div>
+      <div class="tryout-actions">
+        <a class="btn primary" href="../validateur/">Open the validator <span aria-hidden="true">→</span></a>
+        <p class="fine">Factur-X PDF or CII XML · no account, no upload · interface in French</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="code" class="showcase">
+  <div class="wrap">
+    <div class="head reveal">
+      <h2>Three calls, and conformance stops being your problem.</h2>
+      <p>Integer amounts, totals computed then <em>verified</em>, typed errors carrying the exact field path. The SDK never quietly fixes anything.</p>
+    </div>
+    <div class="window reveal" style="--i:1">
+      <div class="titlebar">
+        <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+        <div class="tabs" role="tablist" aria-label="Code examples">
+          <button role="tab" id="tab-1" aria-selected="true" aria-controls="panel-1" type="button">Describe &amp; validate</button>
+          <button role="tab" id="tab-2" aria-selected="false" aria-controls="panel-2" tabindex="-1" type="button">Issue</button>
+          <button role="tab" id="tab-3" aria-selected="false" aria-controls="panel-3" tabindex="-1" type="button">Receive</button>
+          <span class="indicator" aria-hidden="true"></span>
+        </div>
+      </div>
+      <div class="panels">
+<pre role="tabpanel" id="panel-1" aria-labelledby="tab-1"><code><span class="k">import</span> { cents, computeTotals, percent, quantity, unitPrice, assertValidInvoice } <span class="k">from</span> <span class="s">'facturx-sdk'</span>;
+
+<span class="k">const</span> draft = {
+  id: <span class="s">'F-2026-0001'</span>, issueDate: <span class="s">'2026-09-11'</span>, typeCode: <span class="s">'380'</span>, currency: <span class="s">'EUR'</span>,
+  operationCategory: <span class="s">'services'</span>,                       <span class="c">// goods / services / mixed (French reform)</span>
+  seller: { name: <span class="s">'Atelier Exemple SAS'</span>, siren: <span class="s">'443061841'</span>, vatId: <span class="s">'FR64443061841'</span>,
+            address: { postCode: <span class="s">'75011'</span>, city: <span class="s">'Paris'</span>, countryCode: <span class="s">'FR'</span> } },
+  buyer:  { name: <span class="s">'Client Démo SARL'</span>, siren: <span class="s">'732829320'</span>,
+            electronicAddress: { value: <span class="s">'732829320'</span>, scheme: <span class="s">'0225'</span> },   <span class="c">// platform routing</span>
+            address: { postCode: <span class="s">'69002'</span>, city: <span class="s">'Lyon'</span>, countryCode: <span class="s">'FR'</span> } },
+  delivery: { date: <span class="s">'2026-09-10'</span> },
+  lines: [{ id: <span class="s">'1'</span>, name: <span class="s">'Consulting'</span>, quantity: quantity(<span class="d">20000</span>), unitCode: <span class="s">'DAY'</span>,
+            unitPrice: unitPrice(<span class="d">8000000</span>), netAmount: cents(<span class="d">160000</span>),
+            tax: { category: <span class="s">'S'</span>, rate: percent(<span class="s">'20'</span>) } }],
+  paymentTerms: { dueDate: <span class="s">'2026-10-11'</span>, latePenaltyRate: percent(<span class="s">'10'</span>),
+                  recoveryIndemnity: cents(<span class="d">4000</span>), earlyPaymentDiscount: <span class="s">'none'</span> },
+};
+
+<span class="k">const</span> invoice = assertValidInvoice({ ...draft, ...computeTotals(draft) });
+<span class="c">// otherwise: FacturXValidationError { issues: [{ code: 'BR-CO-15', path: 'totals.taxInclusiveAmount', … }] }</span></code></pre>
+<pre role="tabpanel" id="panel-2" aria-labelledby="tab-2" hidden><code><span class="k">import</span> { toCiiXml } <span class="k">from</span> <span class="s">'facturx-sdk'</span>;
+<span class="k">import</span> { embedFacturX } <span class="k">from</span> <span class="s">'facturx-sdk/pdf'</span>;
+
+<span class="c">// CII EN 16931 XML — typed templating, XSD order guaranteed, schematron-clean</span>
+<span class="k">const</span> xml = toCiiXml(invoice);
+
+<span class="c">// Your PDF (already PDF/A) + the XML → PDF/A-3 Factur-X, validated by veraPDF</span>
+<span class="k">const</span> pdfA3 = <span class="k">await</span> embedFacturX(pdfBytes, { invoice }, {
+  outputIntent: { iccProfile: srgb },   <span class="c">// optional</span>
+});</code></pre>
+<pre role="tabpanel" id="panel-3" aria-labelledby="tab-3" hidden><code><span class="k">import</span> { fromCiiXml, fromUblXml } <span class="k">from</span> <span class="s">'facturx-sdk'</span>;
+<span class="k">import</span> { extractInvoice } <span class="k">from</span> <span class="s">'facturx-sdk/pdf'</span>;
+
+<span class="c">// Received PDF → typed, validated invoice (or undefined if it carries no Factur-X)</span>
+<span class="k">const</span> received = <span class="k">await</span> extractInvoice(pdfBytes);
+
+<span class="c">// The three syntaxes of the French socle, one model</span>
+<span class="k">const</span> fromCii = fromCiiXml(xmlString);
+<span class="k">const</span> fromUbl = fromUblXml(xmlString);   <span class="c">// same invoice ⇒ same object</span>
+
+<span class="c">// FacturXParseError { code, path } when a document cannot be read</span></code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="capabilities" class="bento">
+  <div class="wrap">
+    <div class="head reveal">
+      <h2>Built to leave nothing to chance.</h2>
+    </div>
+    <div class="grid">
+      <article class="card wide reveal" style="--i:1">
+        <h3>No silent rounding, ever</h3>
+        <p>Cents, quantities and prices as integers, products in <code>bigint</code>, a single commercial rounding. The totals you supply are checked — a VAT-inclusive total that does not add up is a named error, not a value quietly corrected behind your back.</p>
+      </article>
+      <article class="card reveal" style="--i:2">
+        <h3>Typed errors, exact path</h3>
+        <p><code>BR-CO-15 @ totals.taxInclusiveAmount</code>. Official EN 16931 and AFNOR codes, ready to wire into your form.</p>
+      </article>
+      <article class="card reveal" style="--i:3">
+        <h3>The French rules, officially</h3>
+        <p>22 <code>BR-FR</code> rules from the XP Z12-012 standard: SIREN, invoicing framework, legal statements, 0225 addresses, VAT on debits.</p>
+      </article>
+      <article class="card reveal" style="--i:4">
+        <h3>All three socle syntaxes</h3>
+        <p>Factur-X, plain CII and <b>UBL</b>: any profile, any prefix, attachments, prepayments, credit notes. The same invoice read from CII and from UBL yields the <b>same object</b>. Exercised on 30 invoices from other tools, re-emitted conformant.</p>
+      </article>
+      <article class="card reveal" style="--i:5">
+        <h3>Lifecycle statuses</h3>
+        <p>The four statuses a platform reports to the French public portal — the official annex knows no others for an invoice — the 40 normalised refusal reasons, and the CDV message written <b>and read back</b>, validated against the UN/CEFACT CDAR schema.</p>
+      </article>
+      <article class="card reveal" style="--i:6">
+        <h3>Safe by default</h3>
+        <p>No DTD, no external entities, bounded depth and size, no content ever executed. <a href="https://github.com/Geekles007/facturx/blob/main/SECURITY.md">SECURITY.md</a></p>
+      </article>
+      <article class="card wide reveal" style="--i:7">
+        <h3>Edge, serverless, browser</h3>
+        <p>No Node API in the main entry point; <code>pdf-lib</code> only inside <code>facturx-sdk/pdf</code>. A <code>Request → Response</code> handler is enough for Next.js, Hono or Cloudflare Workers — the example is in the repository.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="reform" class="reform">
+  <div class="wrap">
+    <div class="cols">
+      <div class="reveal">
+        <h2>Where the SDK sits in the French reform</h2>
+        <p class="lede">Receiving structured invoices is mandatory for <b>every</b> business, then issuing them according to company size, through an accredited platform. The SDK is the <em>format and compliance</em> brick; the platform is the <em>transport</em> one.</p>
+        <ol class="timeline">
+          <li class="reveal" style="--i:1"><time datetime="2026-09-01">1 September 2026</time><span class="what"><b>Receiving</b> for every business · <b>issuing</b> for large companies</span></li>
+          <li class="reveal" style="--i:2"><time datetime="2027-09-01">1 September 2027</time><span class="what"><b>Issuing</b> for SMEs and micro-businesses</span></li>
+        </ol>
+      </div>
+      <div class="scope reveal" style="--i:2">
+        <div class="row"><span class="tick">✓</span><span>CII EN 16931 XML, PDF/A-3 Factur-X</span></div>
+        <div class="row"><span class="tick">✓</span><span>EN 16931 + French validation, typed errors</span></div>
+        <div class="row"><span class="tick">✓</span><span>Reform statements, prepayments, credit notes, attachments</span></div>
+        <div class="row"><span class="tick">✓</span><span>Reading all three socle syntaxes: Factur-X, CII, <b>UBL</b></span></div>
+        <div class="row"><span class="tick">✓</span><span><b>Lifecycle statuses</b>: official rules, CDV message written and read back</span></div>
+        <div class="row off"><span class="tick">—</span><span>Submitting to an accredited platform, e-reporting, directory</span></div>
+        <div class="row off"><span class="tick">—</span><span>Turning an arbitrary PDF into PDF/A</span></div>
+        <div class="row off"><span class="tick">—</span><span>Writing UBL, writing the other Factur-X profiles</span></div>
+        <p class="fine">Spelled out in the <a href="https://github.com/Geekles007/facturx/blob/main/README.en.md">English documentation</a>; the in-depth reform guide stays in French, because it comments on French regulation.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="cta">
+  <div class="wrap reveal">
+    <h2>Start with one invoice.</h2>
+    <p>Four runnable examples, all executed in continuous integration: issuing from a JSON model, receiving a folder of PDFs, an HTTP handler, and prepayments leading to a final invoice.</p>
+    <div class="actions">
+      <div class="install">
+        <span class="prompt" aria-hidden="true">$</span>
+        <code>npm add facturx-sdk</code>
+        <button type="button" class="copy" data-copy="npm add facturx-sdk" data-copied="Copied" data-selected="Selected" aria-label="Copy the install command">
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><title>Copy</title><rect x="5" y="5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M3 11V3.5A.5.5 0 0 1 3.5 3H11" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+          <span>Copy</span>
+        </button>
+      </div>
+      <a class="btn" href="https://github.com/Geekles007/facturx/tree/main/examples">Browse the examples</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <p><b>facturx-sdk</b> · MIT · published on npm with provenance attestation</p>
+    <nav class="foot-links" aria-label="Secondary links">
+      <a class="foot-link" href="../validateur/">Validator</a>
+      <a class="foot-link" href="https://github.com/Geekles007/facturx/blob/main/CHANGELOG.md">CHANGELOG</a>
+      <a class="foot-link" href="https://github.com/Geekles007/facturx/blob/main/SECURITY.md">Security</a>
+      <a class="foot-link" href="https://github.com/Geekles007/facturx/blob/main/README.en.md">Documentation</a>
+      <a class="foot-link" href="https://github.com/Geekles007/facturx">GitHub</a>
+    </nav>
+    <p class="fine">Neither this site nor the SDK is legal advice; the reform texts evolve, so check the version in force on impots.gouv.fr.</p>
+  </div>
+</footer>
+
+<script src="../app.js" defer></script>
+</body>
+</html>
