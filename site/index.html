@@ -81,7 +81,7 @@
       <li><b>ZUGFeRD</b><span class="sub">corpus KoSIT, 30 fichiers</span></li>
     </ul>
     <dl class="stats">
-      <div class="reveal" style="--i:2"><dd data-count="264">0</dd><dt>tests, tous exécutés avant publication</dt></div>
+      <div class="reveal" style="--i:2"><dd data-count="293">0</dd><dt>tests, tous exécutés avant publication</dt></div>
       <div class="reveal" style="--i:3"><dd><span data-count="22">0</span><small>/26</small></dd><dt>règles françaises BR-FR — les 4 autres relèvent de l'annuaire</dt></div>
       <div class="reveal" style="--i:4"><dd data-count="30">0</dd><dt>factures d'autres outils lues et ré-émises sans perte</dt></div>
       <div class="reveal" style="--i:5"><dd>0</dd><dt>dépendance native — edge, serverless, navigateur</dt></div>
@@ -143,14 +143,17 @@
 <span class="k">const</span> invoice = assertValidInvoice({ ...draft, ...computeTotals(draft) });
 <span class="c">// sinon : FacturXValidationError { issues: [{ code: 'BR-CO-15', path: 'totals.taxInclusiveAmount', … }] }</span></code></pre>
 <pre role="tabpanel" id="panel-2" aria-labelledby="tab-2" hidden><code><span class="k">import</span> { toCiiXml } <span class="k">from</span> <span class="s">'facturx-sdk'</span>;
-<span class="k">import</span> { embedFacturX } <span class="k">from</span> <span class="s">'facturx-sdk/pdf'</span>;
+<span class="k">import</span> { renderInvoicePdf, embedFacturX } <span class="k">from</span> <span class="s">'facturx-sdk/pdf'</span>;
 
-<span class="c">// XML CII EN 16931 — templating typé, ordre du XSD garanti, conforme aux schematrons</span>
-<span class="k">const</span> xml = toCiiXml(invoice);
+<span class="c">// La page lisible, dessinée depuis le modèle : plus besoin d'apporter son PDF</span>
+<span class="k">const</span> page = <span class="k">await</span> renderInvoicePdf(invoice, {
+  fonts: { regular: ttf, bold: ttfBold },   <span class="c">// police statique, embarquée</span>
+  footer: <span class="s">'SARL au capital de 10 000 € · RCS Paris 443 061 841'</span>,
+});
 
-<span class="c">// Votre PDF (déjà PDF/A) + le XML → PDF/A-3 Factur-X, validé par veraPDF</span>
-<span class="k">const</span> pdfA3 = <span class="k">await</span> embedFacturX(pdfBytes, { invoice }, {
-  outputIntent: { iccProfile: srgb },   <span class="c">// optionnel</span>
+<span class="c">// La page + le XML → PDF/A-3 Factur-X, validé par veraPDF à chaque commit</span>
+<span class="k">const</span> pdfA3 = <span class="k">await</span> embedFacturX(page, { invoice }, {
+  outputIntent: { iccProfile: srgb },
 });</code></pre>
 <pre role="tabpanel" id="panel-3" aria-labelledby="tab-3" hidden><code><span class="k">import</span> { fromCiiXml, readCiiGuideline } <span class="k">from</span> <span class="s">'facturx-sdk'</span>;
 <span class="k">import</span> { extractInvoice } <span class="k">from</span> <span class="s">'facturx-sdk/pdf'</span>;
@@ -195,10 +198,18 @@
         <p>Les quatre statuts transmissibles au portail public — l'annexe officielle n'en connaît pas d'autres pour une facture —, les 40 motifs de refus normalisés, et le message CDV écrit <b>et relu</b>, validé contre le schéma CDAR d'UN/CEFACT.</p>
       </article>
       <article class="card reveal" style="--i:6">
+        <h3>La facture, dessinée</h3>
+        <p>Depuis la 1.5, le SDK produit aussi la <b>page lisible</b> — en-tête, lignes, totaux, TVA, mentions légales, pagination. Celles-ci viennent de la même source que le XML : le lisible et le structuré ne peuvent pas diverger.</p>
+      </article>
+      <article class="card reveal" style="--i:7">
+        <h3>Une commande, pas un programme</h3>
+        <p><code>npx facturx-sdk validate facture.pdf</code> — le format est reconnu seul, chaque anomalie arrive avec son chemin, et le code de sortie permet de bloquer une facture dans une chaîne automatique.</p>
+      </article>
+      <article class="card reveal" style="--i:8">
         <h3>Sécurité par défaut</h3>
         <p>Pas de DTD ni d'entité externe, profondeur et tailles bornées, aucune exécution de contenu. <a href="https://github.com/Geekles007/facturx/blob/main/SECURITY.md">SECURITY.md</a></p>
       </article>
-      <article class="card wide reveal" style="--i:7">
+      <article class="card wide reveal" style="--i:9">
         <h3>Edge, serverless, navigateur</h3>
         <p>Aucune API Node dans l'entrée principale ; <code>pdf-lib</code> uniquement dans <code>facturx-sdk/pdf</code>. Un handler <code>Request → Response</code> suffit pour Next.js, Hono ou Cloudflare Workers — l'exemple est dans le dépôt.</p>
       </article>
@@ -223,6 +234,8 @@
         <div class="row"><span class="tick">✓</span><span>Mentions de la réforme, acomptes, avoirs, pièces jointes</span></div>
         <div class="row"><span class="tick">✓</span><span>Lecture des trois syntaxes du socle : Factur-X, CII, <b>UBL</b></span></div>
         <div class="row"><span class="tick">✓</span><span><b>Statuts du cycle de vie</b> : règles officielles, message CDV écrit et relu</span></div>
+        <div class="row"><span class="tick">✓</span><span><b>Rendu de la page lisible</b> depuis le modèle, puis embarquement</span></div>
+        <div class="row"><span class="tick">✓</span><span>Ligne de commande <code>facturx</code> : valider, résumer, extraire</span></div>
         <div class="row off"><span class="tick">—</span><span>Envoi à une plateforme agréée, e-reporting, annuaire</span></div>
         <div class="row off"><span class="tick">—</span><span>Conversion d'un PDF quelconque en PDF/A</span></div>
         <div class="row off"><span class="tick">—</span><span>Écriture UBL, autres profils Factur-X en écriture</span></div>
