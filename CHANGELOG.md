@@ -11,7 +11,7 @@ Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Cha
 - `@pdf-lib/fontkit` en dépendance **pair optionnelle** : seul qui rend un PDF l'installe.
 
 ### À savoir
-- **La police est à fournir.** Les quatorze polices standard du PDF ne s'embarquent pas, et un PDF/A doit embarquer tout ce qu'il affiche : un rendu à l'Helvetica serait rejeté par veraPDF, donc le Factur-X produit ensuite ne serait pas conforme.
+- **La police est à fournir, et elle doit être statique.** Les quatorze polices standard du PDF ne s'embarquent pas, et un PDF/A doit embarquer tout ce qu'il affiche : un rendu à l'Helvetica serait rejeté par veraPDF, donc le Factur-X produit ensuite ne serait pas conforme. Une police **variable** est refusée (`FONT_VARIABLE`) : veraPDF rejette le document qu'elle produit, et l'erreur n'apparaîtrait sinon qu'au contrôle de conformité.
 - Le sous-ensemblage de police est **désactivé par défaut** (`subset`) : celui de `@pdf-lib/fontkit` échoue sur les polices variables, dans une file asynchrone — l'échec n'est pas rattrapable et emporte le processus.
 
 ## [1.4.0] — 2026-09-16
