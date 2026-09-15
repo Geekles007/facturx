@@ -57,8 +57,8 @@ The syntax is detected on its own — Factur-X, CII or UBL. Exit codes: `0` conf
 ```ts
 import { renderInvoicePdf, embedFacturX } from 'facturx-sdk/pdf';
 
-// You supply the font: the PDF standard fonts cannot be embedded,
-// and a PDF/A must embed everything it displays.
+// You supply the font, and it must be static: the PDF standard fonts cannot be embedded,
+// and a variable font produces a document veraPDF rejects.
 const pdf = await renderInvoicePdf(invoice, {
   fonts: { regular: ttfBytes, bold: ttfBoldBytes },
   labels: 'en',                                  // or 'fr', or your own table

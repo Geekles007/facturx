@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 import { embedFacturX, renderInvoicePdf } from '../src/pdf/index.js';
+import { testFonts } from './fixtures/fonts.js';
 import { multiRateInvoice, simpleInvoice } from './fixtures/invoices.js';
 
 /**
@@ -77,11 +78,8 @@ describe.skipIf(!available)('conformité PDF/A-3b (veraPDF)', () => {
    */
   it('le PDF rendu puis embarqué est PDF/A-3b', async () => {
     const icc = readFileSync(new URL('./fixtures/sRGB.icc', import.meta.url));
-    const font = new Uint8Array(
-      readFileSync(new URL('../../../site/fonts/Geist-Variable.woff2', import.meta.url)),
-    );
     const invoice = simpleInvoice();
-    const rendu = await renderInvoicePdf(invoice, { fonts: { regular: font } });
+    const rendu = await renderInvoicePdf(invoice, { fonts: testFonts });
     const pdf = await embedFacturX(
       rendu,
       { invoice },

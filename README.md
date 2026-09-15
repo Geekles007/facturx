@@ -85,8 +85,8 @@ La syntaxe est reconnue seule — Factur-X, CII ou UBL. Codes de sortie : `0` co
 ```ts
 import { renderInvoicePdf, embedFacturX } from 'facturx-sdk/pdf';
 
-// La police est à fournir : les polices standard du PDF ne s'embarquent pas,
-// et un PDF/A doit embarquer tout ce qu'il affiche.
+// La police est à fournir, et elle doit être statique : les polices standard du PDF ne
+// s'embarquent pas, et une police variable produit un document que veraPDF rejette.
 const pdf = await renderInvoicePdf(invoice, {
   fonts: { regular: ttfBytes, bold: ttfBoldBytes },
   labels: 'fr',                                  // ou 'en', ou votre propre table

@@ -12,7 +12,9 @@ export type FacturXPdfErrorCode =
   /** `renderInvoicePdf` sans police : les polices standard du PDF ne s'embarquent pas. */
   | 'FONT_REQUIRED'
   /** `renderInvoicePdf` sans `@pdf-lib/fontkit`, requis pour embarquer une police. */
-  | 'FONTKIT_REQUIRED';
+  | 'FONTKIT_REQUIRED'
+  /** Police variable : le document produit n'est pas accepté comme PDF/A. */
+  | 'FONT_VARIABLE';
 
 /** Erreur typée levée par `embedFacturX` / `extractFacturX`. */
 export class FacturXPdfError extends Error {
