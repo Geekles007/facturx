@@ -97,6 +97,8 @@ export interface AnalyzeDeps {
   runSchematron: (id: SchematronId, xml: string) => Promise<FailedAssert[]>;
   /** Appelé entre chaque étape pour informer l'interface. */
   onProgress?: (step: string) => void;
+  /** Libellés des étapes ; français par défaut pour ne rien changer aux appelants existants. */
+  steps?: { pdf: string; sdk: string };
 }
 
 const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46]; // %PDF
@@ -162,7 +164,7 @@ export async function analyze(
 
   let xml: string;
   if (kind === 'pdf') {
-    deps.onProgress?.('Lecture du PDF');
+    deps.onProgress?.(deps.steps?.pdf ?? 'Lecture du PDF');
     let extracted: Awaited<ReturnType<AnalyzeDeps['extractPdf']>>;
     try {
       extracted = await deps.extractPdf(file.bytes);
@@ -193,7 +195,7 @@ export async function analyze(
   }
 
   // Juge 1 — le SDK : lecture en objet typé puis validation complète.
-  deps.onProgress?.('Lecture et validation par le SDK');
+  deps.onProgress?.(deps.steps?.sdk ?? 'Lecture et validation par le SDK');
   const sdk: JudgeReport = { ...judgeMeta('sdk'), status: 'ok', findings: [] };
   try {
     const invoice = fromCiiXml(xml, { validate: false });
