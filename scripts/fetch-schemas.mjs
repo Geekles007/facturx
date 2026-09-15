@@ -20,8 +20,28 @@ const FILES = [
   'schema/ZF_250/EN16931/FACTUR-X_EN16931_urn_un_unece_uncefact_data_standard_QualifiedDataType_100.xsd',
   'schema/ZF_250/EN16931/FACTUR-X_EN16931_urn_un_unece_uncefact_data_standard_ReusableAggregateBusinessInformationEntity_100.xsd',
   'schema/ZF_250/EN16931/FACTUR-X_EN16931_urn_un_unece_uncefact_data_standard_UnqualifiedDataType_100.xsd',
+  // XSD UBL 2.1 : l'autre syntaxe du socle (test/ubl-read.test.ts, xmllint).
+  // maindoc/ puis common/ — le schéma racine importe les composants communs par chemin relatif,
+  // donc les noms de fichiers sont conservés tels quels dans test/schemas/ubl/.
+  'schema/UBL_21/maindoc/UBL-Invoice-2.1.xsd',
+  'schema/UBL_21/maindoc/UBL-CreditNote-2.1.xsd',
+  'schema/UBL_21/common/CCTS_CCT_SchemaModule-2.1.xsd',
+  'schema/UBL_21/common/UBL-CommonAggregateComponents-2.1.xsd',
+  'schema/UBL_21/common/UBL-CommonBasicComponents-2.1.xsd',
+  'schema/UBL_21/common/UBL-CommonExtensionComponents-2.1.xsd',
+  'schema/UBL_21/common/UBL-CommonSignatureComponents-2.1.xsd',
+  'schema/UBL_21/common/UBL-CoreComponentParameters-2.1.xsd',
+  'schema/UBL_21/common/UBL-ExtensionContentDataType-2.1.xsd',
+  'schema/UBL_21/common/UBL-QualifiedDataTypes-2.1.xsd',
+  'schema/UBL_21/common/UBL-SignatureAggregateComponents-2.1.xsd',
+  'schema/UBL_21/common/UBL-SignatureBasicComponents-2.1.xsd',
+  'schema/UBL_21/common/UBL-UnqualifiedDataTypes-2.1.xsd',
+  'schema/UBL_21/common/UBL-XAdESv132-2.1.xsd',
+  'schema/UBL_21/common/UBL-XAdESv141-2.1.xsd',
+  'schema/UBL_21/common/UBL-xmldsig-core-schema-2.1.xsd',
   // Schematrons compilés en XSLT (test/schematron.test.ts, Saxon-JS)
   'xslt/en16931schematron/EN16931-CII-validation.xslt',
+  'xslt/en16931schematron/EN16931-UBL-validation.xslt',
   'xslt/ZF_250/FACTUR-X_EN16931.xslt',
   'xslt/ZF_250/FACTUR-X_EN16931_codedb.xml',
   'xslt/XP_Z12_012/20260216_BR-FR-Flux2-Schematron-CII_V1.3.0.xsl',
@@ -61,6 +81,11 @@ export const SCHEMATRONS = [
     xslt: 'EN16931-CII-validation.xslt',
     sef: 'EN16931-CII-validation.sef.json',
   },
+  {
+    name: 'EN 16931 UBL (CEN)',
+    xslt: 'EN16931-UBL-validation.xslt',
+    sef: 'EN16931-UBL-validation.sef.json',
+  },
   { name: 'Factur-X EN 16931', xslt: 'FACTUR-X_EN16931.xslt', sef: 'FACTUR-X_EN16931.sef.json' },
   {
     name: 'BR-FR (XP Z12-012)',
@@ -81,7 +106,15 @@ async function main() {
     !existsSync(marker) ||
     readFileSync(marker, 'utf8').trim() !== `${MUSTANG_COMMIT} ${FNFE_COMMIT}`;
   for (const path of FILES) {
-    const target = join(schemasDir, path.split('/').pop());
+    // Les fichiers UBL gardent leur nom dans test/schemas/ubl/ : le schéma racine
+    // importe ses voisins par chemin relatif, ils doivent rester côte à côte.
+    // Les fichiers UBL conservent leur sous-dossier (maindoc/ ou common/) : le schéma racine
+    // importe ses voisins par « ../common/… », aplatir casserait la résolution.
+    const ubl = path.match(/\/UBL_21\/(maindoc|common)\//);
+    const target = ubl
+      ? join(schemasDir, 'ubl', ubl[1], path.split('/').pop())
+      : join(schemasDir, path.split('/').pop());
+    if (ubl) mkdirSync(join(schemasDir, 'ubl', ubl[1]), { recursive: true });
     if (!stale && existsSync(target)) continue;
     const res = await fetch(`${BASE}/${path}`);
     if (!res.ok) throw new Error(`${res.status} ${path}`);
