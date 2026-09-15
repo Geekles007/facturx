@@ -9,6 +9,8 @@ Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Cha
 - Code d'erreur `NOT_CDAR` (`FacturXParseErrorCode`) quand la racine n'est pas `rsm:CrossDomainAcknowledgementAndResponse`.
 
 ### Modifié
+- Documentation bilingue : [README.en.md](README.en.md) en anglais, bascule de langue en tête des deux, amorce anglaise sur la page npm. Factur-X et ZUGFeRD étant la même norme, le marché allemand pouvait déjà utiliser ce SDK sans pouvoir lire sa porte d'entrée. La description npm passe en anglais et mentionne ZUGFeRD.
+- Le README du paquet npm annonçait encore les statuts comme hors périmètre — troisième endroit portant cette mention périmée.
 - `toCdvXml` écrit désormais le cadre de facturation (`MDG-2`) quand `status.businessProcess` est renseigné : sans lui, la règle **G7.39** (motifs restreints au cadre `S6`) ne survivait pas à un aller-retour.
 
 ### Vérification
