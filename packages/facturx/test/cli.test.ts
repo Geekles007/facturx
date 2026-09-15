@@ -2,16 +2,47 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PDFDocument, StandardFonts } from 'pdf-lib';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { main } from '../src/cli.js';
+import { cents, toCiiXml } from '../src/index.js';
+import { embedFacturX } from '../src/pdf/index.js';
+import { simpleInvoice } from './fixtures/invoices.js';
 
 const golden = new URL('./golden/', import.meta.url).pathname;
-const exemples = new URL('../../../site/validateur/exemples/', import.meta.url).pathname;
 
 const CII = join(golden, 'simple.xml');
 const UBL = join(golden, 'ubl/simple.xml');
-const PDF = join(exemples, 'facture-exemple.pdf');
-const PDF_FAUTIF = join(exemples, 'facture-exemple-non-conforme.pdf');
+
+/**
+ * Les PDF sont fabriqués ici, pas empruntés au site : ses exemples sont git-ignorés et
+ * régénérés par la construction, donc absents d'une machine fraîche — ce que la CI a prouvé.
+ */
+let dossierPdf: string;
+let PDF: string;
+let PDF_FAUTIF: string;
+
+beforeAll(async () => {
+  dossierPdf = mkdtempSync(join(tmpdir(), 'cli-pdf-'));
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  doc.addPage([595, 842]).drawText('Facture', { x: 50, y: 780, size: 18, font });
+  const vierge = await doc.save({ updateFieldAppearances: false });
+
+  const bonne = simpleInvoice();
+  PDF = join(dossierPdf, 'facture.pdf');
+  writeFileSync(PDF, await embedFacturX(vierge, { invoice: bonne }));
+
+  // Un TTC qui ne colle pas : BR-CO-15 tombe, sans toucher à la structure du document.
+  const fautive = { ...bonne, totals: { ...bonne.totals, taxInclusiveAmount: cents(99900) } };
+  PDF_FAUTIF = join(dossierPdf, 'facture-fautive.pdf');
+  writeFileSync(
+    PDF_FAUTIF,
+    await embedFacturX(vierge, { xml: toCiiXml(fautive, { validate: false }) }),
+  );
+});
+
+afterEach(() => vi.restoreAllMocks());
 
 let sortie: string[];
 let erreur: string[];
@@ -28,7 +59,6 @@ beforeEach(() => {
     return true;
   });
 });
-afterEach(() => vi.restoreAllMocks());
 
 const texte = () => sortie.join('');
 const texteErreur = () => erreur.join('');
@@ -81,7 +111,7 @@ describe('validate', () => {
 
   it('lit un PDF Factur-X et n’en charge le moteur que pour lui', async () => {
     expect(await main(['validate', PDF])).toBe(0);
-    expect(texte()).toMatch(/FA-2026-0042/);
+    expect(texte()).toMatch(/F-2026-0001/);
   });
 
   it('nomme chaque anomalie par son code et son chemin', async () => {
