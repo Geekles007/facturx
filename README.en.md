@@ -42,6 +42,16 @@ Everything runs **in your browser**: no file is uploaded anywhere. The rule sets
 npm add facturx-sdk      # or pnpm / yarn / bun
 ```
 
+## From the command line
+
+```bash
+npx facturx-sdk validate invoice.pdf     # conformant? otherwise, every finding with its path
+npx facturx-sdk info invoice.xml         # profile, framework, parties, totals
+npx facturx-sdk extract invoice.pdf -o invoice.xml
+```
+
+The syntax is detected on its own — Factur-X, CII or UBL. Exit codes: `0` conformant, `1` findings, `2` unreadable, `64` usage. Add `--json` for a pipeline. The schematrons are not run here (they would need Saxon-JS): for a full verdict, use the [online validator](https://facturx.ibird.dev/validateur/).
+
 ## Quick start
 
 ```ts

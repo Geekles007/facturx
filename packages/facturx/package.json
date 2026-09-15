@@ -81,5 +81,8 @@
     "typescript": "^5.9.3",
     "vitest": "^5.0.0",
     "xslt3": "2.7.0"
+  },
+  "bin": {
+    "facturx": "./dist/cli.js"
   }
 }

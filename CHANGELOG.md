@@ -2,6 +2,13 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Depuis 1.0.0, une rupture d'API n'arrive que dans une version majeure ; une nouvelle règle de validation est une version mineure.
 
+## [Non publié]
+
+### Ajouté
+- **Ligne de commande `facturx`** (`npx facturx-sdk <commande>`, ou `facturx` après une installation globale) : `validate` contrôle une facture et nomme chaque anomalie par son code et son chemin, `info` la résume, `extract` en tire le XML embarqué. La syntaxe — Factur-X, CII ou UBL — est reconnue toute seule ; `--json` rend un rapport analysable.
+- Codes de sortie contractuels : `0` conforme, `1` anomalies relevées, `2` fichier illisible, `64` usage incorrect. C'est par eux qu'une chaîne d'intégration décide de bloquer une facture, et ils sont testés comme tels.
+- **Aucune dépendance nouvelle** : `node:fs` et ce que le paquet embarque déjà. Le moteur PDF n'est chargé que si l'on soumet un PDF. Les schematrons officiels ne sont pas exécutés — ils réclameraient Saxon-JS — et l'aide le dit en renvoyant au validateur en ligne.
+
 ## [1.3.0] — 2026-09-15
 
 ### Ajouté
