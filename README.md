@@ -70,6 +70,16 @@ Les entrées (XML, PDF) sont traitées comme non fiables : pas de DTD ni d'entit
 
 **Hors périmètre** : Order-X, écriture UBL, autofacturation, rendu PDF de la facture, conversion d'un PDF quelconque en PDF/A, envoi à une plateforme agréée, e-reporting, autres profils Factur-X (MINIMUM, BASIC, EXTENDED).
 
+## En ligne de commande
+
+```bash
+npx facturx-sdk validate facture.pdf     # conforme ? sinon, chaque anomalie avec son chemin
+npx facturx-sdk info facture.xml         # profil, cadre, parties, totaux
+npx facturx-sdk extract facture.pdf -o facture.xml
+```
+
+La syntaxe est reconnue seule — Factur-X, CII ou UBL. Codes de sortie : `0` conforme, `1` anomalies, `2` illisible, `64` usage. `--json` pour une chaîne d'intégration. Les schematrons ne sont pas exécutés là (ils réclament Saxon-JS) : pour un verdict complet, le [validateur en ligne](https://facturx.ibird.dev/validateur/).
+
 ## Installation
 
 ```bash
