@@ -82,7 +82,7 @@
       <li><b>ZUGFeRD</b><span class="sub">KoSIT corpus, 30 files</span></li>
     </ul>
     <dl class="stats">
-      <div class="reveal" style="--i:2"><dd data-count="264">0</dd><dt>tests, every one of them run before publishing</dt></div>
+      <div class="reveal" style="--i:2"><dd data-count="293">0</dd><dt>tests, every one of them run before publishing</dt></div>
       <div class="reveal" style="--i:3"><dd><span data-count="22">0</span><small>/26</small></dd><dt>French BR-FR rules — the other four need the directory</dt></div>
       <div class="reveal" style="--i:4"><dd data-count="30">0</dd><dt>invoices from other tools, read and re-emitted losslessly</dt></div>
       <div class="reveal" style="--i:5"><dd>0</dd><dt>native dependencies — edge, serverless, browser</dt></div>
@@ -143,15 +143,17 @@
 
 <span class="k">const</span> invoice = assertValidInvoice({ ...draft, ...computeTotals(draft) });
 <span class="c">// otherwise: FacturXValidationError { issues: [{ code: 'BR-CO-15', path: 'totals.taxInclusiveAmount', … }] }</span></code></pre>
-<pre role="tabpanel" id="panel-2" aria-labelledby="tab-2" hidden><code><span class="k">import</span> { toCiiXml } <span class="k">from</span> <span class="s">'facturx-sdk'</span>;
-<span class="k">import</span> { embedFacturX } <span class="k">from</span> <span class="s">'facturx-sdk/pdf'</span>;
+<pre role="tabpanel" id="panel-2" aria-labelledby="tab-2" hidden><code><span class="k">import</span> { renderInvoicePdf, embedFacturX } <span class="k">from</span> <span class="s">'facturx-sdk/pdf'</span>;
 
-<span class="c">// CII EN 16931 XML — typed templating, XSD order guaranteed, schematron-clean</span>
-<span class="k">const</span> xml = toCiiXml(invoice);
+<span class="c">// The human-readable page, drawn from the model — no need to bring your own PDF</span>
+<span class="k">const</span> page = <span class="k">await</span> renderInvoicePdf(invoice, {
+  fonts: { regular: ttf, bold: ttfBold },   <span class="c">// a static font, embedded</span>
+  labels: <span class="s">'en'</span>,
+});
 
-<span class="c">// Your PDF (already PDF/A) + the XML → PDF/A-3 Factur-X, validated by veraPDF</span>
-<span class="k">const</span> pdfA3 = <span class="k">await</span> embedFacturX(pdfBytes, { invoice }, {
-  outputIntent: { iccProfile: srgb },   <span class="c">// optional</span>
+<span class="c">// The page + the XML → PDF/A-3 Factur-X, checked by veraPDF on every commit</span>
+<span class="k">const</span> pdfA3 = <span class="k">await</span> embedFacturX(page, { invoice }, {
+  outputIntent: { iccProfile: srgb },
 });</code></pre>
 <pre role="tabpanel" id="panel-3" aria-labelledby="tab-3" hidden><code><span class="k">import</span> { fromCiiXml, fromUblXml } <span class="k">from</span> <span class="s">'facturx-sdk'</span>;
 <span class="k">import</span> { extractInvoice } <span class="k">from</span> <span class="s">'facturx-sdk/pdf'</span>;
@@ -196,10 +198,18 @@
         <p>The four statuses a platform reports to the French public portal — the official annex knows no others for an invoice — the 40 normalised refusal reasons, and the CDV message written <b>and read back</b>, validated against the UN/CEFACT CDAR schema.</p>
       </article>
       <article class="card reveal" style="--i:6">
+        <h3>The invoice, drawn</h3>
+        <p>Since 1.5 the SDK also produces the <b>readable page</b> — header, lines, totals, VAT, legal statements, pagination. Those statements come from the same source as the XML: the page and the structured data cannot drift apart.</p>
+      </article>
+      <article class="card reveal" style="--i:7">
+        <h3>A command, not a program</h3>
+        <p><code>npx facturx-sdk validate invoice.pdf</code> — the syntax is detected on its own, every finding carries its field path, and the exit code lets a pipeline block a non-conformant invoice.</p>
+      </article>
+      <article class="card reveal" style="--i:8">
         <h3>Safe by default</h3>
         <p>No DTD, no external entities, bounded depth and size, no content ever executed. <a href="https://github.com/Geekles007/facturx/blob/main/SECURITY.md">SECURITY.md</a></p>
       </article>
-      <article class="card wide reveal" style="--i:7">
+      <article class="card wide reveal" style="--i:9">
         <h3>Edge, serverless, browser</h3>
         <p>No Node API in the main entry point; <code>pdf-lib</code> only inside <code>facturx-sdk/pdf</code>. A <code>Request → Response</code> handler is enough for Next.js, Hono or Cloudflare Workers — the example is in the repository.</p>
       </article>
@@ -224,6 +234,8 @@
         <div class="row"><span class="tick">✓</span><span>Reform statements, prepayments, credit notes, attachments</span></div>
         <div class="row"><span class="tick">✓</span><span>Reading all three socle syntaxes: Factur-X, CII, <b>UBL</b></span></div>
         <div class="row"><span class="tick">✓</span><span><b>Lifecycle statuses</b>: official rules, CDV message written and read back</span></div>
+        <div class="row"><span class="tick">✓</span><span><b>Rendering the readable page</b> from the model, then embedding</span></div>
+        <div class="row"><span class="tick">✓</span><span><code>facturx</code> command line: validate, summarise, extract</span></div>
         <div class="row off"><span class="tick">—</span><span>Submitting to an accredited platform, e-reporting, directory</span></div>
         <div class="row off"><span class="tick">—</span><span>Turning an arbitrary PDF into PDF/A</span></div>
         <div class="row off"><span class="tick">—</span><span>Writing UBL, writing the other Factur-X profiles</span></div>
