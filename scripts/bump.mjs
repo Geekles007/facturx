@@ -25,6 +25,11 @@ const VERSIONED_FILES = [
     pattern: /^(> État : \*\*)\d+\.\d+\.\d+(\*\*)/m,
   },
   {
+    path: join(root, 'README.en.md'),
+    label: 'en-tête du README anglais (« Status: X.Y.Z »)',
+    pattern: /^(> Status: \*\*)\d+\.\d+\.\d+(\*\*)/m,
+  },
+  {
     path: join(root, 'site', 'index.html'),
     label: 'badge npm de la page d’accueil',
     pattern: /(>npm <span class="mono dim">)\d+\.\d+\.\d+(<\/span>)/,
