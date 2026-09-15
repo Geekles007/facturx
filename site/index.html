@@ -48,7 +48,7 @@
 
 <section class="hero">
   <div class="wrap">
-    <p class="chip reveal" style="--i:0"><span class="dot"></span>v1.0 · vérifié par les validateurs officiels</p>
+    <p class="chip reveal" style="--i:0"><span class="dot"></span>v1.3 · vérifié par les validateurs officiels</p>
     <h1 class="reveal" style="--i:1">Des factures <span class="nb">Factur-X</span> conformes,<br class="br-wide"> en TypeScript, <span class="shine">sans rien deviner.</span></h1>
     <p class="lede reveal" style="--i:2">Un SDK pur — zéro dépendance native, compatible edge et serverless — pour <b>générer, valider, embarquer et lire</b> des factures Factur-X au profil EN 16931, avec les règles françaises de la réforme. Chaque promesse est jugée par un validateur officiel, pas par nous.</p>
     <div class="actions reveal" style="--i:3">
@@ -77,7 +77,7 @@
       <li><b>ZUGFeRD</b><span class="sub">corpus KoSIT, 30 fichiers</span></li>
     </ul>
     <dl class="stats">
-      <div class="reveal" style="--i:2"><dd data-count="198">0</dd><dt>tests, tous exécutés avant publication</dt></div>
+      <div class="reveal" style="--i:2"><dd data-count="264">0</dd><dt>tests, tous exécutés avant publication</dt></div>
       <div class="reveal" style="--i:3"><dd><span data-count="22">0</span><small>/26</small></dd><dt>règles françaises BR-FR — les 4 autres relèvent de l'annuaire</dt></div>
       <div class="reveal" style="--i:4"><dd data-count="30">0</dd><dt>factures d'autres outils lues et ré-émises sans perte</dt></div>
       <div class="reveal" style="--i:5"><dd>0</dd><dt>dépendance native — edge, serverless, navigateur</dt></div>
@@ -183,14 +183,18 @@
         <p>22 règles <code>BR-FR</code> de la norme XP Z12-012 : SIREN, cadre de facturation, notes légales, adresses 0225, TVA sur les débits.</p>
       </article>
       <article class="card reveal" style="--i:4">
-        <h3>Lecture tolérante</h3>
-        <p>Tout profil, tout préfixe, pièces jointes, acomptes, avoirs. Éprouvé sur 30 factures d'autres outils, ré-émises conformes.</p>
+        <h3>Les trois syntaxes du socle</h3>
+        <p>Factur-X, CII nu et <b>UBL</b> : tout profil, tout préfixe, pièces jointes, acomptes, avoirs. Une même facture lue en CII et en UBL rend le <b>même objet</b>. Éprouvé sur 30 factures d'autres outils, ré-émises conformes.</p>
       </article>
       <article class="card reveal" style="--i:5">
+        <h3>Statuts du cycle de vie</h3>
+        <p>Les quatre statuts transmissibles au portail public — l'annexe officielle n'en connaît pas d'autres pour une facture —, les 40 motifs de refus normalisés, et le message CDV écrit <b>et relu</b>, validé contre le schéma CDAR d'UN/CEFACT.</p>
+      </article>
+      <article class="card reveal" style="--i:6">
         <h3>Sécurité par défaut</h3>
         <p>Pas de DTD ni d'entité externe, profondeur et tailles bornées, aucune exécution de contenu. <a href="https://github.com/Geekles007/facturx/blob/main/SECURITY.md">SECURITY.md</a></p>
       </article>
-      <article class="card wide reveal" style="--i:6">
+      <article class="card wide reveal" style="--i:7">
         <h3>Edge, serverless, navigateur</h3>
         <p>Aucune API Node dans l'entrée principale ; <code>pdf-lib</code> uniquement dans <code>facturx-sdk/pdf</code>. Un handler <code>Request → Response</code> suffit pour Next.js, Hono ou Cloudflare Workers — l'exemple est dans le dépôt.</p>
       </article>
@@ -213,10 +217,11 @@
         <div class="row"><span class="tick">✓</span><span>XML CII EN 16931, PDF/A-3 Factur-X</span></div>
         <div class="row"><span class="tick">✓</span><span>Validation EN 16931 + règles FR, erreurs typées</span></div>
         <div class="row"><span class="tick">✓</span><span>Mentions de la réforme, acomptes, avoirs, pièces jointes</span></div>
-        <div class="row"><span class="tick">✓</span><span>Lecture de tout profil, ré-émission fidèle</span></div>
-        <div class="row off"><span class="tick">—</span><span>Envoi à une plateforme agréée, statuts, e-reporting</span></div>
+        <div class="row"><span class="tick">✓</span><span>Lecture des trois syntaxes du socle : Factur-X, CII, <b>UBL</b></span></div>
+        <div class="row"><span class="tick">✓</span><span><b>Statuts du cycle de vie</b> : règles officielles, message CDV écrit et relu</span></div>
+        <div class="row off"><span class="tick">—</span><span>Envoi à une plateforme agréée, e-reporting, annuaire</span></div>
         <div class="row off"><span class="tick">—</span><span>Conversion d'un PDF quelconque en PDF/A</span></div>
-        <div class="row off"><span class="tick">—</span><span>UBL, autres profils en écriture</span></div>
+        <div class="row off"><span class="tick">—</span><span>Écriture UBL, autres profils Factur-X en écriture</span></div>
         <p class="fine">Écrit noir sur blanc dans le <a href="https://github.com/Geekles007/facturx/blob/main/docs/reforme.md">guide de la réforme</a> et le <a href="https://github.com/Geekles007/facturx/blob/main/docs/decisions.md">journal des 50 décisions</a>.</p>
       </div>
     </div>

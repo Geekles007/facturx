@@ -34,6 +34,13 @@ const VERSIONED_FILES = [
     label: 'badge npm de la page d’accueil',
     pattern: /(>npm <span class="mono dim">)\d+\.\d+\.\d+(<\/span>)/,
   },
+  {
+    // Celui-ci ne porte que majeure.mineure : un correctif ne le fait pas bouger, et c'est voulu.
+    path: join(root, 'site', 'index.html'),
+    label: 'bandeau de version du hero (« vX.Y »)',
+    pattern: /(<span class="dot"><\/span>v)\d+\.\d+( ·)/,
+    short: true,
+  },
 ];
 
 const version = versionFromRef(process.argv[2] ?? '');
@@ -47,9 +54,10 @@ for (const path of [join(pkgDir, 'package.json'), join(root, 'package.json')]) {
 copyFileSync(join(root, 'CHANGELOG.md'), join(pkgDir, 'CHANGELOG.md'));
 
 const synchronises = [];
-for (const { path, label, pattern } of VERSIONED_FILES) {
+for (const { path, label, pattern, short } of VERSIONED_FILES) {
   const avant = readFileSync(path, 'utf8');
-  const apres = avant.replace(pattern, `$1${version}$2`);
+  const ecrit = short ? version.split('.').slice(0, 2).join('.') : version;
+  const apres = avant.replace(pattern, `$1${ecrit}$2`);
   if (apres === avant && !pattern.test(avant)) {
     throw new Error(
       `Motif de version introuvable dans ${path} (${label}).\n` +
