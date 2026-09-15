@@ -133,6 +133,8 @@ const { invoice: raw, guidelineId } = parseCiiDocument(x);  // any profile, no v
 const received = await extractInvoice(pdfBytes);            // PDF → { invoice, xml, … } | undefined
 ```
 
+The French socle accepts three syntaxes and the SDK reads all three: Factur-X (PDF/A-3), plain CII, and **UBL 2.1** (`fromUblXml`). The same invoice read from CII and from UBL yields the **same `Invoice` object** — that is what the tests assert, with the UBL reference file itself validated by the XSD and the CEN schematron.
+
 Read errors are typed and located: `FacturXParseError { code: 'MALFORMED' | 'NOT_CII' | 'MISSING' | 'FORMAT' | 'UNSUPPORTED' | 'TOO_LARGE' | 'NOT_CDAR', path }`, for example `…/ram:IncludedSupplyChainTradeLineItem[2]/…/ram:LineTotalAmount`. No `DOCTYPE` is ever accepted.
 
 ### Lifecycle statuses
@@ -159,7 +161,7 @@ No floating point, anywhere. `cents(1234)` is 12.34 €, `quantity(15000)` is 1.
 
 **Included**: the EN 16931 profile, commercial invoices (380), multi-rate VAT, line and document level allowances and charges, exemptions (E, AE, K, G, O, Z), French mandatory statements, credit notes (381, 261, 262, 396), prepayments (386), corrective invoices (384), self-billed (389) and factored (393) documents, and lifecycle statuses.
 
-**Out of scope**: Order-X, UBL, rendering the human-readable PDF, converting an arbitrary PDF to PDF/A, submitting anything to an accredited platform, e-reporting, and the other Factur-X profiles (MINIMUM, BASIC, EXTENDED — read tolerantly, written only at EN 16931).
+**Out of scope**: Order-X, *writing* UBL, rendering the human-readable PDF, converting an arbitrary PDF to PDF/A, submitting anything to an accredited platform, e-reporting, and the other Factur-X profiles (MINIMUM, BASIC, EXTENDED — read tolerantly, written only at EN 16931).
 
 ## Stability
 

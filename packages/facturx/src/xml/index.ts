@@ -25,3 +25,4 @@ export {
   type XmlElement,
 } from './node.js';
 export { type ParseXmlOptions, parseXml, type XmlNode, XmlParseError } from './parse.js';
+export * from './ubl-read.js';

@@ -37,6 +37,8 @@ export type FacturXParseErrorCode =
   | 'NOT_CII'
   /** La racine n'est pas `rsm:CrossDomainAcknowledgementAndResponse` (lecture d'un message CDV). */
   | 'NOT_CDAR'
+  /** La racine n'est pas `Invoice` ou `CreditNote` UBL 2.1 (lecture UBL). */
+  | 'NOT_UBL'
   /** Élément obligatoire absent. */
   | 'MISSING'
   /** Valeur mal formée (nombre, date, indicateur). */

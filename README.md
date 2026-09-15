@@ -68,7 +68,7 @@ Les entrées (XML, PDF) sont traitées comme non fiables : pas de DTD ni d'entit
 
 **Statuts du cycle de vie** (depuis la 1.1.0) : les quatre statuts transmissibles au portail public (200 Déposée, 210 Refusée, 212 Encaissée, 213 Rejetée — l'annexe 2 des spécifications externes n'en connaît pas d'autres pour une facture), les 40 motifs de refus normalisés, les règles de gestion vérifiées une à une (`validateLifecycleStatus`), et la sérialisation du message CDV (`toCdvXml`) validée contre le XSD **CDAR D22B** d'UN/CEFACT. Un message CDV est émis par une plateforme : cette partie s'adresse à qui en construit une.
 
-**Hors périmètre** : Order-X, UBL, autofacturation, rendu PDF de la facture, conversion d'un PDF quelconque en PDF/A, envoi à une plateforme agréée, e-reporting, autres profils Factur-X (MINIMUM, BASIC, EXTENDED).
+**Hors périmètre** : Order-X, écriture UBL, autofacturation, rendu PDF de la facture, conversion d'un PDF quelconque en PDF/A, envoi à une plateforme agréée, e-reporting, autres profils Factur-X (MINIMUM, BASIC, EXTENDED).
 
 ## Installation
 
@@ -160,6 +160,8 @@ const found = await extractFacturX(facturx);
 ```
 
 ### Lire une facture reçue
+
+Le socle de la réforme accepte trois syntaxes. Le SDK lit les trois : Factur-X (PDF/A-3), CII nu et **UBL 2.1** (`fromUblXml`). Une même facture lue en CII et en UBL produit le **même objet `Invoice`** — c'est ce que vérifient les tests, le fichier de référence UBL étant lui-même validé par le XSD et le schematron CEN.
 
 ```ts
 import { fromCiiXml, parseCiiDocument } from 'facturx-sdk';
