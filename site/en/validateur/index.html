@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Factur-X validator — check an invoice without sending it anywhere</title>
+<meta name="description" content="Drop in a Factur-X PDF or a CII XML file: the official EN 16931, Factur-X and BR-FR schematrons run in your browser. No file is ever uploaded.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#fafafa">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
+<meta property="og:title" content="Factur-X validator">
+<meta property="og:description" content="Check a Factur-X invoice against the official rules without leaving your browser.">
+<meta property="og:url" content="https://facturx.ibird.dev/en/validateur/">
+<link rel="canonical" href="https://facturx.ibird.dev/en/validateur/">
+<link rel="alternate" hreflang="fr" href="https://facturx.ibird.dev/validateur/">
+<link rel="alternate" hreflang="en" href="https://facturx.ibird.dev/en/validateur/">
+<link rel="alternate" hreflang="x-default" href="https://facturx.ibird.dev/validateur/">
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="preload" href="../../fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../style.css">
+<link rel="stylesheet" href="../../validateur/validateur.css">
+<script>document.documentElement.classList.add("js")</script>
+</head>
+<!-- Les schematrons compilés, le runtime Saxon et les exemples pèsent près d'un mégaoctet :
+     cette page les partage avec la version française au lieu d'en faire une copie. -->
+<body data-assets="../../validateur/">
+<a class="skip" href="#content">Skip to content</a>
+
+<header class="nav" id="nav">
+  <div class="wrap">
+    <a class="brand" href="../" aria-label="facturx-sdk, home">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><title>facturx-sdk</title><path d="M4 3.5h11l5 5V20.5H4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M15 3.5v5h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 12h8M8 16h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <span>facturx-sdk</span>
+    </a>
+    <nav aria-label="Main navigation">
+      <a href="../#proof">Proof</a>
+      <a href="../#code">Code</a>
+      <a href="../#reform">Reform</a>
+      <a href="https://github.com/Geekles007/facturx/blob/main/README.en.md">Docs</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="ghost lang" href="../../validateur/" hreflang="fr" lang="fr" title="Version française">FR</a>
+      <a class="ghost" href="https://github.com/Geekles007/facturx" aria-label="GitHub repository">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><title>GitHub</title><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      </a>
+      <a class="btn small" href="https://www.npmjs.com/package/facturx-sdk">npm <span class="mono dim">1.3.0</span></a>
+    </div>
+  </div>
+</header>
+
+<main id="content" class="tool">
+  <div class="wrap">
+    <p class="chip"><span class="dot"></span>Nothing is sent: everything runs in your browser</p>
+    <h1>Does your invoice pass the official validators?</h1>
+    <p class="lede">Drop in a Factur-X PDF or a CII XML file. The SDK reads it back into a typed object, then the three official schematrons judge it: <b>EN 16931 (CEN)</b>, <b>Factur-X</b>, and the French <b>BR-FR</b> rules of the XP&nbsp;Z12-012 standard.</p>
+
+    <noscript>
+      <p class="noscript">This validator runs entirely in your browser: it needs JavaScript to read the file and execute the schematrons. Nothing is uploaded either way. Without JavaScript, the SDK is still usable from <a href="https://www.npmjs.com/package/facturx-sdk">npm</a>.</p>
+    </noscript>
+
+    <div class="dropzone" id="dropzone">
+      <p class="dz-title">Drop a file here</p>
+      <p class="dz-sub">Factur-X PDF or CII XML · it never leaves your machine</p>
+      <label class="btn primary" for="file">Choose a file</label>
+      <input type="file" id="file" accept=".pdf,.xml,application/pdf,text/xml,application/xml">
+      <p class="dz-examples">
+        Nothing at hand?
+        <button type="button" class="linkish" data-example="facture-exemple.pdf">try a Factur-X PDF</button>
+        <span aria-hidden="true">·</span>
+        <button type="button" class="linkish" data-example="facture-conforme.xml">a conformant XML</button>
+        <span aria-hidden="true">·</span>
+        <button type="button" class="linkish" data-example="facture-exemple-non-conforme.pdf">or a faulty PDF</button>
+      </p>
+    </div>
+
+    <p id="status" class="status" role="status" aria-live="polite">Loading…</p>
+    <div id="rapport" class="rapport"></div>
+
+    <section class="notes">
+      <h2>What this tool checks</h2>
+      <div class="note-grid">
+        <div>
+          <h3>Four judges</h3>
+          <p>The SDK checks the model, the arithmetic in integer cents and the French rules, giving the exact path of the offending field. The three official schematrons then rule on the XML as it stands, with their own rule codes.</p>
+        </div>
+        <div>
+          <h3>Three tolerances, stated openly</h3>
+          <p>Three warnings are flagged as tolerated, never hidden: each one pits a PEPPOL or CII rule against a requirement of the French standard. The reason is shown alongside every one of them.</p>
+        </div>
+        <div>
+          <h3>What is still missing</h3>
+          <p>The PDF/A-3 check by veraPDF needs Java, and therefore a server: it does not run here. The SDK passes it in continuous integration on every published version.</p>
+        </div>
+        <div>
+          <h3>A sample invoice to take away</h3>
+          <p>The <a href="../../validateur/exemples/facture-exemple.pdf" download>sample Factur-X PDF</a> is produced by the SDK itself: EN 16931 profile, French statements, PDF/A-3b verified by veraPDF. Its <a href="../../validateur/exemples/facture-exemple-non-conforme.pdf" download>deliberately faulty twin</a> carries four common defects, listed on the PDF page itself, so you can check that a receiving pipeline rejects what it ought to reject.</p>
+        </div>
+        <div>
+          <h3>The same rules as in CI</h3>
+          <p>The rule sets come from the mustangproject repository at a pinned commit, compiled and then executed by Saxon-JS — exactly what judges the SDK on every commit.</p>
+        </div>
+      </div>
+      <p class="fine">This tool is not legal advice and does not replace the accredited platform that will transmit your invoices. XSLT engine: Saxon-JS 2.7 © Saxonica, redistributed unmodified (<a href="../../validateur/vendor/SaxonJS-LICENSE.txt">licence</a>).</p>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <p><b>facturx-sdk</b> · MIT · published on npm with provenance attestation</p>
+    <nav class="foot-links" aria-label="Secondary links">
+      <a class="foot-link" href="../">Home</a>
+      <a class="foot-link" href="https://github.com/Geekles007/facturx/blob/main/CHANGELOG.md">CHANGELOG</a>
+      <a class="foot-link" href="https://github.com/Geekles007/facturx/blob/main/SECURITY.md">Security</a>
+      <a class="foot-link" href="https://github.com/Geekles007/facturx">GitHub</a>
+    </nav>
+  </div>
+</footer>
+
+<script src="../../validateur/app.js" type="module"></script>
+</body>
+</html>

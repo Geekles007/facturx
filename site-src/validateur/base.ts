@@ -11,5 +11,16 @@ export function pageBase(): string {
   return url.href;
 }
 
-/** URL absolue d'une ressource servie à côté de la page. */
-export const assetUrl = (path: string): string => new URL(path, pageBase()).href;
+/**
+ * URL absolue d'une ressource du validateur.
+ *
+ * Par défaut elles sont servies à côté de la page. La version anglaise vit ailleurs dans
+ * l'arborescence mais partage ces ressources — schematrons compilés, runtime Saxon, exemples, un
+ * demi-mégaoctet au total : elle déclare leur emplacement par `data-assets` sur `<body>` plutôt
+ * que d'en faire une copie.
+ */
+export const assetUrl = (path: string): string => {
+  const declared = document.body?.dataset.assets;
+  const base = declared ? new URL(declared, pageBase()).href : pageBase();
+  return new URL(path, base).href;
+};

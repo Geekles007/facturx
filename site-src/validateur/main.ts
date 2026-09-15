@@ -12,6 +12,7 @@ import {
   type Severity,
 } from './analyze.js';
 import { assetUrl } from './base.js';
+import { strings } from './i18n.js';
 import { runSchematron } from './schematron.js';
 
 const $ = <T extends HTMLElement>(selector: string): T => {
@@ -25,17 +26,9 @@ const input = $<HTMLInputElement>('#file');
 const status = $<HTMLParagraphElement>('#status');
 const output = $<HTMLDivElement>('#rapport');
 
-const SEVERITY_LABEL: Record<Severity, string> = {
-  fatal: 'bloquant',
-  warning: 'avertissement',
-  tolerated: 'toléré',
-};
-
-const STATUS_LABEL: Record<JudgeReport['status'], string> = {
-  ok: 'Conforme',
-  failed: 'Non conforme',
-  skipped: 'Non exécuté',
-};
+const t = strings();
+const SEVERITY_LABEL: Record<Severity, string> = t.severity;
+const STATUS_LABEL: Record<JudgeReport['status'], string> = t.status;
 
 const PROFILES: Record<string, string> = {
   'urn:cen.eu:en16931:2017': 'EN 16931',
@@ -58,8 +51,8 @@ const el = <K extends keyof HTMLElementTagNameMap>(
 
 const formatBytes = (bytes: number): string =>
   bytes < 1024 * 1024
-    ? `${Math.round(bytes / 1024)} Ko`
-    : `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
+    ? `${Math.round(bytes / 1024)} ${t.units.kb}`
+    : `${(bytes / (1024 * 1024)).toFixed(1)} ${t.units.mb}`;
 
 let busy = false;
 let lastReport: AnalysisReport | undefined;
@@ -92,7 +85,9 @@ function renderFinding(finding: Finding): HTMLLIElement {
   );
   item.append(head, el('p', 'msg', finding.message));
   if (finding.path) item.append(el('code', 'path', finding.path));
-  if (finding.reason) item.append(el('p', 'reason', `Toléré : ${finding.reason}`));
+  // Le motif est repris par code : traduire le texte français par correspondance serait fragile.
+  const reason = finding.reason && (t.tolerated[finding.code] ?? finding.reason);
+  if (reason) item.append(el('p', 'reason', t.toleratedPrefix(reason)));
   return item;
 }
 
@@ -101,10 +96,11 @@ function renderJudge(judge: JudgeReport): HTMLElement {
   card.dataset.status = judge.status;
   const head = el('div', 'judge-head');
   head.append(el('h3', undefined, judge.name), el('span', 'badge', STATUS_LABEL[judge.status]));
-  card.append(head, el('p', 'judge-detail', judge.detail));
+  // Le descriptif vient de la table par identifiant ; le nom du juge, lui, est un nom propre.
+  card.append(head, el('p', 'judge-detail', t.judgeDetail[judge.id] ?? judge.detail));
   if (judge.note) card.append(el('p', 'note', judge.note));
   if (judge.findings.length === 0 && judge.status === 'ok') {
-    card.append(el('p', 'none', 'Aucune anomalie relevée.'));
+    card.append(el('p', 'none', t.noFindings));
   } else if (judge.findings.length > 0) {
     const list = el('ul', 'findings');
     for (const finding of judge.findings) list.append(renderFinding(finding));
@@ -120,8 +116,8 @@ function describe(report: AnalysisReport): string {
     report.source.kind === 'pdf' ? 'PDF' : 'XML',
   ];
   const { guidelineId, businessProcessId, attachmentName } = report.document;
-  if (guidelineId) parts.push(`profil ${PROFILES[guidelineId] ?? guidelineId}`);
-  if (businessProcessId) parts.push(`cadre ${businessProcessId}`);
+  if (guidelineId) parts.push(t.profile(PROFILES[guidelineId] ?? guidelineId));
+  if (businessProcessId) parts.push(t.framework(businessProcessId));
   if (attachmentName) parts.push(attachmentName);
   return parts.join(' · ');
 }
@@ -135,7 +131,7 @@ function renderReport(report: AnalysisReport): void {
   heading.tabIndex = -1;
   if (report.error) {
     verdict.dataset.state = 'error';
-    heading.textContent = 'Lecture impossible';
+    heading.textContent = t.unreadable;
     verdict.append(heading, el('p', 'summary', describe(report)));
     const box = el('div', 'error-box');
     box.append(el('code', 'code', report.error.code), el('p', 'msg', report.error.message));
@@ -148,21 +144,20 @@ function renderReport(report: AnalysisReport): void {
 
   const failed = report.judges.filter((j) => j.status === 'failed').length;
   const skipped = report.judges.filter((j) => j.status === 'skipped').length;
-  const plural = (n: number) => (n > 1 ? 's' : '');
   if (failed > 0) {
     verdict.dataset.state = 'ko';
-    heading.textContent = `Non conforme — ${failed} juge${plural(failed)} en échec`;
+    heading.textContent = t.nonConformant(failed);
   } else if (skipped > 0) {
     verdict.dataset.state = 'warn';
-    heading.textContent = `Verdict incomplet — ${skipped} juge${plural(skipped)} n'a pas pu s'exécuter`;
+    heading.textContent = t.incomplete(skipped);
   } else {
     verdict.dataset.state = 'ok';
-    heading.textContent = 'Conforme aux quatre jeux de règles';
+    heading.textContent = t.conformant;
   }
   verdict.append(heading, el('p', 'summary', describe(report)));
 
   const actions = el('div', 'verdict-actions');
-  const download = el('button', 'btn small', 'Télécharger le rapport JSON');
+  const download = el('button', 'btn small', t.download);
   download.type = 'button';
   download.addEventListener('click', downloadReport);
   actions.append(download);
@@ -180,7 +175,7 @@ function downloadReport(): void {
   const url = URL.createObjectURL(blob);
   const link = el('a');
   link.href = url;
-  link.download = `rapport-${lastReport.source.filename.replace(/\.[^.]+$/, '')}.json`;
+  link.download = t.reportFilename(lastReport.source.filename.replace(/\.[^.]+$/, ''));
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
@@ -189,7 +184,7 @@ async function handleFile(file: File): Promise<void> {
   if (busy) return;
   busy = true;
   output.replaceChildren();
-  setStatus(`Analyse de ${file.name}…`, 'busy');
+  setStatus(t.analysing(file.name), 'busy');
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const report = await analyze(
@@ -197,18 +192,17 @@ async function handleFile(file: File): Promise<void> {
       {
         extractPdf,
         runSchematron,
+        steps: t.steps,
         onProgress: (step) => setStatus(`${step}…`, 'busy'),
       },
     );
     setStatus(
-      report.error
-        ? 'Analyse interrompue.'
-        : `Analyse terminée — ${report.judges.length} jeux de règles exécutés.`,
+      report.error ? t.interrupted : t.done(report.judges.length),
       report.error ? 'error' : 'idle',
     );
     renderReport(report);
   } catch (error) {
-    setStatus(`Erreur inattendue : ${(error as Error).message}`, 'error');
+    setStatus(t.unexpected((error as Error).message), 'error');
   } finally {
     busy = false;
   }
@@ -217,7 +211,7 @@ async function handleFile(file: File): Promise<void> {
 async function loadExample(url: string, filename: string): Promise<void> {
   const response = await fetch(url);
   if (!response.ok) {
-    setStatus('Exemple indisponible sur ce déploiement.', 'error');
+    setStatus(t.exampleUnavailable, 'error');
     return;
   }
   await handleFile(new File([await response.blob()], filename));
@@ -251,4 +245,4 @@ for (const button of document.querySelectorAll<HTMLButtonElement>('[data-example
   });
 }
 
-setStatus('Aucun fichier analysé pour le moment.');
+setStatus(t.idle);

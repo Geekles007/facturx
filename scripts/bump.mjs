@@ -42,6 +42,16 @@ const VERSIONED_FILES = [
     short: true,
   },
   {
+    path: join(root, 'site', 'validateur', 'index.html'),
+    label: 'badge npm du validateur',
+    pattern: /(>npm <span class="mono dim">)\d+\.\d+\.\d+(<\/span>)/,
+  },
+  {
+    path: join(root, 'site', 'en', 'validateur', 'index.html'),
+    label: 'badge npm du validateur anglais',
+    pattern: /(>npm <span class="mono dim">)\d+\.\d+\.\d+(<\/span>)/,
+  },
+  {
     path: join(root, 'site', 'en', 'index.html'),
     label: 'badge npm de la page anglaise',
     pattern: /(>npm <span class="mono dim">)\d+\.\d+\.\d+(<\/span>)/,
