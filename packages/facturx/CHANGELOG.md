@@ -2,13 +2,17 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Depuis 1.0.0, une rupture d'API n'arrive que dans une version majeure ; une nouvelle règle de validation est une version mineure.
 
-## [Non publié]
+## [1.3.0] — 2026-09-15
 
 ### Ajouté
+- **Lecture UBL 2.1** (profil EN 16931) : `fromUblXml` et `parseUblDocument`, plus `UBL_NAMESPACES` et le code d'erreur `NOT_UBL`. Le socle de la réforme accepte trois syntaxes — Factur-X, CII nu et UBL — et la réception est obligatoire pour toutes les entreprises depuis le 1er septembre 2026 : sans UBL, un tiers du socle restait illisible. Lecture seule, délibérément : le SDK écrit du Factur-X, cible d'un émetteur français.
+- Le XSD UBL 2.1 et le schematron **CEN EN 16931 UBL** rejoignent `pnpm schemas:fetch`, au même commit épinglé.
 - **Lecture d'un message de cycle de vie** : `fromCdvXml` (statut validé) et `parseCdvDocument` (statut + enveloppe : profil, plateforme émettrice, parties, type et date de réception de la facture, numéro de séquence), plus `fromFormat204`, inverse de `toFormat204`. `toCdvXml` était la seule écriture sans lecture de l'API ; l'asymétrie est levée.
 - Code d'erreur `NOT_CDAR` (`FacturXParseErrorCode`) quand la racine n'est pas `rsm:CrossDomainAcknowledgementAndResponse`.
 
 ### Modifié
+- Documentation bilingue : [README.en.md](README.en.md) en anglais, bascule de langue en tête des deux, amorce anglaise sur la page npm. Factur-X et ZUGFeRD étant la même norme, le marché allemand pouvait déjà utiliser ce SDK sans pouvoir lire sa porte d'entrée. La description npm passe en anglais et mentionne ZUGFeRD.
+- Le README du paquet npm annonçait encore les statuts comme hors périmètre — troisième endroit portant cette mention périmée.
 - `toCdvXml` écrit désormais le cadre de facturation (`MDG-2`) quand `status.businessProcess` est renseigné : sans lui, la règle **G7.39** (motifs restreints au cadre `S6`) ne survivait pas à un aller-retour.
 
 ### Vérification
@@ -155,6 +159,7 @@ Première version publiée : la boucle complète émission → réception pour l
 ### Documentation
 - Guide de la réforme (`docs/reforme.md`), journal des décisions (`docs/decisions.md`), trois exemples exécutés en CI (émission Node, réception Node, handler HTTP Web standard).
 
+[1.3.0]: https://github.com/Geekles007/facturx/releases/tag/v1.3.0
 [1.2.0]: https://github.com/Geekles007/facturx/releases/tag/v1.2.0
 [1.1.0]: https://github.com/Geekles007/facturx/releases/tag/v1.1.0
 [1.0.2]: https://github.com/Geekles007/facturx/releases/tag/v1.0.2
