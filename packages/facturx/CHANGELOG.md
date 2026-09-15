@@ -2,6 +2,12 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Depuis 1.0.0, une rupture d'API n'arrive que dans une version majeure ; une nouvelle règle de validation est une version mineure.
 
+## [1.5.1] — 2026-09-16
+
+### Corrigé
+- Rendu : les **conditions de règlement n'apparaissent plus deux fois**. Le paragraphe produit par `resolvePaymentTermsText` contient déjà les mentions légales `PMD`, `PMT` et `AAB` quand les conditions sont structurées ; `resolveNotes` les répétait ensuite une à une. Sur une facture — un document juridique — la redite était mauvaise.
+- Rendu : quantités et prix unitaires affichaient quatre décimales systématiques (`2.0000 DAY`, `800.0000`). Les zéros inutiles au-delà de deux décimales sont retirés, conformément à la convention du dépôt pour ces valeurs (voir `docs/decisions.md`, D17).
+
 ## [1.5.0] — 2026-09-16
 
 ### Ajouté
@@ -178,6 +184,7 @@ Première version publiée : la boucle complète émission → réception pour l
 ### Documentation
 - Guide de la réforme (`docs/reforme.md`), journal des décisions (`docs/decisions.md`), trois exemples exécutés en CI (émission Node, réception Node, handler HTTP Web standard).
 
+[1.5.1]: https://github.com/Geekles007/facturx/releases/tag/v1.5.1
 [1.5.0]: https://github.com/Geekles007/facturx/releases/tag/v1.5.0
 [1.4.0]: https://github.com/Geekles007/facturx/releases/tag/v1.4.0
 [1.3.0]: https://github.com/Geekles007/facturx/releases/tag/v1.3.0
