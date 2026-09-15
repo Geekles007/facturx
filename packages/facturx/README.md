@@ -1,5 +1,10 @@
 # facturx-sdk
 
+> **English** — a pure TypeScript SDK to generate, validate, embed and read **Factur-X / ZUGFeRD**
+> invoices at the **EN 16931** profile, with the French `BR-FR` rules built in. Factur-X *is*
+> ZUGFeRD: same standard, two names. No native dependencies, edge/serverless friendly.
+> Full English documentation: **[README.en.md](https://github.com/Geekles007/facturx/blob/main/README.en.md)**.
+
 SDK **TypeScript pur** pour **générer, valider, embarquer et lire** des factures **Factur-X** au profil **EN 16931**, avec les règles françaises de la réforme de la facturation électronique. Zéro dépendance native, compatible edge / serverless ; `pdf-lib` uniquement dans l'entrée `facturx-sdk/pdf`.
 
 ```bash
@@ -45,7 +50,8 @@ const invoice = fromCiiXml(xmlString);           // validée ; FacturXParseError
 ## Ce que fait le SDK, et ce qu'il ne fait pas
 
 - ✅ Modèle `Invoice` annoté BT-xx + règles FR, monnaie en entiers (jamais de flottant), validation qui **ne corrige jamais en silence**, XML CII écriture/lecture, PDF/A-3 embed/extract, mentions de la réforme (SIREN acheteur, nature de l'opération, TVA sur les débits, avoirs).
-- ❌ Envoi à une plateforme agréée, statuts, e-reporting, UBL, autres profils Factur-X, conversion d'un PDF quelconque en PDF/A.
+- ✅ **Statuts du cycle de vie** : les quatre statuts transmissibles (200/210/212/213), les 40 motifs de refus normalisés, les règles de gestion officielles, et le message CDV écrit **et relu** (`toCdvXml` / `fromCdvXml`), validé contre le XSD CDAR D22B d'UN/CEFACT.
+- ❌ Envoi à une plateforme agréée, e-reporting, annuaire, UBL, autres profils Factur-X, conversion d'un PDF quelconque en PDF/A.
 
 Site : **https://facturx.ibird.dev/** · Documentation complète, guide de la réforme, exemples exécutables et journal des décisions : **https://github.com/Geekles007/facturx**
 
