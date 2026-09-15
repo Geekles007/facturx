@@ -4,7 +4,7 @@
 
 SDK **TypeScript pur** — zéro dépendance native, compatible edge/serverless — pour **générer, embarquer et extraire** des factures **Factur-X** au profil **EN 16931**, avec les règles françaises intégrées.
 
-> État : **1.0.0** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3 validé veraPDF), guide réforme, exemples exécutables, mentions de la réforme, et les **règles françaises de la norme AFNOR XP Z12-012** (toutes les règles `BR-FR` vérifiables hors ligne), **contre-vérifiées par les schematrons officiels CEN, Factur-X et BR-FR V1.3.0 en CI**. **Publié sur npm : `facturx-sdk`.**
+> État : **1.2.0** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3 validé veraPDF), **statuts du cycle de vie** (validation par les règles de gestion officielles, message CDV validé contre le XSD CDAR D22B), guide réforme, exemples exécutables, et les **règles françaises de la norme AFNOR XP Z12-012** (toutes les règles `BR-FR` vérifiables hors ligne), **contre-vérifiées par les schematrons officiels CEN, Factur-X et BR-FR V1.3.0 en CI**. **Publié sur npm : `facturx-sdk`.**
 
 ## Vision
 
@@ -20,7 +20,7 @@ Une facture électronique française conforme ne devrait pas exiger une dépenda
 
 ## Réforme 2026-2027 : où ce SDK se place
 
-Réception obligatoire pour **toutes** les entreprises au 1er septembre 2026, émission en 2026 (grandes entreprises/ETI) puis 2027 (PME/micro), transit par une **plateforme agréée**. Le SDK est la brique **format + conformité** (produire, vérifier, lire du Factur-X) ; la plateforme agréée est la brique **transport** (envoi, statuts, e-reporting), hors périmètre. Guide complet, checklist et écarts connus : [docs/reforme.md](docs/reforme.md).
+Réception obligatoire pour **toutes** les entreprises au 1er septembre 2026, émission en 2026 (grandes entreprises/ETI) puis 2027 (PME/micro), transit par une **plateforme agréée**. Le SDK est la brique **format + conformité** : produire, vérifier et lire du Factur-X, et depuis la 1.1.0 **valider et sérialiser les statuts du cycle de vie**. La plateforme agréée garde la brique **transport** — déposer les factures et les statuts, l'e-reporting, l'annuaire — hors périmètre. Guide complet, checklist et écarts connus : [docs/reforme.md](docs/reforme.md).
 
 ## Validateur en ligne
 
@@ -63,6 +63,8 @@ Les entrées (XML, PDF) sont traitées comme non fiables : pas de DTD ni d'entit
 **Inclus** : profil EN 16931 (`urn:cen.eu:en16931:2017`), facture commerciale (380), TVA multi-taux, remises/frais ligne et document, exonérations (E, AE, K, G, O, Z), mentions FR (SIREN/SIRET/TVA, date ou période de livraison, pénalités de retard, indemnité forfaitaire de 40 €, escompte), moyens de paiement virement/prélèvement.
 
 **Inclus aussi** : avoirs (381, 261, 262, 396), acomptes (386), rectificatives (384), documents auto-facturés (389) et affacturés (393), nature de l'opération (`operationCategory` → BT-23), option TVA sur les débits (`vatOnDebits` → BT-8), SIREN acheteur exigé avec drapeau `buyer.consumer` pour le B2C.
+
+**Statuts du cycle de vie** (depuis la 1.1.0) : les quatre statuts transmissibles au portail public (200 Déposée, 210 Refusée, 212 Encaissée, 213 Rejetée — l'annexe 2 des spécifications externes n'en connaît pas d'autres pour une facture), les 40 motifs de refus normalisés, les règles de gestion vérifiées une à une (`validateLifecycleStatus`), et la sérialisation du message CDV (`toCdvXml`) validée contre le XSD **CDAR D22B** d'UN/CEFACT. Un message CDV est émis par une plateforme : cette partie s'adresse à qui en construit une.
 
 **Hors périmètre** : Order-X, UBL, autofacturation, rendu PDF de la facture, conversion d'un PDF quelconque en PDF/A, envoi à une plateforme agréée, e-reporting, autres profils Factur-X (MINIMUM, BASIC, EXTENDED).
 

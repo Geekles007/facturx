@@ -86,7 +86,8 @@ Attention à qui émet : un message CDV est produit par une **plateforme**, iden
 | Produire un PDF/A à partir de n'importe quel PDF | ❌ votre outil de rendu doit produire un PDF/A (polices embarquées) ; le SDK ajoute la couche Factur-X |
 | Avoirs (381) | ✅ même structure, montants positifs, facture d'origine dans `references.precedingInvoices` |
 | UBL, CII nu, autres profils Factur-X (MINIMUM, BASIC, EXTENDED) | ❌ (lecture tolérante des autres profils, écriture EN 16931 seulement) |
-| Envoyer à une PA, statuts, e-reporting, annuaire | ❌ API de la PA |
+| Valider et sérialiser un statut du cycle de vie | ✅ `validateLifecycleStatus`, `toCdvXml` — message CDAR D22B, validé contre le XSD officiel |
+| Envoyer à une PA (factures ou statuts), e-reporting, annuaire | ❌ API de la PA |
 | Archivage à valeur probante | ❌ votre stockage (ou la PA) |
 
 ## Checklist « mon app est-elle prête ? »
@@ -95,7 +96,7 @@ Attention à qui émet : un message CDV est produit par une **plateforme**, iden
 - [ ] Je reçois les factures depuis l'API de la PA de mon client (webhook ou polling).
 - [ ] Je lis chaque PDF/XML en objet typé : `extractInvoice(pdf)` / `fromCiiXml(xml)` — [exemple](../examples/receive-node).
 - [ ] Une facture incohérente est **mise en anomalie** avec le détail (`FacturXValidationError.issues`), pas intégrée telle quelle.
-- [ ] Je conserve le fichier original (archivage) et je remonte les statuts à la PA.
+- [ ] Je conserve le fichier original (archivage) et je remonte les statuts à la PA — le SDK valide leur contenu (`validateLifecycleStatus`), la PA les transporte.
 
 **Émission (2026 ou 2027 selon la taille)**
 - [ ] Mon modèle porte les nouvelles mentions : `buyer.siren` (ou `buyer.consumer`), `delivery.address`, `operationCategory`, `vatOnDebits` si l'option est exercée.
