@@ -455,7 +455,9 @@ pre,
 }
 .stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* auto-fit : quatre colonnes, cinq quand le compteur de téléchargements est là — et rien à
+     corriger quand il manque (relevé absent, JavaScript coupé). */
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 32px;
   margin: 56px 0 0;
   padding-top: 32px;
