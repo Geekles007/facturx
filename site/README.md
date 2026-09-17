@@ -94,8 +94,9 @@ pnpm site:dist
 ```
 
 `pnpm site:dist` enchaîne `pnpm build` (le SDK, dont dépend le bundle), `pnpm validator:fetch`
-(runtime Saxon-JS et jeux de règles compressés, mis en cache après le premier appel) et
-`pnpm site:build` (bundle esbuild du validateur et exemples). Le contrôle `pnpm site:check`
+(runtime Saxon-JS et jeux de règles compressés, mis en cache après le premier appel),
+`pnpm downloads:fetch` (le relevé des téléchargements npm, voir plus bas) et `pnpm site:build`
+(bundle esbuild du validateur et exemples). Le contrôle `pnpm site:check`
 (types, tests, bundle) fait partie de `pnpm check` et tourne en CI.
 
 ### 2. Envoyer
@@ -122,6 +123,7 @@ et la compression, qui fait passer le bundle d'environ 430 Ko à 195 Ko.
 curl -sI https://facturx.ibird.dev/validateur | sed -n '1p;/[Ll]ocation/p'
 curl -s -o /dev/null -w '%{http_code} %{size_download}\n' https://facturx.ibird.dev/validateur/vendor/SaxonJS2.rt.js
 curl -s -o /dev/null -w '%{http_code} %{size_download}\n' https://facturx.ibird.dev/validateur/schemas/EN16931-CII-validation.sef.json.gz
+curl -s https://facturx.ibird.dev/npm-downloads.json
 ```
 
 La première commande doit renvoyer une redirection 301 vers `/validateur/`.
@@ -134,10 +136,34 @@ le runtime XSLT, les trois jeux de règles et la base de codes.
 
 Versionnés : les pages (`index.html`, `validateur/index.html`), les styles, `app.js` de la page d'accueil, les polices Geist (licence SIL OFL) et le favicon. Les sources du validateur sont dans `site-src/`, hors du dossier déployé.
 
-Générés (ignorés par git, à reconstruire avant chaque déploiement) : `validateur/app.js` et ses fragments, `validateur/vendor/` (runtime Saxon-JS et sa licence), `validateur/schemas/` (schematrons compilés, base de codes) et `validateur/exemples/` — dont `facture-exemple.pdf` et `facture-exemple-non-conforme.pdf`, deux PDF/A-3 Factur-X produits par le SDK à chaque construction (`scripts/example-invoice.mjs`, testés dans `pnpm site:check`).
+Générés (ignorés par git, à reconstruire avant chaque déploiement) : `npm-downloads.json`, `validateur/app.js` et ses fragments, `validateur/vendor/` (runtime Saxon-JS et sa licence), `validateur/schemas/` (schematrons compilés, base de codes) et `validateur/exemples/` — dont `facture-exemple.pdf` et `facture-exemple-non-conforme.pdf`, deux PDF/A-3 Factur-X produits par le SDK à chaque construction (`scripts/example-invoice.mjs`, testés dans `pnpm site:check`).
+
+## Le nombre de téléchargements npm
+
+La page d'accueil affiche les téléchargements du paquet sur 30 jours. Le chiffre est relevé
+**pendant la construction** par `pnpm downloads:fetch`
+([`scripts/fetch-npm-downloads.mjs`](../scripts/fetch-npm-downloads.mjs)), qui interroge l'API
+publique de npm et écrit `site/npm-downloads.json` ; la page le lit ensuite depuis son propre
+domaine.
+
+C'est tout l'intérêt du détour : **le visiteur ne contacte pas npm**. Un appel depuis son
+navigateur livrerait son adresse à un tiers sur toutes les visites, et la promesse « pas de tiers,
+donc pas de bandeau de consentement » tomberait pour un chiffre d'agrément. Le site continue de ne
+rien charger depuis ailleurs — les polices non plus ne viennent pas d'un CDN.
+
+Contrepartie : le chiffre date du dernier déploiement. Il est donc affiché **avec la fin de la
+période mesurée**, prise dans le relevé lui-même : figé, il reste daté plutôt que faux.
+
+Rien ne dépend de lui : API injoignable, réponse inattendue, JavaScript coupé, fichier absent — le
+cas normal en développement, puisqu'il n'est pas versionné. La case disparaît, et les quatre autres
+chiffres reprennent toute la largeur sans laisser de trou. Une API indisponible n'arrête pas non
+plus la construction, contrairement aux jeux de règles, qui eux sont indispensables. La lecture de la
+réponse est testée par `pnpm site:check`
+([`scripts/fetch-npm-downloads.test.mjs`](../scripts/fetch-npm-downloads.test.mjs)) : un relevé
+douteux est refusé plutôt qu'affiché — mieux vaut pas de chiffre qu'un chiffre inventé.
 
 ## À tenir à jour
 
-Les chiffres de la page d'accueil (tests, règles BR-FR, fichiers tiers, version npm) sont écrits en dur dans `index.html` ; les mettre à jour à chaque release.
+Les chiffres de la page d'accueil (tests, règles BR-FR, fichiers tiers, version npm) sont écrits en dur dans les deux pages, `index.html` et `en/index.html` ; les mettre à jour à chaque release. Seul celui des téléchargements se relève tout seul, à chaque construction.
 
 Le JavaScript de la page d'accueil est optionnel : sans lui, tout le contenu reste lisible. Le validateur, lui, a besoin de JavaScript pour lire le fichier et faire tourner les schematrons ; la page le dit dans un `<noscript>`. `prefers-reduced-motion` désactive les animations partout.

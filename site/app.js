@@ -50,21 +50,33 @@
 
   // Compteurs (tabular-nums, 900 ms, ease-out) — immédiat si mouvement réduit
   const counters = document.querySelectorAll('[data-count]');
+  // `data-format="compact"` : 1 234 s'écrit « 1,2 k », dans la langue de la page. Un compteur dont
+  // l'ordre de grandeur n'est pas connu d'avance tient ainsi dans sa colonne.
+  const compact = new Intl.NumberFormat(document.documentElement.lang || undefined, {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  });
+  const show = (el, n) => {
+    el.textContent = el.dataset.format === 'compact' ? compact.format(n) : String(n);
+  };
   const run = (el) => {
     const target = Number(el.dataset.count);
     if (reduce) {
-      el.textContent = String(target);
+      show(el, target);
       return;
     }
     const t0 = performance.now();
     const step = (t) => {
       const p = Math.min(1, (t - t0) / 900);
       const eased = 1 - (1 - p) ** 3;
-      el.textContent = String(Math.round(target * eased));
+      show(el, Math.round(target * eased));
       if (p < 1) requestAnimationFrame(step);
     };
     requestAnimationFrame(step);
   };
+  // Un compteur dont la valeur arrive après coup se remet en file : observé, il s'anime quand il
+  // devient visible ; sans observateur, il s'affiche tout de suite.
+  let queue;
   if ('IntersectionObserver' in window) {
     const io = new IntersectionObserver(
       (entries) => {
@@ -76,9 +88,37 @@
       },
       { threshold: 0.6 },
     );
-    for (const el of counters) io.observe(el);
+    queue = (el) => io.observe(el);
   } else {
-    for (const el of counters) el.textContent = el.dataset.count;
+    queue = run;
+  }
+  for (const el of counters) queue(el);
+
+  // Téléchargements npm : chiffre relevé à la construction du site (scripts/fetch-npm-downloads.mjs)
+  // et servi depuis le même domaine — la page ne contacte aucun tiers, et il n'y a donc rien à
+  // consentir. Le fichier manque, ne répond pas ou ne dit pas ce qu'on attend : la case reste
+  // cachée, comme elle l'est sans JavaScript.
+  const npm = document.querySelector('[data-downloads]');
+  if (npm) {
+    fetch(npm.dataset.downloads)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(({ downloads, end }) => {
+        if (!Number.isFinite(downloads) || downloads < 0) return;
+        // La date de fin de période vient du relevé : un chiffre figé entre deux déploiements
+        // reste daté plutôt que faux. Sans elle, la phrase finirait par « au » dans le vide.
+        if (typeof end !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return;
+        const when = npm.querySelector('time');
+        when.dateTime = end;
+        when.textContent = new Intl.DateTimeFormat(document.documentElement.lang || undefined, {
+          dateStyle: 'medium',
+          timeZone: 'UTC',
+        }).format(new Date(`${end}T00:00:00Z`));
+        const dd = npm.querySelector('[data-count]');
+        dd.dataset.count = String(Math.round(downloads));
+        npm.hidden = false;
+        queue(dd);
+      })
+      .catch(() => {});
   }
 
   // Copier : API presse-papiers, sinon sélection + execCommand, sinon sélection seule
