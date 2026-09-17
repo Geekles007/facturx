@@ -18,8 +18,9 @@
     "schemas:fetch": "node scripts/fetch-schemas.mjs",
     "samples:fetch": "node scripts/fetch-samples.mjs",
     "validator:fetch": "node scripts/fetch-validator-assets.mjs",
+    "downloads:fetch": "node scripts/fetch-npm-downloads.mjs",
     "site:build": "node scripts/build-site.mjs",
-    "site:dist": "pnpm build && pnpm validator:fetch && pnpm site:build",
+    "site:dist": "pnpm build && pnpm validator:fetch && pnpm downloads:fetch && pnpm site:build",
     "site:check": "tsc --noEmit -p tsconfig.site.json && vitest run --config vitest.site.config.mts && pnpm site:build"
   },
   "devDependencies": {
