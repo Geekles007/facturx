@@ -34,9 +34,11 @@ docker build -t facturx-site . && docker run --rm -p 8080:80 facturx-site
 ## Mesurer la fréquentation (GoAccess)
 
 L'image embarque [GoAccess](https://goaccess.io) : il lit le journal d'accès de nginx et en tire un
-rapport HTML — pages vues, référents, pays, navigateurs, codes de retour. **Rien n'est ajouté aux
-pages** : pas de script, pas de cookie, pas de tiers, donc pas de bandeau de consentement à afficher,
-et la promesse du validateur (« rien n'est envoyé ») reste littéralement vraie.
+rapport HTML — pages vues, référents, pays, navigateurs, codes de retour. **Aucun script de mesure
+n'est ajouté aux pages** : pas de traceur, pas de cookie, pas de tiers, donc pas de bandeau de
+consentement à afficher. La seule requête que les pages émettent d'elles-mêmes est le décompte des
+contrôles décrit juste après — sans contenu, journalisée comme une page vue — et le fichier
+déposé dans le validateur, lui, ne quitte jamais la machine du visiteur.
 
 Le rapport est servi sur `/stats/`, protégé par mot de passe, et régénéré toutes les cinq minutes.
 
@@ -84,6 +86,49 @@ sans empêcher nginx de démarrer, et la configuration est vérifiée par `nginx
 construction de l'image** — une erreur fait échouer la construction, jamais le site en production.
 Le message affiché au démarrage du conteneur dit dans quel état se trouvent les statistiques.
 
+## Compter les contrôles du validateur
+
+Le validateur s'exécute entièrement chez le visiteur : le journal ne distinguait donc pas une page
+ouverte d'un contrôle réellement lancé. La page demande maintenant, à chaque contrôle,
+`GET /validateur/compteur/controle` ; nginx répond **204, sans corps**, et il en reste une ligne de
+journal. C'est tout le mécanisme.
+
+**Ce qui part** : le chemin, et rien d'autre. Aucun octet du fichier, aucun nom de fichier, aucun
+verdict, aucun cookie, aucun identifiant. La ligne écrite a exactement la forme de celle d'une page
+vue, avec la même adresse déjà tronquée de son dernier octet. Autrement dit, le décompte
+n'introduit **aucune donnée nouvelle** dans le journal : ce qui change, c'est qu'une page émet une
+requête qu'elle n'émettait pas.
+
+Rien n'est écrit ni lu sur l'appareil du visiteur, donc rien qui appelle un bandeau de consentement.
+Les deux pages du validateur le disent quand même en clair — la pastille en tête et la carte
+« Ce qui est compté » : sur un outil qui vend la non-transmission, le dire vaut mieux que l'avoir
+enfoui dans un dépôt.
+
+Le comptage a lieu dans `handleFile` (`site-src/validateur/main.ts`), une fois par fichier soumis,
+**quel qu'en soit le sort** : un fichier illisible a tout autant servi l'outil qu'une facture
+conforme. L'appel est sans effet de bord visible — réseau coupé, requête bloquée par une extension,
+bloc nginx absent d'un déploiement : le contrôle se déroule normalement et le chiffre est seul à
+en pâtir. Sans le bloc nginx, d'ailleurs, la requête laisse tout de même sa ligne, en 404 : le
+décompte survit, la réponse est juste moins propre.
+
+### Lire le chiffre
+
+Dans le rapport GoAccess, panneau **Requested Files** :
+
+| Ligne | Ce qu'elle compte |
+|---|---|
+| `/validateur/compteur/controle` | les contrôles lancés |
+| `/validateur/` (panneau des pages) | les pages ouvertes — le rapport des deux donne le taux de passage à l'acte |
+| `/validateur/exemples/facture-*` | les démonstrations, comptées elles aussi comme des contrôles |
+
+Les boutons d'exemple lancent de vrais contrôles et sont donc comptés comme tels. Pour approcher
+les contrôles sur des fichiers personnels, soustraire les téléchargements d'exemples — l'ordre de
+grandeur seulement : ces fichiers-là peuvent être servis depuis le cache du navigateur, un second
+clic ne laisse alors aucune trace.
+
+Enfin, `--ignore-crawlers` écarte les robots des visites, et ceux-ci n'exécutent de toute façon pas
+le JavaScript : le décompte ne voit que des contrôles humains.
+
 ## Déployer sans Coolify (rsync)
 
 ### 1. Construire
@@ -124,9 +169,11 @@ curl -sI https://facturx.ibird.dev/validateur | sed -n '1p;/[Ll]ocation/p'
 curl -s -o /dev/null -w '%{http_code} %{size_download}\n' https://facturx.ibird.dev/validateur/vendor/SaxonJS2.rt.js
 curl -s -o /dev/null -w '%{http_code} %{size_download}\n' https://facturx.ibird.dev/validateur/schemas/EN16931-CII-validation.sef.json.gz
 curl -s https://facturx.ibird.dev/npm-downloads.json
+curl -s -o /dev/null -w '%{http_code}\n' https://facturx.ibird.dev/validateur/compteur/controle
 ```
 
-La première commande doit renvoyer une redirection 301 vers `/validateur/`.
+La première commande doit renvoyer une redirection 301 vers `/validateur/`, la dernière un `204`
+— et cet appel-là compte pour un contrôle dans le rapport, comme n'importe quel autre.
 
 Puis, dans un navigateur : ouvrir `/validateur/`, cliquer « essayer une facture conforme » et
 attendre le verdict « Conforme aux quatre jeux de règles ». Cela exerce d'un coup le bundle,
