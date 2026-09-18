@@ -48,12 +48,12 @@
 
 <main id="contenu" class="tool">
   <div class="wrap">
-    <p class="chip"><span class="dot"></span>Rien n'est envoyé : tout s'exécute dans votre navigateur</p>
+    <p class="chip"><span class="dot"></span>Votre fichier ne part pas : tout s'exécute dans votre navigateur</p>
     <h1>Votre facture passe-t-elle les validateurs officiels&nbsp;?</h1>
     <p class="lede">Déposez un PDF Factur-X ou un XML CII. Le SDK le relit en objet typé, puis les trois schematrons officiels le jugent&nbsp;: <b>EN 16931 (CEN)</b>, <b>Factur-X</b> et les règles françaises <b>BR-FR</b> de la norme XP&nbsp;Z12-012.</p>
 
     <noscript>
-      <p class="noscript">Ce validateur s'exécute entièrement dans votre navigateur : il a besoin de JavaScript pour lire le fichier et faire tourner les schematrons. Aucun envoi n'est fait pour autant. Sans JavaScript, le SDK reste utilisable en ligne de commande depuis <a href="https://www.npmjs.com/package/facturx-sdk">npm</a>.</p>
+      <p class="noscript">Ce validateur s'exécute entièrement dans votre navigateur : il a besoin de JavaScript pour lire le fichier et faire tourner les schematrons. Votre fichier n'est transmis nulle part pour autant. Sans JavaScript, le SDK reste utilisable en ligne de commande depuis <a href="https://www.npmjs.com/package/facturx-sdk">npm</a>.</p>
     </noscript>
 
     <div class="dropzone" id="dropzone">
@@ -92,6 +92,10 @@
         <div>
           <h3>Une facture d'exemple à récupérer</h3>
           <p>Le <a href="exemples/facture-exemple.pdf" download>PDF Factur-X d'exemple</a> est produit par le SDK lui-même&nbsp;: profil EN 16931, mentions françaises, PDF/A-3b vérifié par veraPDF. Son <a href="exemples/facture-exemple-non-conforme.pdf" download>jumeau volontairement fautif</a> porte quatre défauts courants, listés sur la page même du PDF, pour vérifier qu'une chaîne de réception rejette ce qu'elle doit rejeter.</p>
+        </div>
+        <div>
+          <h3>Ce qui est compté</h3>
+          <p>Votre facture n'est ni transmise ni lue ailleurs que sur votre machine. Seul un signal <b>sans contenu</b> part à chaque contrôle&nbsp;: le serveur répond sans rien renvoyer et n'en garde qu'une ligne de journal, à l'adresse déjà tronquée. De quoi savoir si l'outil sert — sans cookie, sans identifiant, et sans rien savoir de votre facture.</p>
         </div>
         <div>
           <h3>Mêmes règles qu'en intégration continue</h3>

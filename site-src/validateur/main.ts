@@ -1,7 +1,8 @@
 /**
  * Validateur Factur-X en ligne — interface.
  *
- * Tout se passe dans le navigateur : aucun octet du fichier déposé ne quitte la machine.
+ * Tout se passe dans le navigateur : aucun octet du fichier déposé ne quitte la machine. Seul un
+ * signal sans contenu part à chaque contrôle, pour le décompte (compteur.ts).
  * Le moteur PDF n'est chargé que si l'on dépose un PDF.
  */
 import {
@@ -12,6 +13,7 @@ import {
   type Severity,
 } from './analyze.js';
 import { assetUrl } from './base.js';
+import { CHEMIN_COMPTEUR, compterControle } from './compteur.js';
 import { strings } from './i18n.js';
 import { runSchematron } from './schematron.js';
 
@@ -205,6 +207,8 @@ async function handleFile(file: File): Promise<void> {
     setStatus(t.unexpected((error as Error).message), 'error');
   } finally {
     busy = false;
+    // Un contrôle de plus — verdict rendu ou fichier illisible, c'est le seul fait qui parte.
+    compterControle(assetUrl(CHEMIN_COMPTEUR));
   }
 }
 
