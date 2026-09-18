@@ -50,12 +50,12 @@
 
 <main id="content" class="tool">
   <div class="wrap">
-    <p class="chip"><span class="dot"></span>Nothing is sent: everything runs in your browser</p>
+    <p class="chip"><span class="dot"></span>Your file stays put: everything runs in your browser</p>
     <h1>Does your invoice pass the official validators?</h1>
     <p class="lede">Drop in a Factur-X PDF or a CII XML file. The SDK reads it back into a typed object, then the three official schematrons judge it: <b>EN 16931 (CEN)</b>, <b>Factur-X</b>, and the French <b>BR-FR</b> rules of the XP&nbsp;Z12-012 standard.</p>
 
     <noscript>
-      <p class="noscript">This validator runs entirely in your browser: it needs JavaScript to read the file and execute the schematrons. Nothing is uploaded either way. Without JavaScript, the SDK is still usable from <a href="https://www.npmjs.com/package/facturx-sdk">npm</a>.</p>
+      <p class="noscript">This validator runs entirely in your browser: it needs JavaScript to read the file and execute the schematrons. Your file is never uploaded either way. Without JavaScript, the SDK is still usable from <a href="https://www.npmjs.com/package/facturx-sdk">npm</a>.</p>
     </noscript>
 
     <div class="dropzone" id="dropzone">
@@ -94,6 +94,10 @@
         <div>
           <h3>A sample invoice to take away</h3>
           <p>The <a href="../../validateur/exemples/facture-exemple.pdf" download>sample Factur-X PDF</a> is produced by the SDK itself: EN 16931 profile, French statements, PDF/A-3b verified by veraPDF. Its <a href="../../validateur/exemples/facture-exemple-non-conforme.pdf" download>deliberately faulty twin</a> carries four common defects, listed on the PDF page itself, so you can check that a receiving pipeline rejects what it ought to reject.</p>
+        </div>
+        <div>
+          <h3>What gets counted</h3>
+          <p>Your invoice is neither uploaded nor read anywhere but on your own machine. Only a <b>content-free</b> signal is sent on each check: the server answers with nothing at all and keeps a single log line, at an already-truncated address. Enough to know whether the tool is used — no cookie, no identifier, and nothing about your invoice.</p>
         </div>
         <div>
           <h3>The same rules as in CI</h3>
