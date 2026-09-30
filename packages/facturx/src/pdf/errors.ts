@@ -14,9 +14,20 @@ export type FacturXPdfErrorCode =
   /** `renderInvoicePdf` sans `@pdf-lib/fontkit`, requis pour embarquer une police. */
   | 'FONTKIT_REQUIRED'
   /** Police variable : le document produit n'est pas accepté comme PDF/A. */
-  | 'FONT_VARIABLE';
+  | 'FONT_VARIABLE'
+  /** Les octets fournis comme police ne sont ni du TTF ni de l'OTF lisible. */
+  | 'FONT_INVALID'
+  /**
+   * Un caractère à écrire n'existe pas dans la police : il deviendrait un glyphe `.notdef`,
+   * invisible ou presque à l'écran, et refusé par PDF/A (ISO 19005-3, 6.2.11.8).
+   */
+  | 'GLYPH_MISSING'
+  /** Logo illisible : ni PNG ni JPEG, ou dimensions introuvables. */
+  | 'INVALID_IMAGE'
+  /** Option de rendu invalide : couleur, modèle, format de page. */
+  | 'INVALID_OPTION';
 
-/** Erreur typée levée par `embedFacturX` / `extractFacturX`. */
+/** Erreur typée levée par `embedFacturX`, `extractFacturX` et le rendu. */
 export class FacturXPdfError extends Error {
   override readonly name = 'FacturXPdfError';
   readonly code: FacturXPdfErrorCode;

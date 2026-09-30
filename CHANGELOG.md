@@ -2,6 +2,30 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Depuis 1.0.0, une rupture d'API n'arrive que dans une version majeure ; une nouvelle règle de validation est une version mineure.
 
+## [Non publié]
+
+### Ajouté
+- **Thèmes de rendu** (`renderInvoicePdf(invoice, { theme })`) : six modèles — `classic`, `modern` (bandeau de couleur), `minimal`, `letterhead` (papier à en-tête), `cards`, `compact` —, une couleur d'accent, et neuf réglages fins surchargeables un par un (`theme.style` : en-tête, blocs des parties, en-tête et lignes du tableau, totaux, net à payer, casse du titre, densité, angles). Logo à gauche ou à droite, hauteur réglable ; format A4 ou Letter. `RENDER_TEMPLATES`, `buildPalette`, `contrastRatio`, `parseHexColor`, `PAGE_SIZES`.
+- **Contraste garanti** : le texte posé sur la couleur d'accent, ou écrit dans sa teinte, est assombri ou inversé jusqu'au contraste recommandé pour du texte courant (WCAG, 4,5:1). Une couleur choisie ne peut pas rendre une facture illisible.
+- **`layoutInvoice(invoice, options)`** : la mise en page sans le PDF — pages d'instructions de dessin (texte, filet, aplat, logo), chacune reliée au champ de la facture qu'elle représente (`seller`, `lines[2].quantity`…, la syntaxe des chemins d'anomalie). Mêmes mesures que le PDF : un aperçu peint depuis ce résultat ne peut pas en diverger. Renvoie aussi les **mentions légales effectivement écrites** (`mentions`) et les **caractères absents de la police** (`missingGlyphs`).
+- `display` : informations facultatives à afficher (numéros de ligne, références d'article, contacts, adresses électroniques, coordonnées bancaires, références facultatives, mention « Facture électronique Factur-X »). Aucune option ne masque une mention obligatoire.
+- `locale` : nombres et dates à la française (`2 880,00 €`, `11/09/2026`) ou à l'anglaise (`€2,880.00`, `11 Sep 2026`) ; par défaut, la langue des libellés.
+- Codes d'erreur `GLYPH_MISSING`, `FONT_INVALID`, `INVALID_IMAGE` et `INVALID_OPTION` sur `FacturXPdfError`.
+
+### Modifié
+- La page lisible porte désormais **toutes les mentions obligatoires** que le modèle contient : nature de l'opération, date **ou période** de livraison, adresse de livraison, bon de commande, facture d'origine d'un avoir ou d'une rectificative, **mentions d'exonération** (texte BT-120, sinon libellé du code VATEX — « TVA non applicable, art. 293 B du CGI » pour la franchise en base), option pour la TVA sur les débits, date d'exigibilité, « Autofacturation », détail de la TVA par taux, acomptes déduits, remises et frais détaillés, coordonnées de paiement et référence à rappeler. Un avoir affiche « Montant de l'avoir » au lieu de « Net à payer ».
+- Montants, quantités, taux et dates sont écrits dans la langue du document (`2 880,00 €` plutôt que `2880.00 EUR`) ; unités lisibles (`2 j`, `12 mois`), pays en toutes lettres hors de France, SIREN, SIRET et IBAN groupés.
+- La note `BAR` (traitement attendu) n'est plus imprimée : c'est une consigne pour la plateforme, pas une mention pour le lecteur.
+- `RenderLabels` gagne des clés **facultatives** pour les nouvelles mentions ; une table écrite pour la 1.5 reste valable, complétée par la langue de base.
+
+### Corrigé
+- Rendu : les **ligatures et alternatives contextuelles** sont désactivées. pdf-lib écrit les glyphes substitués sans reprendre leurs avances, ce qui décalait les mots contenant « tt » ou « ff » avec Geist ; mesure et dessin emploient désormais les mêmes fonctionnalités OpenType.
+- Rendu : un caractère **absent de la police** n'est plus écrit en glyphe `.notdef` (invisible, et refusé par PDF/A) : `renderInvoicePdf` lève `GLYPH_MISSING` en nommant le caractère et le champ. Les signes typographiques ont un repli simple (apostrophe courbe, tirets, espaces fines, `€` → `EUR`).
+- Rendu : une police **WOFF ou WOFF2** est refusée (`FONT_INVALID`) : pdf-lib l'aurait embarquée telle quelle comme programme TrueType, illisible.
+
+### Vérification
+- Chacun des six modèles, logo PNG transparent compris, rendu puis embarqué, est **PDF/A-3b selon veraPDF** en CI.
+
 ## [1.5.1] — 2026-09-16
 
 ### Corrigé

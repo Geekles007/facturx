@@ -68,7 +68,7 @@ Les entrées (XML, PDF) sont traitées comme non fiables : pas de DTD ni d'entit
 
 **Statuts du cycle de vie** (depuis la 1.1.0) : les quatre statuts transmissibles au portail public (200 Déposée, 210 Refusée, 212 Encaissée, 213 Rejetée — l'annexe 2 des spécifications externes n'en connaît pas d'autres pour une facture), les 40 motifs de refus normalisés, les règles de gestion vérifiées une à une (`validateLifecycleStatus`), et la sérialisation du message CDV (`toCdvXml`) validée contre le XSD **CDAR D22B** d'UN/CEFACT. Un message CDV est émis par une plateforme : cette partie s'adresse à qui en construit une.
 
-**Hors périmètre** : Order-X, écriture UBL, autofacturation, rendu PDF de la facture, conversion d'un PDF quelconque en PDF/A, envoi à une plateforme agréée, e-reporting, autres profils Factur-X (MINIMUM, BASIC, EXTENDED).
+**Hors périmètre** : Order-X, écriture UBL, autofacturation, conversion d'un PDF quelconque en PDF/A, envoi à une plateforme agréée, e-reporting, autres profils Factur-X (MINIMUM, BASIC, EXTENDED).
 
 ## En ligne de commande
 
@@ -91,12 +91,22 @@ const pdf = await renderInvoicePdf(invoice, {
   fonts: { regular: ttfBytes, bold: ttfBoldBytes },
   labels: 'fr',                                  // ou 'en', ou votre propre table
   footer: 'SARL au capital de 10 000 € · RCS Paris 443 061 841',
+  logo: { bytes: pngBytes, type: 'png' },
+  theme: {
+    template: 'modern',                          // classic, modern, minimal, letterhead, cards, compact
+    accent: '#2f4bd8',
+    style: { rows: 'zebra', corners: 'rounded' }, // réglages fins, par-dessus le modèle
+    logo: { position: 'right', height: 40 },
+  },
+  display: { lineNumbers: true, facturxNotice: true },
 });
 
 const facturX = await embedFacturX(pdf, { invoice }, { outputIntent: { iccProfile: srgb } });
 ```
 
-Les mentions légales de la page viennent de la même source que le XML : le lisible et le structuré ne peuvent pas diverger. La chaîne complète — rendu puis embarquement — est vérifiée par veraPDF en intégration continue.
+La page porte **toutes les mentions obligatoires** que la facture contient — identités et identifiants, nature de l'opération, date ou période de livraison, bon de commande, facture d'origine, TVA par taux et mentions d'exonération (« TVA non applicable, art. 293 B du CGI »…), option sur les débits, échéance, pénalités, indemnité, escompte — et **aucun réglage ne les retire** : un thème change l'apparence, jamais le contenu. La couleur non plus ne peut rendre la page illisible : le texte posé dessus est assombri ou inversé jusqu'au contraste recommandé (WCAG). Les mentions de paiement viennent de la même source que le XML : le lisible et le structuré ne peuvent pas diverger. Chacun des six modèles, rendu puis embarqué, passe veraPDF en intégration continue.
+
+`layoutInvoice(invoice, options)` donne la même mise en page **sans produire de PDF** : des instructions de dessin par page, chacune reliée au champ de la facture qu'elle représente, les mentions écrites et les caractères absents de la police. C'est de quoi peindre un aperçu (SVG, canvas) qui ne peut pas diverger du document final. Un caractère que la police ne sait pas dessiner fait lever `GLYPH_MISSING` au rendu, plutôt que d'écrire un glyphe vide refusé par PDF/A.
 
 ## Installation
 
