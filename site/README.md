@@ -1,6 +1,6 @@
 # Site
 
-Deux pages : la présentation (`index.html`) et le **validateur en ligne** (`validateur/`), qui exécute les schematrons officiels dans le navigateur de l'utilisateur — aucun fichier n'est transmis.
+Trois pages : la présentation (`index.html`), le **validateur en ligne** (`validateur/`), qui exécute les schematrons officiels dans le navigateur de l'utilisateur — aucun fichier n'est transmis —, et le **Studio** (`studio/`), où l'on compose une facture conforme à son image, dans le navigateur lui aussi. Chacune a sa version anglaise sous `en/`.
 
 ## Déployer avec Coolify
 
@@ -129,6 +129,20 @@ clic ne laisse alors aucune trace.
 Enfin, `--ignore-crawlers` écarte les robots des visites, et ceux-ci n'exécutent de toute façon pas
 le JavaScript : le décompte ne voit que des contrôles humains.
 
+## Le Studio
+
+`/studio/` (et `/en/studio/`) compose une facture Factur-X de bout en bout : saisie, apparence, contrôle, PDF. Les sources sont dans `site-src/studio/` (TypeScript et TSX, avec Preact) ; `pnpm site:build` les réunit dans `site/studio/app.js` et ses fragments, et copie les polices proposées dans `site/studio/polices/`. Le Studio n'emploie que l'API publique du SDK : ce qu'il sait faire, un développeur le fait avec les mêmes appels, et l'onglet « Code » les écrit.
+
+**Rien n'est transmis.** Le Studio n'a pas de serveur : brouillon, entreprise, clients, catalogue, historique des factures émises (PDF compris) et numérotation vivent dans IndexedDB, dans le navigateur du visiteur, et nulle part ailleurs. L'onglet « Bibliothèque › Sauvegarde » télécharge l'ensemble dans un fichier que le visiteur garde où il veut, et le restaure. Si le stockage est indisponible (navigation privée stricte), le Studio travaille en mémoire et le dit dans un bandeau.
+
+**Ce qu'il emprunte.** Le runtime XSLT, les trois schematrons et le code du validateur servent aussi aux « Validateurs officiels » de l'onglet Contrôle : la page les désigne par `data-assets="../validateur/"`, sans copie. La page anglaise déclare en plus `data-studio="../../studio/"` pour les polices et le bundle.
+
+**Les polices.** Sept familles libres (licence SIL OFL) : Geist et Geist Mono (paquet `geist`), Inter, IBM Plex Sans, DM Sans, Source Serif 4 et Libre Baskerville (paquets `@expo-google-fonts/*`, qui livrent des TTF statiques). Statiques, et en TTF plutôt qu'en WOFF : le SDK les embarque telles quelles dans chaque PDF/A produit. Leurs licences sont réunies dans `polices/LICENCES.txt`, lié depuis le pied de l'éditeur. Environ 3 Mo au total, chargés à la demande : la page ne télécharge que la police employée (Geist par défaut), et les autres quand on ouvre l'onglet Apparence, qui en montre un échantillon.
+
+**Le décompte.** Comme le validateur (voir plus bas), le Studio demande `GET /studio/compteur/facture` à chaque PDF Factur-X produit — émission ou téléchargement —, et nginx répond **204, sans corps**. Ni contenu, ni montant, ni nom, ni cookie, ni identifiant : le chemin, et rien d'autre. Le pied de l'éditeur le dit en clair. La page anglaise compte au même chemin. Dans GoAccess, panneau **Requested Files**, ligne `/studio/compteur/facture` ; `/studio/` compte les ouvertures.
+
+**Vérifier.** Après déploiement, `/studio` doit rediriger vers `/studio/`, `curl -sI https://facturx.ibird.dev/studio/polices/geist-regular.ttf` répondre 200, et `/studio/compteur/facture` 204. Puis, dans un navigateur : l'exemple de la première visite doit afficher « Conforme », et l'onglet Contrôle le verdict des trois schematrons.
+
 ## Déployer sans Coolify (rsync)
 
 ### 1. Construire
@@ -181,9 +195,9 @@ le runtime XSLT, les trois jeux de règles et la base de codes.
 
 ## Ce qui est versionné, ce qui ne l'est pas
 
-Versionnés : les pages (`index.html`, `validateur/index.html`), les styles, `app.js` de la page d'accueil, les polices Geist (licence SIL OFL) et le favicon. Les sources du validateur sont dans `site-src/`, hors du dossier déployé.
+Versionnés : les pages (`index.html`, `validateur/index.html`, `studio/index.html` et leurs versions `en/`), les styles, `app.js` de la page d'accueil, les polices Geist (licence SIL OFL) et le favicon. Les sources du validateur et du Studio sont dans `site-src/`, hors du dossier déployé.
 
-Générés (ignorés par git, à reconstruire avant chaque déploiement) : `npm-downloads.json`, `validateur/app.js` et ses fragments, `validateur/vendor/` (runtime Saxon-JS et sa licence), `validateur/schemas/` (schematrons compilés, base de codes) et `validateur/exemples/` — dont `facture-exemple.pdf` et `facture-exemple-non-conforme.pdf`, deux PDF/A-3 Factur-X produits par le SDK à chaque construction (`scripts/example-invoice.mjs`, testés dans `pnpm site:check`).
+Générés (ignorés par git, à reconstruire avant chaque déploiement) : `npm-downloads.json`, `studio/app.js`, ses fragments et `studio/polices/`, `validateur/app.js` et ses fragments, `validateur/vendor/` (runtime Saxon-JS et sa licence), `validateur/schemas/` (schematrons compilés, base de codes) et `validateur/exemples/` — dont `facture-exemple.pdf` et `facture-exemple-non-conforme.pdf`, deux PDF/A-3 Factur-X produits par le SDK à chaque construction (`scripts/example-invoice.mjs`, testés dans `pnpm site:check`).
 
 ## Le nombre de téléchargements npm
 

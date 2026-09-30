@@ -14,5 +14,10 @@ site/validateur/vendor/
 site/validateur/schemas/
 site/validateur/exemples/
 
+# Studio : bundle et polices générés (pnpm site:build)
+site/studio/app.js
+site/studio/chunk-*.js
+site/studio/polices/
+
 # Page d'accueil : relevé des téléchargements npm (pnpm downloads:fetch)
 site/npm-downloads.json

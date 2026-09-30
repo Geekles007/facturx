@@ -3,6 +3,9 @@
   "include": ["site-src"],
   "compilerOptions": {
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    // Le Studio est écrit en TSX avec Preact ; le validateur, lui, reste sans bibliothèque.
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
     // Node n'est là que pour les tests ; esbuild refuse toute API Node dans le code du navigateur.
     "types": ["node"]
   }

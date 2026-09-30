@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Studio Factur-X — créez une facture conforme, à votre image, gratuitement</title>
+<meta name="description" content="Composez une facture électronique Factur-X conforme à la réforme : mentions obligatoires garanties, apparence personnalisable, contrôle par les validateurs officiels. Gratuit, sans compte, rien ne quitte votre navigateur.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#fafafa">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
+<meta property="og:title" content="Studio Factur-X">
+<meta property="og:description" content="Une facture Factur-X conforme, à votre image, sans rien envoyer nulle part.">
+<meta property="og:url" content="https://facturx.ibird.dev/studio/">
+<link rel="canonical" href="https://facturx.ibird.dev/studio/">
+<link rel="alternate" hreflang="fr" href="https://facturx.ibird.dev/studio/">
+<link rel="alternate" hreflang="en" href="https://facturx.ibird.dev/en/studio/">
+<link rel="alternate" hreflang="x-default" href="https://facturx.ibird.dev/studio/">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="preload" href="../fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="studio.css">
+</head>
+<!-- data-assets : le runtime XSLT et les schematrons du validateur, empruntés sans copie. -->
+<body data-assets="../validateur/">
+<a class="skip" href="#contenu">Aller au contenu</a>
+<div id="studio">
+  <div class="boot">
+    <p class="boot-brand">facturx <b>Studio</b></p>
+    <p class="boot-text">Chargement du Studio…</p>
+  </div>
+  <noscript>
+    <div class="noscript-studio">
+      <h1>Studio Factur-X</h1>
+      <p>Le Studio compose, contrôle et produit votre facture entièrement dans votre navigateur : il a besoin de JavaScript. Aucune donnée n'est transmise pour autant. Sans JavaScript, le SDK reste utilisable depuis <a href="https://www.npmjs.com/package/facturx-sdk">npm</a>.</p>
+      <p><a href="../">Retour à l'accueil</a></p>
+    </div>
+  </noscript>
+</div>
+<script src="app.js" type="module"></script>
+</body>
+</html>

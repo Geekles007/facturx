@@ -30,6 +30,12 @@ Réception obligatoire pour **toutes** les entreprises au 1er septembre 2026, é
 
 Tout s'exécute **dans le navigateur** : aucun fichier n'est transmis. Les jeux de règles sont ceux de la CI de ce dépôt. Le contrôle PDF/A-3 par veraPDF n'y figure pas — il exige Java, donc un serveur ; il reste exécuté ici à chaque commit.
 
+## Studio
+
+**[facturx.ibird.dev/studio](https://facturx.ibird.dev/studio/)** — composez une facture Factur-X, gratuitement et sans compte : tous les types de documents (facture, avoir, acompte, rectificative…), lignes, remises et frais répartis par taux de TVA, exonérations, livraison, paiement, références, pièces jointes. Six modèles, votre couleur, votre police, votre logo — et toutes les mentions obligatoires, qu'aucun réglage ne retire.
+
+Le Studio est une vitrine honnête du SDK : il n'emploie que son API publique (`computeTotals`, `validateInvoice`, `layoutInvoice`, `renderInvoicePdf`, `embedFacturX`, `withDeposits`…) et montre, dans son onglet « Code », le programme TypeScript exact qui produit la facture affichée. Il contrôle en direct avec le SDK puis avec les trois schematrons officiels, et son aperçu est peint depuis la mise en page même du PDF — un clic sur un bloc mène au champ qui l'a produit. Entreprise, clients, catalogue, historique et numérotation restent **dans le navigateur** (IndexedDB) : rien n'est transmis.
+
 ## Exemples exécutables
 
 | Exemple | Ce qu'il montre |
@@ -106,7 +112,7 @@ const facturX = await embedFacturX(pdf, { invoice }, { outputIntent: { iccProfil
 
 La page porte **toutes les mentions obligatoires** que la facture contient — identités et identifiants, nature de l'opération, date ou période de livraison, bon de commande, facture d'origine, TVA par taux et mentions d'exonération (« TVA non applicable, art. 293 B du CGI »…), option sur les débits, échéance, pénalités, indemnité, escompte — et **aucun réglage ne les retire** : un thème change l'apparence, jamais le contenu. La couleur non plus ne peut rendre la page illisible : le texte posé dessus est assombri ou inversé jusqu'au contraste recommandé (WCAG). Les mentions de paiement viennent de la même source que le XML : le lisible et le structuré ne peuvent pas diverger. Chacun des six modèles, rendu puis embarqué, passe veraPDF en intégration continue.
 
-`layoutInvoice(invoice, options)` donne la même mise en page **sans produire de PDF** : des instructions de dessin par page, chacune reliée au champ de la facture qu'elle représente, les mentions écrites et les caractères absents de la police. C'est de quoi peindre un aperçu (SVG, canvas) qui ne peut pas diverger du document final. Un caractère que la police ne sait pas dessiner fait lever `GLYPH_MISSING` au rendu, plutôt que d'écrire un glyphe vide refusé par PDF/A.
+`layoutInvoice(invoice, options)` donne la même mise en page **sans produire de PDF** : des instructions de dessin par page, chacune reliée au champ de la facture qu'elle représente, les mentions écrites et les caractères absents de la police. C'est de quoi peindre un aperçu (SVG, canvas) qui ne peut pas diverger du document final — celui du [Studio](https://facturx.ibird.dev/studio/) est fait ainsi. Un caractère que la police ne sait pas dessiner fait lever `GLYPH_MISSING` au rendu, plutôt que d'écrire un glyphe vide refusé par PDF/A.
 
 ## Installation
 
