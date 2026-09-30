@@ -12,7 +12,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { sepaQrPayload, toCiiXml } from 'facturx-sdk';
-import { extractInvoice } from 'facturx-sdk/pdf';
+import { extractInvoice, type InvoiceLayout } from 'facturx-sdk/pdf';
 import { describe, expect, it } from 'vitest';
 import { type Appearance, defaultAppearance } from './library.js';
 import { buildInvoice } from './model.js';
@@ -47,8 +47,14 @@ const VARIANTS: [string, Appearance, Assets['fonts']][] = [
     GEIST,
   ],
   [
-    'papier à lettre, police à empattements, document en anglais',
-    { ...defaultAppearance(), template: 'letterhead', language: 'en', font: 'baskerville' },
+    'papier à lettre, police à empattements, document en anglais, QR code de paiement',
+    {
+      ...defaultAppearance(),
+      template: 'letterhead',
+      language: 'en',
+      font: 'baskerville',
+      display: { facturxNotice: true, paymentQrCode: true },
+    },
     BASKERVILLE,
   ],
 ];
@@ -68,17 +74,21 @@ describe('PDF Factur-X produit par le Studio', () => {
     expect(read?.xml).toBe(toCiiXml(invoice));
   });
 
-  it('imprime par défaut le QR code de paiement de l’exemple, sous une légende renommable', async () => {
+  it('propose le QR code de paiement en option, sous une légende renommable', async () => {
     const { invoice } = buildInvoice(sampleForm('2026-09-30'));
     expect(sepaQrPayload(invoice).available).toBe(true);
-    const layout = await layoutFor(invoice, defaultAppearance(), { fonts: GEIST });
-    expect(layout.pages.flatMap((p) => p.ops).filter((o) => o.kind === 'qr')).toHaveLength(1);
-    const renamed = await layoutFor(
-      invoice,
-      { ...defaultAppearance(), labels: { scanToPay: 'Payer avec sa banque' } },
-      { fonts: GEIST },
-    );
-    const texts = renamed.pages.flatMap((p) =>
+    const qrCodes = (layout: InvoiceLayout) =>
+      layout.pages.flatMap((p) => p.ops).filter((o) => o.kind === 'qr');
+    // Désactivé par défaut, comme dans le SDK.
+    expect(qrCodes(await layoutFor(invoice, defaultAppearance(), { fonts: GEIST }))).toEqual([]);
+    const chosen: Appearance = {
+      ...defaultAppearance(),
+      display: { ...defaultAppearance().display, paymentQrCode: true },
+      labels: { scanToPay: 'Payer avec sa banque' },
+    };
+    const layout = await layoutFor(invoice, chosen, { fonts: GEIST });
+    expect(qrCodes(layout)).toHaveLength(1);
+    const texts = layout.pages.flatMap((p) =>
       p.ops.flatMap((o) => (o.kind === 'text' ? [o.text] : [])),
     );
     expect(texts).toContain('Payer avec sa banque');
