@@ -73,7 +73,7 @@ export const defaultAppearance = (): Appearance => ({
   language: 'fr',
   labels: {},
   footer: '',
-  display: { facturxNotice: true, paymentQrCode: true },
+  display: { facturxNotice: true },
   pageSize: 'A4',
 });
 
