@@ -2,7 +2,7 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Depuis 1.0.0, une rupture d'API n'arrive que dans une version majeure ; une nouvelle règle de validation est une version mineure.
 
-## [Non publié]
+## [1.6.0] — 2026-09-30
 
 ### Ajouté
 - **Thèmes de rendu** (`renderInvoicePdf(invoice, { theme })`) : six modèles — `classic`, `modern` (bandeau de couleur), `minimal`, `letterhead` (papier à en-tête), `cards`, `compact` —, une couleur d'accent, et neuf réglages fins surchargeables un par un (`theme.style` : en-tête, blocs des parties, en-tête et lignes du tableau, totaux, net à payer, casse du titre, densité, angles). Logo à gauche ou à droite, hauteur réglable ; format A4 ou Letter. `RENDER_TEMPLATES`, `buildPalette`, `contrastRatio`, `parseHexColor`, `PAGE_SIZES`.
@@ -29,6 +29,10 @@ Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Cha
 ### Vérification
 - Chacun des six modèles, logo PNG transparent compris, rendu puis embarqué, est **PDF/A-3b selon veraPDF** en CI ; de même avec le QR code de paiement.
 - L'encodeur QR produit, à masque égal, le symbole bit pour bit de la bibliothèque `qrcode` sur les quarante versions et les quatre niveaux ; en test, un décodeur indépendant (jsQR) relit chaque symbole, et la zone de silence est vérifiée vide dans les six modèles.
+
+### À savoir
+- **La page rendue change d'aspect** pour qui appelle déjà `renderInvoicePdf` : même signature, rien à modifier dans le code, mais des formats français et des mentions en plus (voir « Modifié »). Relisez une facture rendue avant de déployer.
+- Le **[Studio](https://facturx.ibird.dev/studio/)** compose une facture avec ces fonctions, gratuitement et sans compte, et écrit le code TypeScript qui la produit.
 
 ## [1.5.1] — 2026-09-16
 
@@ -212,6 +216,7 @@ Première version publiée : la boucle complète émission → réception pour l
 ### Documentation
 - Guide de la réforme (`docs/reforme.md`), journal des décisions (`docs/decisions.md`), trois exemples exécutés en CI (émission Node, réception Node, handler HTTP Web standard).
 
+[1.6.0]: https://github.com/Geekles007/facturx/releases/tag/v1.6.0
 [1.5.1]: https://github.com/Geekles007/facturx/releases/tag/v1.5.1
 [1.5.0]: https://github.com/Geekles007/facturx/releases/tag/v1.5.0
 [1.4.0]: https://github.com/Geekles007/facturx/releases/tag/v1.4.0
