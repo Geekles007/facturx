@@ -36,6 +36,12 @@ The in-depth guide, a readiness checklist and the known gaps are in [docs/reform
 
 Everything runs **in your browser**: no file is uploaded anywhere. The rule sets are the ones this repository runs in CI. The veraPDF PDF/A-3 check is not there — it needs Java, therefore a server — but it runs here on every commit.
 
+## Studio
+
+**[facturx.ibird.dev/en/studio](https://facturx.ibird.dev/en/studio/)** — compose a Factur-X invoice, free and without an account: every document type (invoice, credit note, prepayment, corrected invoice…), lines, allowances and charges split by VAT rate, exemptions, delivery, payment, references, attachments. Six templates, your colour, your font, your logo — and every mandatory statement, which no setting can remove.
+
+The Studio is an honest showcase of the SDK: it only uses the public API (`computeTotals`, `validateInvoice`, `layoutInvoice`, `renderInvoicePdf`, `embedFacturX`, `withDeposits`…) and its “Code” tab shows the exact TypeScript program that produces the invoice on screen. It checks live with the SDK, then with the three official schematrons, and its preview is painted from the PDF's own layout — clicking a block takes you to the field that produced it. Company, customers, catalogue, history and numbering stay **in the browser** (IndexedDB): nothing is sent anywhere.
+
 ## Install
 
 ```bash
@@ -78,7 +84,7 @@ const facturX = await embedFacturX(pdf, { invoice }, { outputIntent: { iccProfil
 
 The page carries **every mandatory statement** the invoice holds — parties and their identifiers, nature of the transaction, delivery date or period, purchase order, original invoice, VAT per rate and exemption statements (“TVA non applicable, art. 293 B du CGI”…), VAT-on-debits option, due date, late interest, recovery fee, discount — and **no setting removes them**: a theme changes the look, never the content. Nor can a colour make the page unreadable: text on it is darkened or inverted until it reaches the recommended contrast (WCAG). Numbers and dates follow the document language (`€2,880.00`, `11 Sep 2026` in English; `2 880,00 €`, `11/09/2026` in French). The payment statements come from the same source as the XML, so the page and the structured data cannot drift apart. Each of the six templates, rendered then embedded, passes veraPDF in continuous integration.
 
-`layoutInvoice(invoice, options)` returns the same layout **without producing a PDF**: drawing instructions per page, each tied to the invoice field it represents, the statements printed and the characters missing from the font. That is enough to paint a preview (SVG, canvas) that cannot drift from the final document. A character the font cannot draw raises `GLYPH_MISSING` at render time, rather than writing an empty glyph that PDF/A refuses.
+`layoutInvoice(invoice, options)` returns the same layout **without producing a PDF**: drawing instructions per page, each tied to the invoice field it represents, the statements printed and the characters missing from the font. That is enough to paint a preview (SVG, canvas) that cannot drift from the final document — the [Studio](https://facturx.ibird.dev/en/studio/)'s preview works that way. A character the font cannot draw raises `GLYPH_MISSING` at render time, rather than writing an empty glyph that PDF/A refuses.
 
 ## Quick start
 
