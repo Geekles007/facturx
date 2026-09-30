@@ -32,6 +32,11 @@ export {
   resolveNotes,
   resolvePaymentTermsText,
 } from './payment-terms.js';
+export {
+  type SepaQrPayload,
+  type SepaQrUnavailableReason,
+  sepaQrPayload,
+} from './sepa-qr.js';
 export * from './types/index.js';
 export * from './validate/index.js';
 export * from './xml/index.js';

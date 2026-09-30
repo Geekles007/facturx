@@ -11,12 +11,12 @@ import { chmodSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } fro
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { toCiiXml } from 'facturx-sdk';
+import { sepaQrPayload, toCiiXml } from 'facturx-sdk';
 import { extractInvoice } from 'facturx-sdk/pdf';
 import { describe, expect, it } from 'vitest';
 import { type Appearance, defaultAppearance } from './library.js';
 import { buildInvoice } from './model.js';
-import { type Assets, buildFacturX } from './pipeline.js';
+import { type Assets, buildFacturX, layoutFor } from './pipeline.js';
 import { sampleForm } from './sample.js';
 
 const require = createRequire(import.meta.url);
@@ -66,6 +66,22 @@ describe('PDF Factur-X produit par le Studio', () => {
     expect(read?.invoice.id).toBe(invoice.id);
     expect(read?.invoice.totals).toEqual(invoice.totals);
     expect(read?.xml).toBe(toCiiXml(invoice));
+  });
+
+  it('imprime par défaut le QR code de paiement de l’exemple, sous une légende renommable', async () => {
+    const { invoice } = buildInvoice(sampleForm('2026-09-30'));
+    expect(sepaQrPayload(invoice).available).toBe(true);
+    const layout = await layoutFor(invoice, defaultAppearance(), { fonts: GEIST });
+    expect(layout.pages.flatMap((p) => p.ops).filter((o) => o.kind === 'qr')).toHaveLength(1);
+    const renamed = await layoutFor(
+      invoice,
+      { ...defaultAppearance(), labels: { scanToPay: 'Payer avec sa banque' } },
+      { fonts: GEIST },
+    );
+    const texts = renamed.pages.flatMap((p) =>
+      p.ops.flatMap((o) => (o.kind === 'text' ? [o.text] : [])),
+    );
+    expect(texts).toContain('Payer avec sa banque');
   });
 
   it.skipIf(!verapdf()).each(VARIANTS)(

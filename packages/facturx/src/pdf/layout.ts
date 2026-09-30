@@ -19,6 +19,7 @@
 
 import { type Cents, cents, type Rate } from '../money.js';
 import { resolveNotes } from '../payment-terms.js';
+import { sepaQrPayload } from '../sepa-qr.js';
 import { isCreditNoteType, isSelfBilledType } from '../types/codes.js';
 import type { Invoice } from '../types/invoice.js';
 import type { Line } from '../types/line.js';
@@ -26,6 +27,7 @@ import type { Party } from '../types/party.js';
 import type { FontMetrics } from './fonts.js';
 import { Formatter, type RenderLocale } from './format.js';
 import type { FullRenderLabels } from './labels.js';
+import { encodeQr } from './qr.js';
 import type { Palette, RenderStyle, resolveTheme } from './theme.js';
 
 // ---------- instructions ----------
@@ -95,7 +97,31 @@ export interface LayoutArea {
   ref: string;
 }
 
-export type LayoutOp = LayoutText | LayoutLine | LayoutRect | LayoutImage | LayoutArea;
+/**
+ * QR code, module par module : le peintre pose un carré sombre pour chaque `true`. La zone de
+ * silence — quatre modules clairs tout autour, sans laquelle un lecteur ne trouve pas le symbole —
+ * est réservée par la mise en page et reste vide.
+ */
+export interface LayoutQrCode {
+  kind: 'qr';
+  /** Coin inférieur gauche du symbole, zone de silence exclue. */
+  x: number;
+  y: number;
+  /** Côté du symbole. */
+  size: number;
+  /** Lignes de haut en bas, colonnes de gauche à droite : `true` pour un module sombre. */
+  modules: boolean[][];
+  color: string;
+  ref?: string;
+}
+
+export type LayoutOp =
+  | LayoutText
+  | LayoutLine
+  | LayoutRect
+  | LayoutImage
+  | LayoutQrCode
+  | LayoutArea;
 
 export interface LayoutPage {
   width: number;
@@ -173,6 +199,13 @@ export interface RenderDisplay {
   /** Coordonnées de paiement : IBAN, BIC, mandat de prélèvement. Défaut : oui. */
   paymentDetails?: boolean;
   /**
+   * QR code de paiement SEPA (EPC069-12) à droite des coordonnées de paiement : une application
+   * bancaire y lit bénéficiaire, IBAN, BIC, montant à payer et référence. Imprimé seulement si la
+   * facture s'y prête — en euros, réglée par virement sur un IBAN valide, avec un montant à payer :
+   * `sepaQrPayload` dit pourquoi quand ce n'est pas le cas. Défaut : non.
+   */
+  paymentQrCode?: boolean;
+  /**
    * Références facultatives : contrat, projet, commande vendeur, avis, lot… Le bon de commande et
    * la facture d'origine, mentions obligatoires, sont écrits dans tous les cas. Défaut : oui.
    */
@@ -187,6 +220,7 @@ export const DEFAULT_DISPLAY: Readonly<Required<RenderDisplay>> = {
   contacts: true,
   electronicAddresses: false,
   paymentDetails: true,
+  paymentQrCode: false,
   references: true,
   facturxNotice: false,
 };
@@ -254,6 +288,8 @@ const CAP = 0.8;
 /** Place laissée sous la ligne de base de la dernière ligne, en proportion du corps. */
 const DESCENT = 0.28;
 const COLUMN_GAP = 14;
+/** Côté minimal d'un module de QR code : 0,4 mm, en points. */
+const MIN_QR_MODULE = (0.4 / 25.4) * 72;
 
 /** Caractères de contrôle, jamais dessinés ; sauts de ligne et tabulations sont traités avant. */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: c'est précisément leur rôle.
@@ -491,6 +527,10 @@ class Composer {
 
   image(x: number, y: number, width: number, height: number): void {
     this.page.ops.push({ kind: 'image', x, y, width, height, ref: 'logo' });
+  }
+
+  qr(x: number, y: number, size: number, modules: boolean[][], ref: string): void {
+    this.page.ops.push({ kind: 'qr', x, y, size, modules, color: this.p.ink, ref });
   }
 
   /** Zone d'un bloc, de `top` à `bottom`. */
@@ -1770,12 +1810,28 @@ function paymentParagraphs(c: Composer): Paragraph[] {
   return out;
 }
 
+/** Élément posé en haut à droite d'un bloc de paragraphes, qui s'écrivent à sa gauche. */
+interface Aside {
+  /** Largeur retirée aux paragraphes, écart compris. */
+  width: number;
+  height: number;
+  /** Dessine l'élément, son haut à `top`, son bord droit sur la marge. */
+  draw: (top: number) => void;
+}
+
 /** Paragraphes précédés d'une étiquette, qui ne reste jamais seule en bas de page. */
-function drawParagraphs(c: Composer, caption: string, paragraphs: Paragraph[], size: number): void {
-  if (paragraphs.length === 0) return;
+function drawParagraphs(
+  c: Composer,
+  caption: string,
+  paragraphs: Paragraph[],
+  size: number,
+  aside?: Aside,
+): void {
+  if (paragraphs.length === 0 && !aside) return;
+  const width = c.CW - (aside?.width ?? 0);
   const wrapped = paragraphs.map((p) => ({
     ...p,
-    lines: c.wrap(p.text, size, c.CW, p.strong ? 'bold' : 'regular'),
+    lines: c.wrap(p.text, size, width, p.strong ? 'bold' : 'regular'),
   }));
   const lead = size * c.s.lead;
   c.y -= c.s.gap;
@@ -1785,13 +1841,16 @@ function drawParagraphs(c: Composer, caption: string, paragraphs: Paragraph[], s
     total <= c.pageCapacity / 3
       ? total
       : c.captionHeight + c.blockHeight(Math.min(2, wrapped[0]?.lines.length ?? 1), size);
-  c.ensure(keep);
+  c.ensure(Math.max(keep, aside?.height ?? 0));
+  const blockTop = c.y;
+  const blockPage = c.page;
+  aside?.draw(blockTop);
   c.y = c.caption(caption, c.M, c.y, c.p.muted);
   for (const p of wrapped) {
     let top = c.y;
     for (const l of p.lines) {
       if (c.y - lead < c.bottom) {
-        c.area(c.M, top, c.CW, c.y, p.ref);
+        c.area(c.M, top, width, c.y, p.ref);
         c.ensure(lead);
         top = c.y;
       }
@@ -1803,10 +1862,47 @@ function drawParagraphs(c: Composer, caption: string, paragraphs: Paragraph[], s
       });
       c.y -= lead;
     }
-    c.area(c.M, top, c.CW, c.y, p.ref);
+    c.area(c.M, top, width, c.y, p.ref);
     c.y -= 3;
     if (p.mention) c.mention(p.mention);
   }
+  // Le bloc descend au moins jusqu'au bas de l'élément, si les paragraphes sont restés sur sa page.
+  if (aside && c.page === blockPage) c.y = Math.min(c.y, blockTop - aside.height);
+}
+
+/**
+ * QR code de paiement SEPA, en haut à droite du bloc de règlement, sous le net à payer. Absent si
+ * l'option n'est pas demandée ou si la facture ne s'y prête pas (voir `sepaQrPayload`).
+ */
+function paymentQr(c: Composer): Aside | undefined {
+  const { invoice, labels, display } = c.input;
+  if (!display.paymentQrCode) return undefined;
+  const sepa = sepaQrPayload(invoice);
+  if (!sepa.available) return undefined;
+  // Niveau M, comme le veut le format ; 331 octets au plus, donc version 13 au plus.
+  const { modules } = encodeQr(new TextEncoder().encode(sepa.payload), { level: 'M' });
+  // Un pouce de côté (un peu moins en compact), davantage si les données sont longues : un module
+  // ne descend jamais sous 0,4 mm, ce que lit n'importe quel téléphone.
+  const size = Math.max(c.style.density === 'compact' ? 64 : 72, modules.length * MIN_QR_MODULE);
+  const quiet = (4 * size) / modules.length;
+  const legend = c.wrap(labels.scanToPay, c.s.tiny, size).slice(0, 2);
+  const height = size + quiet + c.blockHeight(legend.length, c.s.tiny);
+  const ref = `paymentMeans[${sepa.paymentMeansIndex}]`;
+  return {
+    width: size + Math.max(20, quiet + 8),
+    height,
+    draw: (top) => {
+      const x = c.M + c.CW - size;
+      c.qr(x, top - size, size, modules, ref);
+      c.lines(legend, x + size / 2, top - size - quiet, {
+        size: c.s.tiny,
+        color: c.p.muted,
+        align: 'center',
+        ref,
+      });
+      c.area(x, top, size, top - height, ref);
+    },
+  };
 }
 
 function drawConditions(c: Composer): void {
@@ -1907,7 +2003,7 @@ export function composeInvoice(input: LayoutInput): InvoiceLayout {
   drawInfo(c);
   drawLines(c);
   drawTotals(c);
-  drawParagraphs(c, input.labels.payment, paymentParagraphs(c), c.s.small + 0.5);
+  drawParagraphs(c, input.labels.payment, paymentParagraphs(c), c.s.small + 0.5, paymentQr(c));
   drawConditions(c);
   drawNotes(c);
   drawNotice(c);

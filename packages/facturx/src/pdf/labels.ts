@@ -128,6 +128,8 @@ export interface RenderLabels {
   };
   /** Référence de paiement à rappeler (BT-83). */
   remittance?: string;
+  /** Légende du QR code de paiement SEPA. */
+  scanToPay?: string;
   /** Autres notes de la facture (BG-1). */
   notes?: string;
   /** Unités lisibles (UN/ECE Rec. 20), par code. Un code absent s'affiche tel quel. */
@@ -273,6 +275,7 @@ const FR: FullRenderLabels = {
     debitedAccount: 'Compte débité',
   },
   remittance: 'Référence à rappeler',
+  scanToPay: 'Scannez pour payer',
   notes: 'Informations',
   units: {
     C62: 'u',
@@ -466,6 +469,7 @@ const EN: FullRenderLabels = {
     debitedAccount: 'Debited account',
   },
   remittance: 'Payment reference',
+  scanToPay: 'Scan to pay',
   notes: 'Notes',
   units: {
     C62: 'unit',

@@ -29,6 +29,7 @@ export {
   type LayoutLine,
   type LayoutOp,
   type LayoutPage,
+  type LayoutQrCode,
   type LayoutRect,
   type LayoutText,
   type MissingGlyph,

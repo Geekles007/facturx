@@ -7,6 +7,7 @@
  * rédigée en anglais (réglage « Langue du document » de l'onglet Apparence).
  */
 
+import type { SepaQrUnavailableReason } from 'facturx-sdk';
 import type { PrintedMention } from 'facturx-sdk/pdf';
 
 const fr = {
@@ -409,6 +410,7 @@ const fr = {
       amountDue: 'Net à payer',
       paymentTerms: 'Conditions',
       notes: 'Informations',
+      scanToPay: 'Légende du QR code',
     } as Record<string, string>,
     display: 'Afficher',
     displays: {
@@ -417,9 +419,21 @@ const fr = {
       contacts: 'Contacts',
       electronicAddresses: 'Adresses électroniques',
       paymentDetails: 'Coordonnées bancaires',
+      paymentQrCode: 'QR code de paiement SEPA',
       references: 'Références facultatives',
       facturxNotice: 'Mention « Facture électronique Factur-X »',
     } as Record<string, string>,
+    qrHint:
+      'Lu par les applications bancaires (format EPC) : bénéficiaire, IBAN, montant à payer et référence, sans rien saisir.',
+    qrUnavailable: {
+      'credit-note': 'Pas de QR code sur un avoir : c’est vous qui remboursez.',
+      currency: 'Pas de QR code : un virement SEPA se fait en euros.',
+      amount: 'Pas de QR code : rien à payer, ou un montant au-delà de ce que permet le format.',
+      'no-transfer': 'Pas de QR code : ajoutez un virement avec votre IBAN, dans Paiement.',
+      'invalid-iban': 'Pas de QR code : l’IBAN du virement est invalide.',
+      'no-name': 'Pas de QR code : le nom du vendeur manque.',
+      'too-long': 'Pas de QR code : nom et référence de paiement trop longs pour le format.',
+    } satisfies Record<SepaQrUnavailableReason, string>,
     footer: 'Pied de page',
     footerHint: 'Deux lignes au plus : RCS, capital, code APE, site…',
     footerFromLegal: 'Reprendre les mentions légales',
@@ -977,6 +991,7 @@ const en: Strings = {
       amountDue: 'Amount due',
       paymentTerms: 'Terms',
       notes: 'Notes',
+      scanToPay: 'QR code caption',
     },
     display: 'Show',
     displays: {
@@ -985,8 +1000,20 @@ const en: Strings = {
       contacts: 'Contacts',
       electronicAddresses: 'Electronic addresses',
       paymentDetails: 'Bank details',
+      paymentQrCode: 'SEPA payment QR code',
       references: 'Optional references',
       facturxNotice: '“Factur-X electronic invoice” notice',
+    },
+    qrHint:
+      'Read by banking apps (EPC format): payee, IBAN, amount due and reference, with nothing to type.',
+    qrUnavailable: {
+      'credit-note': 'No QR code on a credit note: you are the one refunding.',
+      currency: 'No QR code: SEPA transfers are made in euros.',
+      amount: 'No QR code: nothing to pay, or an amount beyond what the format allows.',
+      'no-transfer': 'No QR code: add a credit transfer with your IBAN, under Payment.',
+      'invalid-iban': 'No QR code: the transfer’s IBAN is invalid.',
+      'no-name': 'No QR code: the seller’s name is missing.',
+      'too-long': 'No QR code: name and payment reference are too long for the format.',
     },
     footer: 'Footer',
     footerHint: 'Two lines at most: registration, capital, activity code, website…',

@@ -58,17 +58,32 @@ export function isValidVatId(value: string): boolean {
   return value.startsWith('FR') ? isValidFrenchVatId(value) : true;
 }
 
-/** IBAN : 15 à 34 caractères, pays + 2 chiffres de clé, contrôle mod 97 (ISO 7064). */
-export function isValidIban(value: string): boolean {
-  const iban = value.replace(/\s+/g, '').toUpperCase();
-  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(iban)) return false;
-  const rearranged = iban.slice(4) + iban.slice(0, 4);
+/** Clé mod 97 (ISO 7064) des IBAN et des références ISO 11649 : les quatre premiers caractères passent à la fin. */
+function mod97(value: string): number {
+  const rearranged = value.slice(4) + value.slice(0, 4);
   let remainder = 0;
   for (const ch of rearranged) {
     const chunk = /[A-Z]/.test(ch) ? String(ch.charCodeAt(0) - 55) : ch;
     for (const digit of chunk) remainder = (remainder * 10 + Number(digit)) % 97;
   }
-  return remainder === 1;
+  return remainder;
+}
+
+/** IBAN : 15 à 34 caractères, pays + 2 chiffres de clé, contrôle mod 97 (ISO 7064). */
+export function isValidIban(value: string): boolean {
+  const iban = value.replace(/\s+/g, '').toUpperCase();
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(iban)) return false;
+  return mod97(iban) === 1;
+}
+
+/**
+ * Référence de créancier ISO 11649 (« RF18 5390 0754 7034 ») : `RF`, 2 chiffres de clé, puis 1 à
+ * 21 caractères alphanumériques, contrôle mod 97. Espaces et casse sont ignorés.
+ */
+export function isValidCreditorReference(value: string): boolean {
+  const reference = value.replace(/\s+/g, '').toUpperCase();
+  if (!/^RF\d{2}[A-Z0-9]{1,21}$/.test(reference)) return false;
+  return mod97(reference) === 1;
 }
 
 /** BIC / SWIFT : 8 ou 11 caractères (banque 4, pays 2, localisation 2, agence 3). */
