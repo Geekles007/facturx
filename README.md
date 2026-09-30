@@ -32,7 +32,7 @@ Tout s'exécute **dans le navigateur** : aucun fichier n'est transmis. Les jeux 
 
 ## Studio
 
-**[facturx.ibird.dev/studio](https://facturx.ibird.dev/studio/)** — composez une facture Factur-X, gratuitement et sans compte : tous les types de documents (facture, avoir, acompte, rectificative…), lignes, remises et frais répartis par taux de TVA, exonérations, livraison, paiement, références, pièces jointes. Six modèles, votre couleur, votre police, votre logo — et toutes les mentions obligatoires, qu'aucun réglage ne retire.
+**[facturx.ibird.dev/studio](https://facturx.ibird.dev/studio/)** — composez une facture Factur-X, gratuitement et sans compte : tous les types de documents (facture, avoir, acompte, rectificative…), lignes, remises et frais répartis par taux de TVA, exonérations, livraison, paiement, références, pièces jointes. Six modèles, votre couleur, votre police, votre logo, un QR code de paiement SEPA — et toutes les mentions obligatoires, qu'aucun réglage ne retire.
 
 Le Studio est une vitrine honnête du SDK : il n'emploie que son API publique (`computeTotals`, `validateInvoice`, `layoutInvoice`, `renderInvoicePdf`, `embedFacturX`, `withDeposits`…) et montre, dans son onglet « Code », le programme TypeScript exact qui produit la facture affichée. Il contrôle en direct avec le SDK puis avec les trois schematrons officiels, et son aperçu est peint depuis la mise en page même du PDF — un clic sur un bloc mène au champ qui l'a produit. Entreprise, clients, catalogue, historique et numérotation restent **dans le navigateur** (IndexedDB) : rien n'est transmis.
 
@@ -104,13 +104,15 @@ const pdf = await renderInvoicePdf(invoice, {
     style: { rows: 'zebra', corners: 'rounded' }, // réglages fins, par-dessus le modèle
     logo: { position: 'right', height: 40 },
   },
-  display: { lineNumbers: true, facturxNotice: true },
+  display: { lineNumbers: true, paymentQrCode: true }, // QR code de paiement SEPA
 });
 
 const facturX = await embedFacturX(pdf, { invoice }, { outputIntent: { iccProfile: srgb } });
 ```
 
 La page porte **toutes les mentions obligatoires** que la facture contient — identités et identifiants, nature de l'opération, date ou période de livraison, bon de commande, facture d'origine, TVA par taux et mentions d'exonération (« TVA non applicable, art. 293 B du CGI »…), option sur les débits, échéance, pénalités, indemnité, escompte — et **aucun réglage ne les retire** : un thème change l'apparence, jamais le contenu. La couleur non plus ne peut rendre la page illisible : le texte posé dessus est assombri ou inversé jusqu'au contraste recommandé (WCAG). Les mentions de paiement viennent de la même source que le XML : le lisible et le structuré ne peuvent pas diverger. Chacun des six modèles, rendu puis embarqué, passe veraPDF en intégration continue.
+
+**QR code de paiement SEPA** (`display.paymentQrCode`) : le format EPC069-12, que lisent les applications bancaires, imprimé à côté de l'IBAN — bénéficiaire, compte, montant à payer et référence, sans rien saisir. Il redit ce que porte la facture et ne s'imprime que si elle s'y prête : en euros, réglée par virement sur un IBAN valide, avec un montant à payer. `sepaQrPayload(invoice)` en donne le contenu, pour l'imprimer ailleurs, ou la raison de son absence. Tracé en vectoriel par un encodeur intégré : ni dépendance, ni image.
 
 `layoutInvoice(invoice, options)` donne la même mise en page **sans produire de PDF** : des instructions de dessin par page, chacune reliée au champ de la facture qu'elle représente, les mentions écrites et les caractères absents de la police. C'est de quoi peindre un aperçu (SVG, canvas) qui ne peut pas diverger du document final — celui du [Studio](https://facturx.ibird.dev/studio/) est fait ainsi. Un caractère que la police ne sait pas dessiner fait lever `GLYPH_MISSING` au rendu, plutôt que d'écrire un glyphe vide refusé par PDF/A.
 

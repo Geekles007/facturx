@@ -5,7 +5,7 @@
  * Et rien ne touche au contenu légal : l'encadré « Toujours imprimé » le rappelle.
  */
 
-import type { Invoice } from 'facturx-sdk';
+import { type Invoice, sepaQrPayload } from 'facturx-sdk';
 import {
   FacturXPdfError,
   type InvoiceLayout,
@@ -448,6 +448,7 @@ const LABEL_KEYS: LabelKey[] = [
   'amountDue',
   'paymentTerms',
   'notes',
+  'scanToPay',
 ];
 
 function LabelsEditor() {
@@ -477,6 +478,7 @@ const DISPLAY_KEYS = [
   'contacts',
   'electronicAddresses',
   'paymentDetails',
+  'paymentQrCode',
   'references',
   'facturxNotice',
 ] as const;
@@ -486,9 +488,21 @@ const DISPLAY_DEFAULTS: Record<(typeof DISPLAY_KEYS)[number], boolean> = {
   contacts: true,
   electronicAddresses: false,
   paymentDetails: true,
+  paymentQrCode: false,
   references: true,
   facturxNotice: false,
 };
+
+/** Ce que contient le QR code de paiement, ou pourquoi la facture n'en porte pas. */
+function PaymentQrHint() {
+  const { built } = useDerived();
+  const sepa = sepaQrPayload(built.invoice);
+  return sepa.available ? (
+    t.appearance.qrHint
+  ) : (
+    <span class="warn-text">{t.appearance.qrUnavailable[sepa.reason]}</span>
+  );
+}
 
 export function AppearancePanel() {
   const appearance = useStudio((s) => s.appearance);
@@ -564,14 +578,20 @@ export function AppearancePanel() {
       </section>
       <section class="panel-section">
         <h3>{t.appearance.display}</h3>
-        {DISPLAY_KEYS.map((key) => (
-          <Toggle
-            key={key}
-            checked={appearance.display[key] ?? DISPLAY_DEFAULTS[key]}
-            onValue={(value) => setAppearance({ display: { ...appearance.display, [key]: value } })}
-            label={t.appearance.displays[key]}
-          />
-        ))}
+        {DISPLAY_KEYS.map((key) => {
+          const checked = appearance.display[key] ?? DISPLAY_DEFAULTS[key];
+          return (
+            <Toggle
+              key={key}
+              checked={checked}
+              onValue={(value) =>
+                setAppearance({ display: { ...appearance.display, [key]: value } })
+              }
+              label={t.appearance.displays[key]}
+              hint={key === 'paymentQrCode' && checked ? <PaymentQrHint /> : undefined}
+            />
+          );
+        })}
       </section>
       <section class="panel-section">
         <h3>{t.appearance.labels}</h3>

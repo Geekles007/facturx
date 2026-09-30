@@ -9,6 +9,9 @@ Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Cha
 - **Contraste garanti** : le texte posé sur la couleur d'accent, ou écrit dans sa teinte, est assombri ou inversé jusqu'au contraste recommandé pour du texte courant (WCAG, 4,5:1). Une couleur choisie ne peut pas rendre une facture illisible.
 - **`layoutInvoice(invoice, options)`** : la mise en page sans le PDF — pages d'instructions de dessin (texte, filet, aplat, logo), chacune reliée au champ de la facture qu'elle représente (`seller`, `lines[2].quantity`…, la syntaxe des chemins d'anomalie). Mêmes mesures que le PDF : un aperçu peint depuis ce résultat ne peut pas en diverger. Renvoie aussi les **mentions légales effectivement écrites** (`mentions`) et les **caractères absents de la police** (`missingGlyphs`).
 - `display` : informations facultatives à afficher (numéros de ligne, références d'article, contacts, adresses électroniques, coordonnées bancaires, références facultatives, mention « Facture électronique Factur-X »). Aucune option ne masque une mention obligatoire.
+- **QR code de paiement SEPA** (`display.paymentQrCode`) : le format EPC069-12 (« GiroCode »), à droite des coordonnées de paiement, que lisent les applications bancaires — bénéficiaire, IBAN, BIC, montant à payer, référence —, pour un virement sans rien saisir. Dessiné en vectoriel, d'un seul tracé, par un encodeur QR intégré : aucune dépendance, aucune image, rien que PDF/A refuse. Imprimé seulement si la facture s'y prête : en euros, réglée par virement sur un IBAN valide, avec un montant à payer. Désactivé par défaut.
+- **`sepaQrPayload(invoice)`** (point d'entrée principal) : le contenu du QR code, pour l'imprimer ailleurs avec sa propre bibliothèque, ou la raison pour laquelle la facture ne peut pas en porter (`credit-note`, `currency`, `amount`, `no-transfer`, `invalid-iban`, `no-name`, `too-long`). Le bénéficiaire est le titulaire du compte (BT-85), sinon le bénéficiaire (BT-59), sinon le vendeur ; la référence de paiement (BT-83) passe en champ structuré si c'est une référence ISO 11649, et le numéro de facture la remplace à défaut.
+- `isValidCreditorReference` : contrôle d'une référence de créancier ISO 11649 (`RF18 5390 0754 7034`).
 - `locale` : nombres et dates à la française (`2 880,00 €`, `11/09/2026`) ou à l'anglaise (`€2,880.00`, `11 Sep 2026`) ; par défaut, la langue des libellés.
 - Codes d'erreur `GLYPH_MISSING`, `FONT_INVALID`, `INVALID_IMAGE` et `INVALID_OPTION` sur `FacturXPdfError`.
 
@@ -24,7 +27,8 @@ Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Cha
 - Rendu : une police **WOFF ou WOFF2** est refusée (`FONT_INVALID`) : pdf-lib l'aurait embarquée telle quelle comme programme TrueType, illisible.
 
 ### Vérification
-- Chacun des six modèles, logo PNG transparent compris, rendu puis embarqué, est **PDF/A-3b selon veraPDF** en CI.
+- Chacun des six modèles, logo PNG transparent compris, rendu puis embarqué, est **PDF/A-3b selon veraPDF** en CI ; de même avec le QR code de paiement.
+- L'encodeur QR produit, à masque égal, le symbole bit pour bit de la bibliothèque `qrcode` sur les quarante versions et les quatre niveaux ; en test, un décodeur indépendant (jsQR) relit chaque symbole, et la zone de silence est vérifiée vide dans les six modèles.
 
 ## [1.5.1] — 2026-09-16
 

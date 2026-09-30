@@ -1,8 +1,17 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
+import jsQR from 'jsqr';
+import type { PDFDocument, PDFFont } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
-import { cents, computeTotals, type Invoice, type InvoiceDraft, percent } from '../src/index.js';
+import {
+  cents,
+  computeTotals,
+  type Invoice,
+  type InvoiceDraft,
+  percent,
+  sepaQrPayload,
+} from '../src/index.js';
 import type { FontMetrics } from '../src/pdf/fonts.js';
 import {
   buildPalette,
@@ -11,6 +20,7 @@ import {
   type FacturXPdfError,
   FONT_FEATURES,
   type InvoiceLayout,
+  type LayoutQrCode,
   type LayoutText,
   layoutInvoice,
   RENDER_LABELS,
@@ -21,6 +31,7 @@ import {
 } from '../src/pdf/index.js';
 import { resolveLabels } from '../src/pdf/labels.js';
 import { composeInvoice } from '../src/pdf/layout.js';
+import { paintLayout } from '../src/pdf/paint.js';
 import { resolveTheme } from '../src/pdf/theme.js';
 import { testFonts } from './fixtures/fonts.js';
 import { fullInvoice, multiRateInvoice, simpleDraft, simpleInvoice } from './fixtures/invoices.js';
@@ -403,5 +414,162 @@ describe('libellés sur mesure', () => {
     expect(text).toContain('Rechnung');
     expect(text).toContain('BEZEICHNUNG');
     expect(text).toContain('Prestation de services'); // repli sur la table française
+  });
+});
+
+describe('QR code de paiement SEPA', () => {
+  const qrOps = (layout: InvoiceLayout) =>
+    layout.pages.flatMap((page, index) =>
+      page.ops.filter((o): o is LayoutQrCode => o.kind === 'qr').map((op) => ({ op, index })),
+    );
+
+  /** Relit les modules avec jsQR, un décodeur indépendant, zone de silence comprise. */
+  function decode(modules: boolean[][]): string | undefined {
+    const n = modules.length;
+    const scale = 4;
+    const width = (n + 8) * scale;
+    const data = new Uint8ClampedArray(width * width * 4).fill(255);
+    modules.forEach((row, y) => {
+      row.forEach((dark, x) => {
+        if (!dark) return;
+        for (let dy = 0; dy < scale; dy++) {
+          for (let dx = 0; dx < scale; dx++) {
+            const o = (((y + 4) * scale + dy) * width + (x + 4) * scale + dx) * 4;
+            data.fill(0, o, o + 3);
+          }
+        }
+      });
+    });
+    return jsQR(data, width, width)?.data;
+  }
+
+  it('n’est pas imprimé sans le demander', async () => {
+    const layout = await layoutInvoice(simpleInvoice(), { fonts });
+    expect(qrOps(layout)).toEqual([]);
+    expect(allText(layout)).not.toContain('Scannez pour payer');
+  });
+
+  it('se lit comme le virement de la facture, et désigne le moyen de paiement', async () => {
+    const invoice = multiRateInvoice();
+    const expected = sepaQrPayload(invoice);
+    expect(expected.available).toBe(true);
+    for (const template of Object.keys(RENDER_TEMPLATES) as RenderTemplate[]) {
+      const layout = await layoutInvoice(invoice, {
+        fonts,
+        theme: { template },
+        display: { paymentQrCode: true },
+      });
+      const found = qrOps(layout);
+      expect(found, template).toHaveLength(1);
+      const { op } = found[0] as { op: LayoutQrCode };
+      expect(op.ref).toBe('paymentMeans[0]');
+      expect(decode(op.modules), template).toBe(expected.available && expected.payload);
+      // 0,4 mm par module au moins.
+      expect(op.size / op.modules.length).toBeGreaterThanOrEqual((0.4 / 25.4) * 72);
+      expect(allText(layout)).toContain('Scannez pour payer');
+    }
+    const en = await layoutInvoice(invoice, {
+      fonts,
+      labels: 'en',
+      display: { paymentQrCode: true },
+    });
+    expect(allText(en)).toContain('Scan to pay');
+  });
+
+  it('garde vide la zone de silence : quatre modules tout autour', async () => {
+    for (const invoice of [simpleInvoice(), multiRateInvoice()]) {
+      for (const template of Object.keys(RENDER_TEMPLATES) as RenderTemplate[]) {
+        const layout = await layoutInvoice(invoice, {
+          fonts,
+          theme: { template },
+          display: { paymentQrCode: true },
+          footer: 'SAS au capital de 10 000 €',
+        });
+        const [found] = qrOps(layout);
+        if (!found) throw new Error(`pas de QR code (${template})`);
+        const { op, index } = found;
+        const quiet = (4 * op.size) / op.modules.length;
+        const zone = {
+          left: op.x - quiet,
+          right: op.x + op.size + quiet,
+          bottom: op.y - quiet,
+          top: op.y + op.size + quiet,
+        };
+        const page = layout.pages[index] as InvoiceLayout['pages'][number];
+        for (const o of page.ops) {
+          if (o.kind === 'qr' || o.kind === 'area') continue;
+          const box =
+            o.kind === 'text'
+              ? {
+                  left: o.x,
+                  right: o.x + o.width,
+                  bottom: o.y - o.size * 0.28,
+                  top: o.y + o.size * 0.8,
+                }
+              : o.kind === 'line'
+                ? {
+                    left: Math.min(o.x1, o.x2),
+                    right: Math.max(o.x1, o.x2),
+                    bottom: Math.min(o.y1, o.y2) - o.width / 2,
+                    top: Math.max(o.y1, o.y2) + o.width / 2,
+                  }
+                : { left: o.x, right: o.x + o.width, bottom: o.y, top: o.y + o.height };
+          const overlaps =
+            box.left < zone.right - 0.01 &&
+            box.right > zone.left + 0.01 &&
+            box.bottom < zone.top - 0.01 &&
+            box.top > zone.bottom + 0.01;
+          expect(overlaps, `${template} : ${o.kind} ${'text' in o ? o.text : ''}`).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('n’est pas imprimé quand la facture ne s’y prête pas', async () => {
+    // Prélèvement SEPA : rien à payer par virement.
+    const layout = await layoutInvoice(fullInvoice(), { fonts, display: { paymentQrCode: true } });
+    expect(sepaQrPayload(fullInvoice())).toEqual({ available: false, reason: 'no-transfer' });
+    expect(qrOps(layout)).toEqual([]);
+    expect(allText(layout)).not.toContain('Scannez pour payer');
+  });
+
+  it('se peint en un seul tracé, une suite de modules par rectangle', async () => {
+    const layout = await layoutInvoice(simpleInvoice(), {
+      fonts,
+      display: { paymentQrCode: true },
+    });
+    const [found] = qrOps(layout);
+    if (!found) throw new Error('pas de QR code');
+    const { op } = found;
+    const calls: { path: string; options: { x: number; y: number; scale: number } }[] = [];
+    const page = {
+      drawSvgPath: (path: string, options: { x: number; y: number; scale: number }) =>
+        calls.push({ path, options }),
+    };
+    const doc = { addPage: () => page } as unknown as PDFDocument;
+    const only: InvoiceLayout = {
+      ...layout,
+      pages: [{ width: 595.28, height: 841.89, ops: [op] }],
+    };
+    paintLayout(doc, only, { regular: {} as PDFFont, bold: {} as PDFFont }, undefined);
+    expect(calls).toHaveLength(1);
+    const { path, options } = calls[0] as (typeof calls)[number];
+    // Repère SVG de drawSvgPath : origine au coin supérieur gauche du symbole, y vers le bas.
+    expect(options).toMatchObject({
+      x: op.x,
+      y: op.y + op.size,
+      scale: op.size / op.modules.length,
+    });
+    const n = op.modules.length;
+    const painted = Array.from({ length: n }, () => new Array<boolean>(n).fill(false));
+    for (const [, x, y, w, back] of path.matchAll(/M(\d+) (\d+)h(\d+)v1h-(\d+)z/g)) {
+      expect(back).toBe(w);
+      for (let i = 0; i < Number(w); i++) {
+        const row = painted[Number(y)] as boolean[];
+        expect(row[Number(x) + i]).toBe(false);
+        row[Number(x) + i] = true;
+      }
+    }
+    expect(painted).toEqual(op.modules);
   });
 });

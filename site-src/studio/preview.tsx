@@ -78,9 +78,36 @@ function paint(
           preserveAspectRatio="none"
         />
       ) : null;
+    case 'qr':
+      return (
+        <path
+          key={key}
+          d={qrPath(op.modules)}
+          transform={`translate(${op.x} ${height - op.y - op.size}) scale(${op.size / op.modules.length})`}
+          fill={op.color}
+          shape-rendering="crispEdges"
+        />
+      );
     default:
       return null;
   }
+}
+
+/**
+ * Les modules sombres en un seul tracé, en unités de module : une suite de modules par rectangle,
+ * comme dans le PDF. Net à l'écran, et assez fidèle pour se scanner sur l'aperçu même.
+ */
+function qrPath(modules: boolean[][]): string {
+  let d = '';
+  modules.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) {
+      if (!row[x]) continue;
+      const start = x;
+      while (row[x + 1]) x++;
+      d += `M${start} ${y}h${x + 1 - start}v1h${start - x - 1}z`;
+    }
+  });
+  return d;
 }
 
 /** Le dessin d'une page ; recalculé seulement quand la page, la police ou le logo changent. */

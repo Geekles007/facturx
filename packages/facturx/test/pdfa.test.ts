@@ -123,6 +123,23 @@ describe.skipIf(!available)('conformité PDF/A-3b (veraPDF)', () => {
     },
     180_000,
   );
+
+  /** Le QR code de paiement SEPA : un seul tracé vectoriel plein, ni image ni transparence. */
+  it('le QR code de paiement SEPA est PDF/A-3b', async () => {
+    const icc = readFileSync(new URL('./fixtures/sRGB.icc', import.meta.url));
+    const invoice = multiRateInvoice();
+    const rendu = await renderInvoicePdf(invoice, {
+      fonts: testFonts,
+      theme: { template: 'modern' },
+      display: { paymentQrCode: true },
+    });
+    const pdf = await embedFacturX(
+      rendu,
+      { invoice },
+      { date: new Date('2026-09-11T10:00:00Z'), outputIntent: { iccProfile: new Uint8Array(icc) } },
+    );
+    expectPdfA3b(pdf);
+  }, 180_000);
 });
 
 /** Écrit le PDF puis oppose veraPDF à sa conformité, en nommant chaque règle en échec. */

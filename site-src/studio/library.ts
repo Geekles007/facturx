@@ -36,7 +36,8 @@ export type LabelKey =
   | 'netAmount'
   | 'amountDue'
   | 'paymentTerms'
-  | 'notes';
+  | 'notes'
+  | 'scanToPay';
 
 export interface Appearance {
   template: RenderTemplate;
@@ -72,7 +73,7 @@ export const defaultAppearance = (): Appearance => ({
   language: 'fr',
   labels: {},
   footer: '',
-  display: { facturxNotice: true },
+  display: { facturxNotice: true, paymentQrCode: true },
   pageSize: 'A4',
 });
 

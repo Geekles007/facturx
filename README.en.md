@@ -38,7 +38,7 @@ Everything runs **in your browser**: no file is uploaded anywhere. The rule sets
 
 ## Studio
 
-**[facturx.ibird.dev/en/studio](https://facturx.ibird.dev/en/studio/)** — compose a Factur-X invoice, free and without an account: every document type (invoice, credit note, prepayment, corrected invoice…), lines, allowances and charges split by VAT rate, exemptions, delivery, payment, references, attachments. Six templates, your colour, your font, your logo — and every mandatory statement, which no setting can remove.
+**[facturx.ibird.dev/en/studio](https://facturx.ibird.dev/en/studio/)** — compose a Factur-X invoice, free and without an account: every document type (invoice, credit note, prepayment, corrected invoice…), lines, allowances and charges split by VAT rate, exemptions, delivery, payment, references, attachments. Six templates, your colour, your font, your logo, a SEPA payment QR code — and every mandatory statement, which no setting can remove.
 
 The Studio is an honest showcase of the SDK: it only uses the public API (`computeTotals`, `validateInvoice`, `layoutInvoice`, `renderInvoicePdf`, `embedFacturX`, `withDeposits`…) and its “Code” tab shows the exact TypeScript program that produces the invoice on screen. It checks live with the SDK, then with the three official schematrons, and its preview is painted from the PDF's own layout — clicking a block takes you to the field that produced it. Company, customers, catalogue, history and numbering stay **in the browser** (IndexedDB): nothing is sent anywhere.
 
@@ -76,13 +76,15 @@ const pdf = await renderInvoicePdf(invoice, {
     style: { rows: 'zebra', corners: 'rounded' }, // fine-tuning, on top of the template
     logo: { position: 'right', height: 40 },
   },
-  display: { lineNumbers: true, facturxNotice: true },
+  display: { lineNumbers: true, paymentQrCode: true }, // SEPA payment QR code
 });
 
 const facturX = await embedFacturX(pdf, { invoice }, { outputIntent: { iccProfile: srgb } });
 ```
 
 The page carries **every mandatory statement** the invoice holds — parties and their identifiers, nature of the transaction, delivery date or period, purchase order, original invoice, VAT per rate and exemption statements (“TVA non applicable, art. 293 B du CGI”…), VAT-on-debits option, due date, late interest, recovery fee, discount — and **no setting removes them**: a theme changes the look, never the content. Nor can a colour make the page unreadable: text on it is darkened or inverted until it reaches the recommended contrast (WCAG). Numbers and dates follow the document language (`€2,880.00`, `11 Sep 2026` in English; `2 880,00 €`, `11/09/2026` in French). The payment statements come from the same source as the XML, so the page and the structured data cannot drift apart. Each of the six templates, rendered then embedded, passes veraPDF in continuous integration.
+
+**SEPA payment QR code** (`display.paymentQrCode`): the EPC069-12 format banking apps read, printed next to the IBAN — payee, account, amount due and reference, with nothing to type. It restates what the invoice holds and is only printed when the invoice lends itself to it: in euros, paid by transfer to a valid IBAN, with an amount due. `sepaQrPayload(invoice)` returns its content, to print it elsewhere, or why there is none. Drawn as vectors by a built-in encoder: no dependency, no image.
 
 `layoutInvoice(invoice, options)` returns the same layout **without producing a PDF**: drawing instructions per page, each tied to the invoice field it represents, the statements printed and the characters missing from the font. That is enough to paint a preview (SVG, canvas) that cannot drift from the final document — the [Studio](https://facturx.ibird.dev/en/studio/)'s preview works that way. A character the font cannot draw raises `GLYPH_MISSING` at render time, rather than writing an empty glyph that PDF/A refuses.
 
