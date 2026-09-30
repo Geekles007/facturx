@@ -41,7 +41,11 @@ jobs:
           key: samples-${{ hashFiles('scripts/fetch-samples.mjs') }}
       - run: pnpm samples:fetch
       - name: xmllint (validation XSD)
-        run: sudo apt-get install -y --no-install-recommends libxml2-utils >/dev/null
+        # L'index apt de l'image peut désigner une version déjà retirée du miroir (404) : on le
+        # rafraîchit avant d'installer.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libxml2-utils >/dev/null
       - name: veraPDF (shim Docker) dans le PATH
         run: |
           docker pull --quiet ghcr.io/verapdf/cli:latest
