@@ -50,8 +50,9 @@ const invoice = fromCiiXml(xmlString);           // validée ; FacturXParseError
 ## Ce que fait le SDK, et ce qu'il ne fait pas
 
 - ✅ Modèle `Invoice` annoté BT-xx + règles FR, monnaie en entiers (jamais de flottant), validation qui **ne corrige jamais en silence**, XML CII écriture/lecture, PDF/A-3 embed/extract, mentions de la réforme (SIREN acheteur, nature de l'opération, TVA sur les débits, avoirs).
+- ✅ **Page lisible** (`renderInvoicePdf`) : six modèles, couleur, police, logo — et toutes les mentions obligatoires, qu'aucun réglage ne retire ; `layoutInvoice` pour un aperçu fidèle sans PDF.
 - ✅ **Statuts du cycle de vie** : les quatre statuts transmissibles (200/210/212/213), les 40 motifs de refus normalisés, les règles de gestion officielles, et le message CDV écrit **et relu** (`toCdvXml` / `fromCdvXml`), validé contre le XSD CDAR D22B d'UN/CEFACT.
-- ❌ Envoi à une plateforme agréée, e-reporting, annuaire, UBL, autres profils Factur-X, conversion d'un PDF quelconque en PDF/A.
+- ❌ Envoi à une plateforme agréée, e-reporting, annuaire, écriture UBL (la lecture est prise en charge), autres profils Factur-X en écriture, conversion d'un PDF quelconque en PDF/A.
 
 Site : **https://facturx.ibird.dev/** · Documentation complète, guide de la réforme, exemples exécutables et journal des décisions : **https://github.com/Geekles007/facturx**
 

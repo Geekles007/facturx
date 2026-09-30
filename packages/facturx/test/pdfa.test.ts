@@ -4,9 +4,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
-import { embedFacturX, renderInvoicePdf } from '../src/pdf/index.js';
+import {
+  embedFacturX,
+  RENDER_TEMPLATES,
+  type RenderTemplate,
+  renderInvoicePdf,
+} from '../src/pdf/index.js';
 import { testFonts } from './fixtures/fonts.js';
-import { multiRateInvoice, simpleInvoice } from './fixtures/invoices.js';
+import { fullInvoice, multiRateInvoice, simpleInvoice } from './fixtures/invoices.js';
+import { testLogo } from './fixtures/logo.js';
 
 /**
  * Conformité PDF/A-3b vérifiée par veraPDF (référence ISO 19005), sur la couche que le SDK ajoute :
@@ -87,6 +93,36 @@ describe.skipIf(!available)('conformité PDF/A-3b (veraPDF)', () => {
     );
     expectPdfA3b(pdf);
   }, 120_000);
+
+  /**
+   * Chaque modèle, sur la facture la plus chargée : aplats, angles arrondis (chemins de Bézier),
+   * pastille du logo, et un logo PNG à transparence réelle — le masque que PDF/A-3 accepte à
+   * condition qu'une intention de sortie existe.
+   */
+  it.each(Object.keys(RENDER_TEMPLATES) as RenderTemplate[])(
+    'le modèle %s, logo transparent compris, est PDF/A-3b',
+    async (template) => {
+      const icc = readFileSync(new URL('./fixtures/sRGB.icc', import.meta.url));
+      const invoice = fullInvoice();
+      const rendu = await renderInvoicePdf(invoice, {
+        fonts: testFonts,
+        theme: { template },
+        logo: { bytes: testLogo(), type: 'png' },
+        footer: 'SAS au capital de 10 000 € · RCS Paris 443 061 841',
+        display: { facturxNotice: true, lineNumbers: true, electronicAddresses: true },
+      });
+      const pdf = await embedFacturX(
+        rendu,
+        { invoice },
+        {
+          date: new Date('2026-09-11T10:00:00Z'),
+          outputIntent: { iccProfile: new Uint8Array(icc) },
+        },
+      );
+      expectPdfA3b(pdf);
+    },
+    180_000,
+  );
 });
 
 /** Écrit le PDF puis oppose veraPDF à sa conformité, en nommant chaque règle en échec. */

@@ -63,12 +63,22 @@ const pdf = await renderInvoicePdf(invoice, {
   fonts: { regular: ttfBytes, bold: ttfBoldBytes },
   labels: 'en',                                  // or 'fr', or your own table
   footer: 'Acme Ltd · VAT GB123456789',
+  logo: { bytes: pngBytes, type: 'png' },
+  theme: {
+    template: 'modern',                          // classic, modern, minimal, letterhead, cards, compact
+    accent: '#2f4bd8',
+    style: { rows: 'zebra', corners: 'rounded' }, // fine-tuning, on top of the template
+    logo: { position: 'right', height: 40 },
+  },
+  display: { lineNumbers: true, facturxNotice: true },
 });
 
 const facturX = await embedFacturX(pdf, { invoice }, { outputIntent: { iccProfile: srgb } });
 ```
 
-The legal statements on the page come from the same source as the XML, so the human-readable page and the structured data cannot drift apart. The full chain — render then embed — is checked by veraPDF in continuous integration.
+The page carries **every mandatory statement** the invoice holds — parties and their identifiers, nature of the transaction, delivery date or period, purchase order, original invoice, VAT per rate and exemption statements (“TVA non applicable, art. 293 B du CGI”…), VAT-on-debits option, due date, late interest, recovery fee, discount — and **no setting removes them**: a theme changes the look, never the content. Nor can a colour make the page unreadable: text on it is darkened or inverted until it reaches the recommended contrast (WCAG). Numbers and dates follow the document language (`€2,880.00`, `11 Sep 2026` in English; `2 880,00 €`, `11/09/2026` in French). The payment statements come from the same source as the XML, so the page and the structured data cannot drift apart. Each of the six templates, rendered then embedded, passes veraPDF in continuous integration.
+
+`layoutInvoice(invoice, options)` returns the same layout **without producing a PDF**: drawing instructions per page, each tied to the invoice field it represents, the statements printed and the characters missing from the font. That is enough to paint a preview (SVG, canvas) that cannot drift from the final document. A character the font cannot draw raises `GLYPH_MISSING` at render time, rather than writing an empty glyph that PDF/A refuses.
 
 ## Quick start
 
@@ -189,7 +199,7 @@ No floating point, anywhere. `cents(1234)` is 12.34 €, `quantity(15000)` is 1.
 
 **Included**: the EN 16931 profile, commercial invoices (380), multi-rate VAT, line and document level allowances and charges, exemptions (E, AE, K, G, O, Z), French mandatory statements, credit notes (381, 261, 262, 396), prepayments (386), corrective invoices (384), self-billed (389) and factored (393) documents, and lifecycle statuses.
 
-**Out of scope**: Order-X, *writing* UBL, rendering the human-readable PDF, converting an arbitrary PDF to PDF/A, submitting anything to an accredited platform, e-reporting, and the other Factur-X profiles (MINIMUM, BASIC, EXTENDED — read tolerantly, written only at EN 16931).
+**Out of scope**: Order-X, *writing* UBL, converting an arbitrary PDF to PDF/A, submitting anything to an accredited platform, e-reporting, and the other Factur-X profiles (MINIMUM, BASIC, EXTENDED — read tolerantly, written only at EN 16931).
 
 ## Stability
 
