@@ -50,6 +50,14 @@ jobs:
         run: |
           curl -fsS -u stats:motdepassedetest -o /dev/null http://localhost:8080/stats/
 
+      - name: La page des compteurs existe dès le démarrage, derrière le mot de passe
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/stats/compteurs.html)
+          [ "$code" = "401" ] || { echo "attendu 401, reçu $code"; exit 1; }
+          # Générée au démarrage, avant toute requête : rien n'est encore compté.
+          curl -fsS -u stats:motdepassedetest http://localhost:8080/stats/compteurs.html >/tmp/compteurs.html
+          grep -q 'Aucun décompte enregistré' /tmp/compteurs.html
+
       - name: Le rapport contient les visites, et pas d'adresse complète
         run: |
           for i in $(seq 1 5); do curl -fsS -o /dev/null http://localhost:8080/; done
@@ -72,6 +80,34 @@ jobs:
           fi
           echo "toutes les adresses sont tronquées"
 
+      - name: La page des compteurs compte jour par jour, comme le rapport
+        run: |
+          navigateur='Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0'
+          for i in 1 2 3; do
+            curl -fsS -A "$navigateur" -o /dev/null http://localhost:8080/studio/compteur/facture
+          done
+          for i in 1 2; do
+            curl -fsS -A "$navigateur" -o /dev/null http://localhost:8080/validateur/compteur/controle
+          done
+          # Ni un robot ni une requête HEAD ne comptent : le rapport principal les écarte aussi.
+          curl -fsS -A 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' \
+            -o /dev/null http://localhost:8080/studio/compteur/facture
+          curl -fsS -I -A "$navigateur" -o /dev/null http://localhost:8080/studio/compteur/facture
+          docker exec site /usr/local/bin/goaccess-report.sh
+          curl -fsS -u stats:motdepassedetest http://localhost:8080/stats/compteurs.html >/tmp/compteurs.html
+          grep -o '<tr data-[a-z]*="[^"]*"[^>]*>' /tmp/compteurs.html
+          grep -q '<tr data-periode="tout" data-studio="3" data-validateur="2">' /tmp/compteurs.html
+          # Additionnés, les jours redonnent le total. Pas de jour imposé : à minuit, les requêtes
+          # peuvent tomber de part et d'autre, la somme ne bouge pas.
+          somme=$(grep -o 'data-jour="[0-9]*" data-studio="[0-9]*" data-validateur="[0-9]*"' /tmp/compteurs.html \
+            | awk -F'"' '{ s += $4; v += $6 } END { print s + 0, v + 0 }')
+          [ "$somme" = "3 2" ] || { echo "jours : attendu « 3 2 », reçu « $somme »"; exit 1; }
+          # Le rapport complet mène à la page.
+          curl -fsS -u stats:motdepassedetest http://localhost:8080/stats/ >/tmp/rapport.html
+          grep -q "src='rapport.js'" /tmp/rapport.html
+          curl -fsS -u stats:motdepassedetest http://localhost:8080/stats/rapport.js >/tmp/rapport.js
+          grep -q 'compteurs.html' /tmp/rapport.js
+
       - name: Sans mot de passe, /stats/ n'existe pas
         run: |
           docker rm -f site >/dev/null
@@ -80,6 +116,8 @@ jobs:
             curl -fsS -o /dev/null http://localhost:8081/ && break
             sleep 1
           done
-          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/stats/)
-          [ "$code" = "404" ] || { echo "attendu 404, reçu $code"; exit 1; }
+          for chemin in /stats/ /stats/compteurs.html; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8081$chemin")
+            [ "$code" = "404" ] || { echo "$chemin : attendu 404, reçu $code"; exit 1; }
+          done
           docker logs nu

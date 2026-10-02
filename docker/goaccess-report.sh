@@ -11,6 +11,10 @@ OUT_EN_COURS=/var/lib/goaccess/.report-en-cours.html
 
 mkdir -p /var/lib/goaccess
 
+# La page des compteurs, jour par jour, lit le même journal mais se passe du rapport : l'une peut
+# échouer sans priver de l'autre.
+/usr/local/bin/compteurs-report.sh || echo "stats : page des compteurs non générée"
+
 # Journal absent ou vide : garder une page lisible plutôt qu'une erreur GoAccess.
 if [ ! -s "$LOG" ]; then
     [ -f "$OUT" ] || cat >"$OUT" <<'HTML'
@@ -28,10 +32,12 @@ fi
 #
 # --ignore-crawlers : sans lui, les robots d'indexation gonflent le nombre de visites.
 # Les adresses sont déjà tronquées à l'écriture (log_format « anonyme » dans nginx.conf).
+# --html-custom-js : rapport.js, posé à côté par le Dockerfile, ajoute le lien vers les compteurs.
 goaccess "$LOG" \
     --log-format=COMBINED \
     --ignore-crawlers \
     --html-report-title="facturx.ibird.dev" \
+    --html-custom-js=rapport.js \
     -o "$OUT_EN_COURS"
 
 # Remplacement atomique : jamais de rapport à moitié écrit servi à un lecteur.

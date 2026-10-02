@@ -36,11 +36,13 @@ docker build -t facturx-site . && docker run --rm -p 8080:80 facturx-site
 L'image embarque [GoAccess](https://goaccess.io) : il lit le journal d'accès de nginx et en tire un
 rapport HTML — pages vues, référents, pays, navigateurs, codes de retour. **Aucun script de mesure
 n'est ajouté aux pages** : pas de traceur, pas de cookie, pas de tiers, donc pas de bandeau de
-consentement à afficher. La seule requête que les pages émettent d'elles-mêmes est le décompte des
-contrôles décrit juste après — sans contenu, journalisée comme une page vue — et le fichier
-déposé dans le validateur, lui, ne quitte jamais la machine du visiteur.
+consentement à afficher. Les seules requêtes que les pages émettent d'elles-mêmes sont les
+décomptes décrits plus bas — un contrôle du validateur, un PDF du Studio —, sans contenu,
+journalisées comme une page vue ; le fichier déposé dans le validateur, lui, ne quitte jamais la
+machine du visiteur.
 
 Le rapport est servi sur `/stats/`, protégé par mot de passe, et régénéré toutes les cinq minutes.
+À côté, `/stats/compteurs.html` détaille ces décomptes jour par jour.
 
 ### Activer
 
@@ -77,7 +79,32 @@ donc aucune visite ne peut être comptée deux fois.
 ### Consulter
 
 `https://facturx.ibird.dev/stats/`, utilisateur `stats` et le mot de passe choisi. Consulter la page
-n'alimente pas les compteurs.
+n'alimente pas les compteurs. Un lien, à côté du titre du rapport, mène aux compteurs jour par jour.
+
+### Les compteurs, jour par jour
+
+Pour une adresse donnée, GoAccess ne donne qu'un total sur tout le journal. La page
+`/stats/compteurs.html` reprend les deux décomptes — les PDF produits par le Studio, les fichiers
+soumis au validateur — jour par jour, sous un résumé : aujourd'hui, 7 et 30 derniers jours, depuis
+le début. Elle est produite par [`docker/compteurs-report.sh`](../docker/compteurs-report.sh), que
+`goaccess-report.sh` appelle : même mot de passe, même rythme de cinq minutes. Le lien du rapport
+vient de [`docker/rapport.js`](../docker/rapport.js), que GoAccess charge par `--html-custom-js`.
+
+**Ce n'est pas un second décompte.** Le script donne à GoAccess les seules lignes d'un compteur, et
+le panneau des visiteurs par jour devient le décompte de ce compteur, jour par jour. Mêmes règles
+que le rapport — robots écartés, lignes illisibles rejetées —, donc mêmes chiffres : additionnés,
+les jours redonnent la ligne du compteur dans **Requested Files**. Une requête `HEAD`, qui y a sa
+propre ligne, n'est pas comptée.
+
+Chaque jour est listé, même sans rien : un jour vide est une information. La colonne *Visiteurs*
+suit la définition de GoAccess — une adresse tronquée et un navigateur distincts, un jour donné — :
+un visiteur qui revient compte une fois par jour, et les totaux additionnent ces visiteurs
+quotidiens.
+
+La page dit aussi depuis quand le journal est conservé : si cette date avance à chaque
+redéploiement, c'est que le volume sur `/var/log/nginx` manque. Enfin, elle ne charge rien d'autre
+qu'elle-même — ni police, ni icône, ni feuille de style — : la consulter ne laisse aucune ligne dans
+le journal.
 
 ### Si quelque chose cloche
 
@@ -121,6 +148,8 @@ Dans le rapport GoAccess, panneau **Requested Files** :
 | `/validateur/` (panneau des pages) | les pages ouvertes — le rapport des deux donne le taux de passage à l'acte |
 | `/validateur/exemples/facture-*` | les démonstrations, comptées elles aussi comme des contrôles |
 
+Le détail jour par jour de la première ligne est sur `/stats/compteurs.html`.
+
 Les boutons d'exemple lancent de vrais contrôles et sont donc comptés comme tels. Pour approcher
 les contrôles sur des fichiers personnels, soustraire les téléchargements d'exemples — l'ordre de
 grandeur seulement : ces fichiers-là peuvent être servis depuis le cache du navigateur, un second
@@ -139,7 +168,7 @@ le JavaScript : le décompte ne voit que des contrôles humains.
 
 **Les polices.** Sept familles libres (licence SIL OFL) : Geist et Geist Mono (paquet `geist`), Inter, IBM Plex Sans, DM Sans, Source Serif 4 et Libre Baskerville (paquets `@expo-google-fonts/*`, qui livrent des TTF statiques). Statiques, et en TTF plutôt qu'en WOFF : le SDK les embarque telles quelles dans chaque PDF/A produit. Leurs licences sont réunies dans `polices/LICENCES.txt`, lié depuis le pied de l'éditeur. Environ 3 Mo au total, chargés à la demande : la page ne télécharge que la police employée (Geist par défaut), et les autres quand on ouvre l'onglet Apparence, qui en montre un échantillon.
 
-**Le décompte.** Comme le validateur (voir plus bas), le Studio demande `GET /studio/compteur/facture` à chaque PDF Factur-X produit — émission ou téléchargement —, et nginx répond **204, sans corps**. Ni contenu, ni montant, ni nom, ni cookie, ni identifiant : le chemin, et rien d'autre. Le pied de l'éditeur le dit en clair. La page anglaise compte au même chemin. Dans GoAccess, panneau **Requested Files**, ligne `/studio/compteur/facture` ; `/studio/` compte les ouvertures.
+**Le décompte.** Comme le validateur (voir plus bas), le Studio demande `GET /studio/compteur/facture` à chaque PDF Factur-X produit — émission ou téléchargement —, et nginx répond **204, sans corps**. Ni contenu, ni montant, ni nom, ni cookie, ni identifiant : le chemin, et rien d'autre. Le pied de l'éditeur le dit en clair. La page anglaise compte au même chemin. Dans GoAccess, panneau **Requested Files**, ligne `/studio/compteur/facture` ; `/studio/` compte les ouvertures. Le détail jour par jour est sur `/stats/compteurs.html`.
 
 **Vérifier.** Après déploiement, `/studio` doit rediriger vers `/studio/`, `curl -sI https://facturx.ibird.dev/studio/polices/geist-regular.ttf` répondre 200, et `/studio/compteur/facture` 204. Puis, dans un navigateur : l'exemple de la première visite doit afficher « Conforme », et l'onglet Contrôle le verdict des trois schematrons.
 
