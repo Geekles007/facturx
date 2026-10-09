@@ -2,6 +2,17 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Depuis 1.0.0, une rupture d'API n'arrive que dans une version majeure ; une nouvelle règle de validation est une version mineure.
 
+## [1.9.0] — 2026-10-09
+
+### Ajouté
+- **BR-FR-CO-04** : une facture rectificative (384) cite une et une seule facture antérieure (BT-25, `references.precedingInvoices`). Comme le schematron BR-FR v1.4.0.04, toutes les références comptent, complètes ou non. Le SDK acceptait une rectificative sans référence, ou avec deux, que la plateforme refuse. Nouvelle règle pouvant refuser une facture acceptée jusque-là : version mineure.
+
+### Modifié
+- **BR-FR-CO-16 assouplie** : seul reste bloqué le vendeur en franchise sans numéro de TVA ni identifiant fiscal (BT-32), que le schematron CEN refuse aussi (BR-E-02). Un BT-32 autre que le SIREN, ou le code `VATEX-FR-FRANCHISE` hors de la catégorie E, ne sont plus refusés. La règle est « non vérifiable », aucun schematron ne la porte, et l'annexe A tolère la catégorie Z pour la franchise (G1.47). Une règle assouplie ne refuse rien de ce qui passait.
+
+### Corrigé
+- **Lecture UBL** : `ChargeIndicator` est lu comme un xs:boolean. Un frais marqué « 1 » était lu comme une remise ; « 1 » et « 0 » valent désormais « true » et « false », et toute autre valeur est refusée (`FacturXParseError` FORMAT, avec le chemin du champ).
+
 ## [1.8.0] — 2026-10-09
 
 ### Ajouté
@@ -243,6 +254,7 @@ Première version publiée : la boucle complète émission → réception pour l
 ### Documentation
 - Guide de la réforme (`docs/reforme.md`), journal des décisions (`docs/decisions.md`), trois exemples exécutés en CI (émission Node, réception Node, handler HTTP Web standard).
 
+[1.9.0]: https://github.com/Geekles007/facturx/releases/tag/v1.9.0
 [1.8.0]: https://github.com/Geekles007/facturx/releases/tag/v1.8.0
 [1.7.0]: https://github.com/Geekles007/facturx/releases/tag/v1.7.0
 [1.6.1]: https://github.com/Geekles007/facturx/releases/tag/v1.6.1
