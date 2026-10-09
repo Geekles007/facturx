@@ -103,6 +103,7 @@ export type IssueCode =
   | 'BR-FR-24'
   | 'BR-FR-25'
   | 'BR-FR-26'
+  | 'BR-FR-CO-16'
   // Règles françaises sans identifiant AFNOR (Code de commerce, CGI)
   | 'FR-VAT-ID'
   | 'FR-DELIVERY'

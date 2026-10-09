@@ -144,6 +144,7 @@ describe('formulaire → facture', () => {
   it('la franchise en base porte son motif et sa mention', () => {
     const form = sampleForm(TODAY);
     form.seller.vatId = '';
+    form.seller.taxRegistrationId = '443061841'; // BR-FR-CO-16 : sans numéro de TVA, le SIREN en BT-32
     for (const line of form.lines) line.vat = 'E:0';
     const { invoice } = buildInvoice(form);
     expect(invoice.taxBreakdown).toEqual([
@@ -155,6 +156,16 @@ describe('formulaire → facture', () => {
       }),
     ]);
     expect(validateInvoice(invoice).issues).toEqual([]);
+  });
+
+  it('en franchise sans numéro de TVA, l’identifiant fiscal manquant est signalé sur son champ', () => {
+    const form = sampleForm(TODAY);
+    form.seller.vatId = '';
+    for (const line of form.lines) line.vat = 'E:0';
+    const { invoice } = buildInvoice(form);
+    expect(validateInvoice(invoice).issues).toContainEqual(
+      expect.objectContaining({ code: 'BR-FR-CO-16', path: 'seller.taxRegistrationId' }),
+    );
   });
 
   it('un prix brut inférieur au prix net est refusé à la saisie', () => {

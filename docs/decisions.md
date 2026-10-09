@@ -305,3 +305,16 @@ D42 refusait une adresse de livraison (BG-15) sur une prestation de services. La
 La règle garde ce qui est contrôlable sans ambiguïté : une adresse fournie doit être complète (BT-75, BT-77, BT-78, BT-80), quelle que soit la nature de l'opération. Le Studio ne l'interdit plus, mais conseille de ne l'indiquer pour une prestation que si elle a un sens, un lieu d'intervention par exemple. Assouplir une règle ne refuse rien de ce qui passait : pas de rupture pour les intégrateurs.
 
 Garde-fou : `site-src/validateur/official.test.ts` passe les exemples officiels EN 16931 au SDK, et n'y tolère que leurs données fictives (`BIC_MONCOMPTE`, un numéro de TVA à quatorze chiffres). Une règle du SDK plus stricte que la chaîne officielle y apparaîtra.
+
+## 2026-10-09 — Session 26 : la franchise en base
+
+### D67. BR-FR-CO-16 : ce que le fichier déclare de la franchise, et le SIREN en BT-32
+L'annexe A V1.4 de XP Z12-012 (onglet « BR-France CTC ») définit BR-FR-CO-16. Une facture en franchise en base porte un détail de TVA en catégorie E (BT-118) avec le code `VATEX-FR-FRANCHISE` (BT-121). Si le vendeur n'a pas de numéro de TVA, il répète son SIREN en BT-32. L'annexe la marque « règle non vérifiable » : rien dans le fichier ne dit si le vendeur est réellement en franchise. Aucun schematron ne la porte, ni France_RFE v1.4.0.04, ni le CEN, ni Factur-X.
+
+Le SDK contrôle ce que le fichier déclare. Le code `VATEX-FR-FRANCHISE` n'accompagne que la catégorie E. Une facture qui l'emploie, d'un vendeur sans numéro de TVA (BT-31), doit porter en BT-32 (`seller.taxRegistrationId`) le SIREN du vendeur. Il ne cherche pas à deviner une franchise quand le code manque, par exemple d'après le texte « 293 B » du motif : la norme dit elle-même que seul le vendeur le sait.
+
+Le cas visé est la micro-entreprise sans numéro de TVA. Sans cette règle, le SDK acceptait sa facture et le schematron CEN la refusait (BR-E-02 : en catégorie E, il faut BT-31, BT-32 ou BT-63). Le test `schematron.test.ts` tient les deux verdicts ensemble : SIREN en BT-32, accepté par le SDK et les trois schematrons ; rien en BT-32, refusé par le SDK (BR-FR-CO-16) comme par le CEN (BR-E-02).
+
+Le Studio l'a révélé : son test de franchise en base, un vendeur sans numéro de TVA ni BT-32, affirmait une facture sans anomalie, alors que le CEN la refuse. Le Studio ne remplit pas BT-32 à la place de l'utilisateur, conformément à D61 (la validation dit ce qui manque, le Studio n'invente rien). L'anomalie pointe sur le champ « Identifiant fiscal local », et la section repliée qui le contient s'ouvre au clic.
+
+BR-E-02 reste non implémentée dans le SDK pour les autres exonérations E. Une exonération qui n'est pas la franchise, sans identifiant fiscal du vendeur, passe le SDK et pas le CEN : c'est un écart connu, à traiter à part.

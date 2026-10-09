@@ -243,6 +243,79 @@ describe('TVA : taux et exonérations', () => {
     expect(validateInvoice(invoice).ok).toBe(true);
   });
 
+  describe('BR-FR-CO-16 : franchise en base', () => {
+    /** Facture en franchise en base (catégorie E, VATEX-FR-FRANCHISE) d'un vendeur au SIREN 443061841. */
+    const franchise = (
+      seller: { withoutVatId?: true; taxRegistrationId?: string } = {},
+    ): Invoice => {
+      const draft = simpleDraft();
+      if (seller.withoutVatId) delete draft.seller.vatId;
+      if (seller.taxRegistrationId) draft.seller.taxRegistrationId = seller.taxRegistrationId;
+      draft.lines[0]!.tax = { category: 'E', rate: percent('0') };
+      return {
+        ...draft,
+        ...computeTotals(draft, {
+          exemptions: {
+            E: { code: 'VATEX-FR-FRANCHISE', reason: 'TVA non applicable, art. 293 B du CGI' },
+          },
+        }),
+      };
+    };
+
+    it('un vendeur avec un numéro de TVA n’a pas à remplir BT-32', () => {
+      expect(validateInvoice(franchise()).ok).toBe(true);
+    });
+
+    it('sans numéro de TVA, le vendeur répète son SIREN en BT-32', () => {
+      expect(
+        validateInvoice(franchise({ withoutVatId: true, taxRegistrationId: '443061841' })).ok,
+      ).toBe(true);
+    });
+
+    it('sans numéro de TVA ni BT-32, la facture est refusée', () => {
+      const issue = issuesOf(franchise({ withoutVatId: true })).find(
+        (i) => i.code === 'BR-FR-CO-16',
+      );
+      expect(issue).toMatchObject({ path: 'seller.taxRegistrationId', expected: '443061841' });
+    });
+
+    it('sans numéro de TVA, un BT-32 autre que le SIREN est refusé', () => {
+      const issue = issuesOf(
+        franchise({ withoutVatId: true, taxRegistrationId: '12345678901' }),
+      ).find((i) => i.code === 'BR-FR-CO-16');
+      expect(issue).toMatchObject({
+        path: 'seller.taxRegistrationId',
+        expected: '443061841',
+        actual: '12345678901',
+      });
+    });
+
+    it('le code VATEX-FR-FRANCHISE n’accompagne que la catégorie E', () => {
+      const draft = simpleDraft();
+      draft.lines[0]!.tax = { category: 'O', rate: percent('0') };
+      const invoice: Invoice = {
+        ...draft,
+        ...computeTotals(draft, {
+          exemptions: { O: { code: 'VATEX-FR-FRANCHISE', reason: 'Franchise en base' } },
+        }),
+      };
+      expect(codesAndPaths(invoice)).toContain('BR-FR-CO-16 @ taxBreakdown[0].category');
+    });
+
+    it('une exonération E qui n’est pas la franchise n’exige rien de BT-32', () => {
+      const draft = simpleDraft();
+      delete draft.seller.vatId;
+      draft.lines[0]!.tax = { category: 'E', rate: percent('0') };
+      const invoice: Invoice = {
+        ...draft,
+        ...computeTotals(draft, {
+          exemptions: { E: { code: 'VATEX-EU-132', reason: 'Exonération, article 261 du CGI' } },
+        }),
+      };
+      expect(codesAndPaths(invoice).filter((c) => c.startsWith('BR-FR-CO-16'))).toEqual([]);
+    });
+  });
+
   it('refuse un taux 0 en catégorie S (taux sans exonération justifiée)', () => {
     const draft = simpleDraft();
     draft.lines[0]!.tax = { category: 'S', rate: percent('0') };

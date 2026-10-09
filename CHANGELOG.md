@@ -2,6 +2,11 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Depuis 1.0.0, une rupture d'API n'arrive que dans une version majeure ; une nouvelle règle de validation est une version mineure.
 
+## [Non publié]
+
+### Ajouté
+- **BR-FR-CO-16** (franchise en base, annexe A V1.4 de XP Z12-012) : le code `VATEX-FR-FRANCHISE` (BT-121) n'accompagne que la catégorie E, et un vendeur en franchise sans numéro de TVA répète son SIREN comme identifiant fiscal (BT-32, `seller.taxRegistrationId`). Aucun schematron ne porte cette règle ; sans elle, le SDK acceptait une facture de micro-entreprise que le schematron CEN refuse (BR-E-02). Nouvelle règle pouvant refuser une facture acceptée jusque-là : version mineure. Le Studio la signale sur le champ « Identifiant fiscal local ».
+
 ## [1.6.1] — 2026-10-09
 
 ### Modifié
