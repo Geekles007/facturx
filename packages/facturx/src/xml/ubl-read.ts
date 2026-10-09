@@ -263,9 +263,21 @@ function taxCategory(
   });
 }
 
+/**
+ * Le drapeau `ChargeIndicator` : un xs:boolean, où « 1 » et « 0 » valent « true » et « false ». Le lire
+ * comme une simple chaîne ferait d'un frais marqué « 1 » une remise.
+ */
+function chargeIndicator(ctx: Ctx): boolean {
+  const path = `${ctx.path}/cbc:ChargeIndicator`;
+  const raw = require(text(cbc(ctx, 'ChargeIndicator')), path, 'Indicateur remise/frais absent');
+  if (raw === 'true' || raw === '1') return true;
+  if (raw === 'false' || raw === '0') return false;
+  throw new FacturXParseError('FORMAT', path, `Indicateur booléen attendu, reçu « ${raw} »`);
+}
+
 /** Remises et frais, au document comme à la ligne : le drapeau `ChargeIndicator` les sépare. */
 function allowanceCharge(ctx: Ctx): { charge: boolean; value: DocumentAllowance & DocumentCharge } {
-  const charge = text(cbc(ctx, 'ChargeIndicator')) === 'true';
+  const charge = chargeIndicator(ctx);
   const value = defined<DocumentAllowance & DocumentCharge>({
     amount: amount(require(cbc(ctx, 'Amount'), `${ctx.path}/cbc:Amount`, 'Montant absent')),
     baseAmount: amountOf(ctx, 'BaseAmount'),

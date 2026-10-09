@@ -150,7 +150,8 @@ La norme **AFNOR XP Z12-012** (formats et profils du socle, juillet 2025) fixe l
 | BR-FR-20 | traitement attendu (note `BAR` : B2B, B2BINT, B2C, OUTOFSCOPE, ARCHIVEONLY) | `processing` |
 | BR-FR-23 / 25 | adresse 0225 : `A-Z a-z 0-9 - _ .` ; toute adresse ≤ 125 caractères | `electronicAddress` |
 | BR-FR-24 / 26 | code de routage 0224 : mêmes caractères, ≤ 100 | `routingCode` |
-| BR-FR-CO-16 | franchise en base : `VATEX-FR-FRANCHISE` (BT-121) en catégorie E seulement ; vendeur sans numéro de TVA ⇒ SIREN répété en BT-32. Annexe A V1.4 ; aucun schematron ne la vérifie | `taxBreakdown[].exemptionReasonCode`, `seller.taxRegistrationId` |
+| BR-FR-CO-04 | facture rectificative (384) : une et une seule facture antérieure citée (BT-25), références complètes ou non, comme le schematron v1.4.0.04 | `references.precedingInvoices` |
+| BR-FR-CO-16 | franchise en base (E + `VATEX-FR-FRANCHISE`) d'un vendeur sans numéro de TVA : son SIREN répété en BT-32. Annexe A V1.4, « non vérifiable » et dans aucun schematron : seul est bloqué le BT-32 absent, que le CEN refuse aussi (BR-E-02) | `seller.taxRegistrationId` |
 | BR-FR-MAP-03 | TVA sur les débits : BT-8 = 5 en CII | `vatOnDebits` |
 
 Non implémentées : BR-FR-07 (codes de notes libres — disponibles dans `NoteSubjectCode`, aucune contrainte à vérifier), BR-FR-10/11 « présent et actif dans l'annuaire » (vérification en ligne, rôle de la plateforme agréée). **Toutes les règles vérifiables hors ligne sur le contenu d'une facture sont couvertes.** Règle maison en complément : `FR-DEPOSIT-REFERENCE` — une facture définitive après acompte (cadre `*4`) doit référencer ses factures d'acompte (BT-25).

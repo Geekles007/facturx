@@ -18,6 +18,14 @@ import {
 const ubl = readFileSync(new URL('./golden/ubl/simple.xml', import.meta.url).pathname, 'utf8');
 const cii = readFileSync(new URL('./golden/simple.xml', import.meta.url).pathname, 'utf8');
 
+/** Frais de port de 10 € au document, marqué par l'indicateur donné. */
+const allowanceCharge = (flag: string) =>
+  `<cac:AllowanceCharge><cbc:ChargeIndicator>${flag}</cbc:ChargeIndicator>` +
+  '<cbc:AllowanceChargeReason>Port</cbc:AllowanceChargeReason>' +
+  '<cbc:Amount currencyID="EUR">10.00</cbc:Amount>' +
+  '<cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>20</cbc:Percent>' +
+  '<cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:AllowanceCharge>';
+
 /**
  * Le socle de la réforme accepte trois syntaxes pour un seul modèle sémantique. La preuve que la
  * lecture UBL est juste n'est donc pas qu'elle « produit quelque chose », mais qu'elle produit
@@ -90,6 +98,18 @@ describe('correspondances propres à UBL', () => {
     });
   });
 
+  it('lit ChargeIndicator en xs:boolean : « 1 » est un frais, « 0 » une remise', () => {
+    // UBL type l'indicateur en xs:boolean : « 1 » et « 0 » y sont aussi valides que « true » et « false ».
+    const avec = (flag: string) =>
+      ubl.replace('<cac:TaxTotal>', `${allowanceCharge(flag)}<cac:TaxTotal>`);
+    const frais = parseUblDocument(avec('1')).invoice;
+    expect(frais.charges).toHaveLength(1);
+    expect(frais.allowances).toBeUndefined();
+    const remise = parseUblDocument(avec('0')).invoice;
+    expect(remise.allowances).toHaveLength(1);
+    expect(remise.charges).toBeUndefined();
+  });
+
   it('expose les espaces de noms UBL 2.1', () => {
     expect(UBL_NAMESPACES.invoice).toBe('urn:oasis:names:specification:ubl:schema:xsd:Invoice-2');
   });
@@ -134,6 +154,12 @@ describe('erreurs de lecture, localisées', () => {
       ),
     );
     expect(e.code).toBe('FORMAT');
+  });
+
+  it('refuse un indicateur remise/frais qui n’est pas un booléen', () => {
+    const e = erreur(ubl.replace('<cac:TaxTotal>', `${allowanceCharge('oui')}<cac:TaxTotal>`));
+    expect(e.code).toBe('FORMAT');
+    expect(e.path).toMatch(/cac:AllowanceCharge\/cbc:ChargeIndicator$/);
   });
 
   it('refuse un montant illisible', () => {

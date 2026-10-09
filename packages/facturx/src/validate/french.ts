@@ -403,28 +403,22 @@ export function checkFrenchRules(
   }
 
   // BR-FR-CO-16 (annexe A V1.4) : la franchise en base s'exprime en catégorie E avec le code
-  // VATEX-FR-FRANCHISE ; un vendeur sans numéro de TVA répète son SIREN en BT-32. Que le vendeur soit
-  // en franchise, seul lui le sait (« règle non vérifiable ») : on contrôle ce que le fichier déclare.
-  for (const [i, tb] of (Array.isArray(inv.taxBreakdown) ? inv.taxBreakdown : []).entries()) {
-    if (tb?.exemptionReasonCode !== 'VATEX-FR-FRANCHISE' || tb.category === 'E') continue;
+  // VATEX-FR-FRANCHISE ; un vendeur sans numéro de TVA répète son SIREN en BT-32. La règle est « non
+  // vérifiable » et aucun schematron ne la porte : on ne bloque que ce que le CEN refuse aussi (BR-E-02),
+  // un vendeur sans numéro de TVA ni BT-32, avec le SIREN attendu pour remède (D69).
+  const seller = inv.seller;
+  if (
+    declaresFranchise(inv) &&
+    seller &&
+    !isNonEmptyString(seller.vatId) &&
+    !isNonEmptyString(seller.taxRegistrationId)
+  ) {
     c.add(
       'BR-FR-CO-16',
-      `taxBreakdown[${i}].category`,
-      'La franchise en base (VATEX-FR-FRANCHISE) s’exprime en catégorie de TVA E (BT-118).',
-      { expected: 'E', actual: tb.category },
+      'seller.taxRegistrationId',
+      'Un vendeur en franchise en base sans numéro de TVA répète son SIREN comme identifiant fiscal (BT-32).',
+      { expected: seller.siren },
     );
-  }
-  const seller = inv.seller;
-  if (declaresFranchise(inv) && seller && !isNonEmptyString(seller.vatId)) {
-    const registration = seller.taxRegistrationId;
-    if (!isNonEmptyString(registration) || (seller.siren && registration !== seller.siren)) {
-      c.add(
-        'BR-FR-CO-16',
-        'seller.taxRegistrationId',
-        'Un vendeur en franchise en base sans numéro de TVA répète son SIREN comme identifiant fiscal (BT-32).',
-        { expected: seller.siren, actual: registration },
-      );
-    }
   }
 
   // BR-FR-14 : adresse de livraison (BG-15) fournie ⇒ complète. La norme la dit « pas à transmettre »
@@ -456,6 +450,21 @@ export function checkFrenchRules(
       'references.precedingInvoices',
       'Une facture définitive après acompte (cadre B4/S4/M4) doit référencer la ou les factures d’acompte (BT-25).',
     );
+  }
+
+  // BR-FR-CO-04 : une facture rectificative cite une et une seule facture antérieure (BT-25). Comme le
+  // schematron BR-FR v1.4.0.04, on compte toutes les références, complètes ou non (D69). Les autres
+  // rectificatives (471–473) sont refusées par BR-CL-01 tant qu'elles ne sont pas adoptées.
+  if (inv.typeCode === '384') {
+    const count = inv.references?.precedingInvoices?.length ?? 0;
+    if (count !== 1) {
+      c.add(
+        'BR-FR-CO-04',
+        'references.precedingInvoices',
+        'Une facture rectificative (384) cite une et une seule facture antérieure (BT-25).',
+        { expected: 1, actual: count },
+      );
+    }
   }
 
   // Date de la vente / prestation : date de livraison OU période (L441-9)

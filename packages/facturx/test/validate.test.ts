@@ -279,19 +279,18 @@ describe('TVA : taux et exonérations', () => {
       expect(issue).toMatchObject({ path: 'seller.taxRegistrationId', expected: '443061841' });
     });
 
-    it('sans numéro de TVA, un BT-32 autre que le SIREN est refusé', () => {
-      const issue = issuesOf(
-        franchise({ withoutVatId: true, taxRegistrationId: '12345678901' }),
-      ).find((i) => i.code === 'BR-FR-CO-16');
-      expect(issue).toMatchObject({
-        path: 'seller.taxRegistrationId',
-        expected: '443061841',
-        actual: '12345678901',
-      });
+    // La règle est « non vérifiable » et aucun schematron ne la porte : le SDK ne bloque que ce que la
+    // chaîne officielle refuse aussi (BR-E-02), pas ce qu'elle accepte (D69).
+    it('sans numéro de TVA, un BT-32 autre que le SIREN n’est pas bloqué', () => {
+      expect(
+        validateInvoice(franchise({ withoutVatId: true, taxRegistrationId: '12345678901' })).ok,
+      ).toBe(true);
     });
 
-    it('le code VATEX-FR-FRANCHISE n’accompagne que la catégorie E', () => {
+    it('le code VATEX-FR-FRANCHISE hors catégorie E n’est pas bloqué par BR-FR-CO-16', () => {
       const draft = simpleDraft();
+      delete draft.seller.vatId;
+      draft.seller.taxRegistrationId = '443061841';
       draft.lines[0]!.tax = { category: 'O', rate: percent('0') };
       const invoice: Invoice = {
         ...draft,
@@ -299,7 +298,7 @@ describe('TVA : taux et exonérations', () => {
           exemptions: { O: { code: 'VATEX-FR-FRANCHISE', reason: 'Franchise en base' } },
         }),
       };
-      expect(codesAndPaths(invoice)).toContain('BR-FR-CO-16 @ taxBreakdown[0].category');
+      expect(codesAndPaths(invoice).filter((c) => c.startsWith('BR-FR-CO-16'))).toEqual([]);
     });
 
     it('une exonération E qui n’est pas la franchise n’exige rien de BT-32', () => {
@@ -567,10 +566,56 @@ describe('réforme : SIREN acheteur, nature de l’opération, TVA sur les débi
   });
 });
 
+describe('BR-FR-CO-04 : une facture rectificative cite une et une seule facture antérieure', () => {
+  /** Facture rectificative (384) citant `count` factures antérieures (BT-25). */
+  const corrective = (count: number): Invoice => {
+    const invoice = simpleInvoice();
+    invoice.typeCode = '384';
+    const precedingInvoices = Array.from({ length: count }, (_, i) => ({
+      id: `F-2026-000${i}`,
+      issueDate: '2026-08-01' as const,
+    }));
+    if (count > 0) invoice.references = { precedingInvoices };
+    return invoice;
+  };
+
+  it('accepte une rectificative qui cite sa facture antérieure', () => {
+    expect(validateInvoice(corrective(1)).ok).toBe(true);
+  });
+
+  it('refuse une rectificative sans facture antérieure', () => {
+    expect(issuesOf(corrective(0))).toContainEqual(
+      expect.objectContaining({
+        code: 'BR-FR-CO-04',
+        path: 'references.precedingInvoices',
+        expected: 1,
+        actual: 0,
+      }),
+    );
+  });
+
+  it('refuse une rectificative qui cite deux factures antérieures', () => {
+    expect(issuesOf(corrective(2))).toContainEqual(
+      expect.objectContaining({ code: 'BR-FR-CO-04', expected: 1, actual: 2 }),
+    );
+  });
+
+  it('ne s’applique qu’aux rectificatives : une facture peut citer plusieurs factures', () => {
+    const invoice = corrective(2);
+    invoice.typeCode = '380';
+    expect(codesAndPaths(invoice).filter((c) => c.startsWith('BR-FR-CO-04'))).toEqual([]);
+  });
+});
+
 describe('BR-FR-04 types de document et BR-FR-14 adresse de livraison', () => {
   it('accepte les neuf codes intégrés à EN 16931 et refuse les autres', () => {
     for (const code of INVOICE_TYPE_CODES) {
       const invoice = { ...simpleInvoice(), typeCode: code };
+      // Une rectificative cite sa facture antérieure (BR-FR-CO-04).
+      if (code === '384')
+        invoice.references = {
+          precedingInvoices: [{ id: 'F-2026-0000', issueDate: '2026-08-01' }],
+        };
       expect(validateInvoice(invoice).ok, code).toBe(true);
     }
     for (const code of ['500', '471', '503', '71']) {

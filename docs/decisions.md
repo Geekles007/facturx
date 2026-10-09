@@ -317,7 +317,7 @@ Le cas visé est la micro-entreprise sans numéro de TVA. Sans cette règle, le 
 
 Le Studio l'a révélé : son test de franchise en base, un vendeur sans numéro de TVA ni BT-32, affirmait une facture sans anomalie, alors que le CEN la refuse. Le Studio ne remplit pas BT-32 à la place de l'utilisateur, conformément à D61 (la validation dit ce qui manque, le Studio n'invente rien). L'anomalie pointe sur le champ « Identifiant fiscal local », et la section repliée qui le contient s'ouvre au clic.
 
-BR-E-02 reste non implémentée dans le SDK pour les autres exonérations E. Une exonération qui n'est pas la franchise, sans identifiant fiscal du vendeur, passe le SDK et pas le CEN : c'est un écart connu, à traiter à part. *Traité par D68.*
+BR-E-02 reste non implémentée dans le SDK pour les autres exonérations E. Une exonération qui n'est pas la franchise, sans identifiant fiscal du vendeur, passe le SDK et pas le CEN : c'est un écart connu, à traiter à part. *Traité par D68.* *Règle assouplie par D69 : seul le BT-32 absent est bloqué.*
 
 ### D68. Les identifiants fiscaux selon la catégorie de TVA : toute la famille, sous les noms officiels
 BR-E-02 n'était qu'un cas d'un trou plus large. Chaque catégorie de TVA a ses règles 02 (lignes), 03 (remises) et 04 (frais de document). Elles disent quels identifiants fiscaux la facture doit porter, ou ne doit pas porter. Le SDK n'en appliquait aucune, et le CEN les appliquait toutes. Un vendeur sans numéro de TVA en S, Z, E ou G, un acheteur sans numéro de TVA en K, un numéro de TVA en O : autant de factures que le SDK disait conformes et que le CEN refusait.
@@ -337,3 +337,18 @@ Le schematron déclenche la règle par élément. Son remède étant sur une par
 
 **Vérification.** Les cas du fixture `test/fixtures/tax-categories.ts` portent leurs verdicts, écrits à la main. Le SDK y est confronté (`tax-identifiers.test.ts`), le schematron CEN aussi (`schematron.test.ts`) : les dix-huit cas donnent exactement les mêmes règles des deux côtés. Hors périmètre, connus : BR-IC-11 et BR-IC-12, date et pays de livraison d'une livraison intracommunautaire.
 
+
+### D69. Retour de FacturX API sur le fix04 : BR-FR-CO-04, BR-FR-CO-16 assouplie, ChargeIndicator en UBL
+Après le passage à France_RFE v1.4.0.04 (D65), FacturX API a relevé d'autres pièges du correctif fix04. Chacun a été vérifié dans les schematrons, dans l'annexe A V1.4 et sur le SDK.
+
+**BR-FR-CO-04.** Une facture rectificative (384) cite une et une seule facture antérieure (BT-25). Le schematron BR-FR v1.4.0.04 compte toutes les références d'en-tête : le filtre qui ne gardait que les références complètes (numéro et date) y est mis en commentaire. Le SDK n'appliquait pas la règle. Une 384 sans référence, ou avec deux, passait `validateInvoice`, et la plateforme la refusait. Le SDK compte désormais, comme le schematron, toutes les entrées de `references.precedingInvoices`. Les autres rectificatives (471 à 473) restent refusées par BR-CL-01 tant qu'elles ne sont pas adoptées. Le test `schematron.test.ts` confronte les deux verdicts pour 0, 1 et 2 références.
+
+**BR-FR-CO-16 assouplie.** La règle est « non vérifiable » et aucun schematron ne la porte. Dans l'annexe A, la règle de gestion G1.47 permet aussi à un vendeur en franchise sans numéro de TVA d'employer la catégorie Z. La plateforme transcode d'ailleurs E + `VATEX-FR-FRANCHISE` en Z avant de transmettre à l'administration (BR-FR-MAP-08/09). D67 bloquait deux cas que la chaîne officielle accepte :
+- un BT-32 autre que le SIREN ;
+- le code `VATEX-FR-FRANCHISE` hors de la catégorie E.
+
+Comme pour BR-FR-14 (D66), le SDK ne refuse plus ce que la chaîne officielle accepte. BR-FR-CO-16 ne signale plus que le vendeur sans numéro de TVA ni BT-32, que le CEN refuse aussi (BR-E-02), avec son SIREN pour remède. En Z, BR-Z-02 (D68) couvre le même cas. Le SDK n'a pas de niveau « avertissement » : en ajouter un changerait l'API, et ce n'est plus utile ici. Il ne se fie toujours pas au texte « TVA non applicable », employé aussi en autoliquidation.
+
+**ChargeIndicator en UBL.** L'indicateur remise/frais est un xs:boolean : « 1 » et « 0 » y valent « true » et « false ». La lecture UBL tenait pour une remise tout ce qui n'était pas « true », si bien qu'un frais marqué « 1 » devenait une remise. Elle lit désormais les quatre valeurs et refuse les autres par une `FacturXParseError` FORMAT, avec le chemin du champ. En CII, le schematron Factur-X n'accepte que « true » et « false », sans identifiant de règle à afficher. La lecture CII refusait déjà « 0 » et « 1 », avec le chemin du champ, et l'écriture n'émet que « true » et « false ».
+
+**Déjà en place.** Le validateur reconnaît l'identifiant BT-24 d'EXTENDED-CTC-FR à part de celui de Factur-X EXTENDED (D65).

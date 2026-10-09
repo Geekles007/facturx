@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { computeTotals, type Invoice, percent, toCiiXml, validateInvoice } from '../src/index.js';
-import { simpleDraft } from './fixtures/invoices.js';
+import { simpleDraft, simpleInvoice } from './fixtures/invoices.js';
 import { invoiceWithTaxes, TAX_ID_CASES, TAX_ID_RULE } from './fixtures/tax-categories.js';
 import {
   blockingFailures,
@@ -51,10 +51,45 @@ describe.skipIf(!schematronsAvailable())('schematrons officiels (Saxon-JS)', () 
     expect(failures.map((f) => f.id)).toContain('BR-CO-15');
   }, 60_000);
 
+  /** Les règles bloquantes des trois schematrons, sur le XML que le SDK écrit pour cette facture. */
+  const failuresOf = (invoice: Invoice) =>
+    RULESETS.flatMap((r) =>
+      blockingFailures(
+        runSchematron(join(schemasDir, r.sef), toCiiXml(invoice, { validate: false })),
+      ),
+    ).map((f) => f.id ?? '');
+
+  /**
+   * BR-FR-CO-04 : une facture rectificative (384) cite une et une seule facture antérieure. Le
+   * schematron BR-FR compte toutes les références d'en-tête, complètes ou non (le filtre sur les
+   * références complètes est commenté dans la v1.4.0.04) ; le SDK compte de même ses BT-25.
+   */
+  it.each([0, 1, 2])(
+    'rectificative citant %i facture(s) antérieure(s) : même verdict BR-FR-CO-04 que BR-FR',
+    (count) => {
+      const invoice = simpleInvoice();
+      invoice.typeCode = '384';
+      if (count > 0) {
+        invoice.references = {
+          precedingInvoices: Array.from({ length: count }, (_, i) => ({
+            id: `F-2026-000${i}`,
+            issueDate: '2026-08-01',
+          })),
+        };
+      }
+      const sdk = validateInvoice(invoice);
+      const sdkRefuses = !sdk.ok && sdk.issues.some((i) => i.code === 'BR-FR-CO-04');
+      const brfrRefuses = failuresOf(invoice).some((id) => id.startsWith('BR-FR-CO-04'));
+      expect(sdkRefuses).toBe(count !== 1);
+      expect(brfrRefuses).toBe(count !== 1);
+    },
+    60_000,
+  );
+
   /**
    * BR-FR-CO-16 (franchise en base) n'est dans aucun schematron, mais sa conséquence l'est : sans
    * numéro de TVA ni BT-32, le CEN refuse une facture en catégorie E (BR-E-02). Le SDK doit rendre le
-   * même verdict, et accepter ce que la règle demande : le SIREN répété en BT-32.
+   * même verdict, et accepter ce que la chaîne officielle accepte.
    */
   describe('franchise en base d’un vendeur sans numéro de TVA', () => {
     const franchise = (taxRegistrationId?: string): Invoice => {
@@ -71,15 +106,14 @@ describe.skipIf(!schematronsAvailable())('schematrons officiels (Saxon-JS)', () 
         }),
       };
     };
-    const failuresOf = (invoice: Invoice) =>
-      RULESETS.flatMap((r) =>
-        blockingFailures(
-          runSchematron(join(schemasDir, r.sef), toCiiXml(invoice, { validate: false })),
-        ),
-      ).map((f) => f.id);
-
     it('SIREN répété en BT-32 : accepté par le SDK et les trois schematrons', () => {
       const invoice = franchise('443061841');
+      expect(validateInvoice(invoice).ok).toBe(true);
+      expect(failuresOf(invoice)).toEqual([]);
+    }, 60_000);
+
+    it('BT-32 autre que le SIREN : accepté par le SDK comme par les trois schematrons', () => {
+      const invoice = franchise('12345678901');
       expect(validateInvoice(invoice).ok).toBe(true);
       expect(failuresOf(invoice)).toEqual([]);
     }, 60_000);
