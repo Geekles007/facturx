@@ -150,6 +150,108 @@ describe('sévérité et tolérances', () => {
   });
 });
 
+describe('jeux de règles choisis d’après le profil (BT-24)', () => {
+  /** La facture de référence, déclarée sous un autre profil : seul le BT-24 change. */
+  const declaredAs = (guidelineId: string) =>
+    bytesOf(
+      golden('simple').replace(
+        '<ram:ID>urn:cen.eu:en16931:2017</ram:ID>',
+        `<ram:ID>${guidelineId}</ram:ID>`,
+      ),
+    );
+
+  /** Exécute l'analyse en notant les schematrons appelés, dans l'ordre. */
+  const run = async (
+    bytes: Uint8Array,
+    byJudge: Partial<Record<SchematronId, FailedAssert[]>> = {},
+  ) => {
+    const called: SchematronId[] = [];
+    const report = await analyze(
+      { filename: 'facture.xml', bytes },
+      deps({
+        runSchematron: async (id) => {
+          called.push(id);
+          return byJudge[id] ?? [];
+        },
+      }),
+    );
+    return { report, called };
+  };
+
+  it('EN 16931 : le SDK, le CEN, le profil Factur-X et BR-FR', async () => {
+    const { report, called } = await run(bytesOf(golden('simple')));
+    expect(called).toEqual(['cen', 'facturx', 'brfr']);
+    expect(report.profile).toEqual({ id: 'en16931', name: 'EN 16931' });
+    expect(report.judges.map((j) => [j.id, j.status])).toEqual([
+      ['sdk', 'ok'],
+      ['cen', 'ok'],
+      ['facturx', 'ok'],
+      ['brfr', 'ok'],
+    ]);
+    expect(report.ok).toBe(true);
+  });
+
+  it('EXTENDED-CTC-FR : son propre schematron et BR-FR, jamais les règles EN 16931', async () => {
+    const { report, called } = await run(
+      declaredAs('urn:cen.eu:en16931:2017#conformant#urn.cpro.gouv.fr:1p0:extended-ctc-fr'),
+    );
+    expect(called).toEqual(['extended-ctc-fr', 'brfr']);
+    expect(report.profile).toEqual({ id: 'extended-ctc-fr', name: 'EXTENDED-CTC-FR' });
+    expect(report.ok).toBe(true);
+  });
+
+  it.each([
+    ['urn:factur-x.eu:1p0:basicwl', 'basicwl', 'facturx-basicwl'],
+    ['urn:zugferd.de:2p0:basicwl', 'basicwl', 'facturx-basicwl'],
+    [
+      'urn:cen.eu:en16931:2017#conformant#urn:factur-x.eu:1p0:extended',
+      'extended',
+      'facturx-extended',
+    ],
+    [
+      'urn:cen.eu:en16931:2017#conformant#urn:zugferd.de:2p0:extended',
+      'extended',
+      'facturx-extended',
+    ],
+  ] as const)(
+    '%s : le schematron Factur-X du profil et BR-FR',
+    async (guideline, profile, judge) => {
+      const { report, called } = await run(declaredAs(guideline));
+      expect(called).toEqual([judge, 'brfr']);
+      expect(report.profile?.id).toBe(profile);
+    },
+  );
+
+  it('hors EN 16931, le SDK ne se prononce pas et ne compte pas dans le verdict', async () => {
+    const { report } = await run(
+      declaredAs('urn:cen.eu:en16931:2017#conformant#urn:factur-x.eu:1p0:extended'),
+    );
+    const sdk = report.judges.find((j) => j.id === 'sdk');
+    expect(sdk?.status).toBe('na');
+    expect(sdk?.findings).toEqual([]);
+    expect(report.ok).toBe(true);
+  });
+
+  it('hors EN 16931, une anomalie du schematron du profil reste bloquante', async () => {
+    const { report } = await run(
+      declaredAs('urn:cen.eu:en16931:2017#conformant#urn.cpro.gouv.fr:1p0:extended-ctc-fr'),
+      { 'extended-ctc-fr': [{ id: 'BR-FREXT-BR-26', flag: 'fatal', text: 'prix net absent' }] },
+    );
+    expect(report.judges.find((j) => j.id === 'extended-ctc-fr')?.status).toBe('failed');
+    expect(report.ok).toBe(false);
+  });
+
+  it('un profil sans jeu de règles officiel n’est pas jugé, et le rapport le dit', async () => {
+    const { report, called } = await run(declaredAs('urn:factur-x.eu:1p0:minimum'));
+    expect(called).toEqual([]);
+    expect(report.judges).toEqual([]);
+    expect(report.profile).toBeUndefined();
+    expect(report.unsupportedProfile).toBe(true);
+    expect(report.document.guidelineId).toBe('urn:factur-x.eu:1p0:minimum');
+    expect(report.ok).toBe(false);
+  });
+});
+
 describe('juge indisponible', () => {
   it('n’annonce pas la conformité quand un jeu de règles n’a pas pu s’exécuter', async () => {
     const report = await analyze(

@@ -210,7 +210,7 @@ et la compression, qui fait passer le bundle d'environ 430 Ko à 195 Ko.
 ```bash
 curl -sI https://facturx.ibird.dev/validateur | sed -n '1p;/[Ll]ocation/p'
 curl -s -o /dev/null -w '%{http_code} %{size_download}\n' https://facturx.ibird.dev/validateur/vendor/SaxonJS2.rt.js
-curl -s -o /dev/null -w '%{http_code} %{size_download}\n' https://facturx.ibird.dev/validateur/schemas/EN16931-CII-validation.sef.json.gz
+curl -s -o /dev/null -w '%{http_code} %{size_download}\n' https://facturx.ibird.dev/validateur/schemas/v1.4.0.04/EN16931-CII-validation.sef.json.gz
 curl -s https://facturx.ibird.dev/npm-downloads.json
 curl -s -o /dev/null -w '%{http_code}\n' https://facturx.ibird.dev/validateur/compteur/controle
 ```
@@ -219,14 +219,14 @@ La première commande doit renvoyer une redirection 301 vers `/validateur/`, la 
 — et cet appel-là compte pour un contrôle dans le rapport, comme n'importe quel autre.
 
 Puis, dans un navigateur : ouvrir `/validateur/`, cliquer « essayer une facture conforme » et
-attendre le verdict « Conforme aux quatre jeux de règles ». Cela exerce d'un coup le bundle,
-le runtime XSLT, les trois jeux de règles et la base de codes.
+attendre le verdict « Conforme aux quatre jeux de règles du profil EN 16931 ». Cela exerce d'un
+coup le bundle, le runtime XSLT, les trois jeux de règles du profil et la base de codes.
 
 ## Ce qui est versionné, ce qui ne l'est pas
 
 Versionnés : les pages (`index.html`, `validateur/index.html`, `studio/index.html` et leurs versions `en/`), les styles, `app.js` de la page d'accueil, les polices Geist (licence SIL OFL) et le favicon. Les sources du validateur et du Studio sont dans `site-src/`, hors du dossier déployé.
 
-Générés (ignorés par git, à reconstruire avant chaque déploiement) : `npm-downloads.json`, `studio/app.js`, ses fragments et `studio/polices/`, `validateur/app.js` et ses fragments, `validateur/vendor/` (runtime Saxon-JS et sa licence), `validateur/schemas/` (schematrons compilés, base de codes) et `validateur/exemples/` — dont `facture-exemple.pdf` et `facture-exemple-non-conforme.pdf`, deux PDF/A-3 Factur-X produits par le SDK à chaque construction (`scripts/example-invoice.mjs`, testés dans `pnpm site:check`).
+Générés (ignorés par git, à reconstruire avant chaque déploiement) : `npm-downloads.json`, `studio/app.js`, ses fragments et `studio/polices/`, `validateur/app.js` et ses fragments, `validateur/vendor/` (runtime Saxon-JS et sa licence), `validateur/schemas/<version France_RFE>/` (schematrons compilés et bases de codes, dans un dossier qui change de nom à chaque version, puisque nginx les garde un an en cache) et `validateur/exemples/` — dont `facture-exemple.pdf` et `facture-exemple-non-conforme.pdf`, deux PDF/A-3 Factur-X produits par le SDK à chaque construction (`scripts/example-invoice.mjs`, testés dans `pnpm site:check`).
 
 ## Le nombre de téléchargements npm
 

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Factur-X validator — check an invoice without sending it anywhere</title>
-<meta name="description" content="Drop in a Factur-X PDF or a CII XML file: the official EN 16931, Factur-X and BR-FR schematrons run in your browser. No file is ever uploaded.">
+<meta name="description" content="Drop in a Factur-X PDF or a CII XML file: the official schematrons of its profile — EN 16931, Factur-X, BR-FR — run in your browser. No file is ever uploaded.">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fafafa">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
@@ -53,7 +53,7 @@
   <div class="wrap">
     <p class="chip"><span class="dot"></span>Your file stays put: everything runs in your browser</p>
     <h1>Does your invoice pass the official validators?</h1>
-    <p class="lede">Drop in a Factur-X PDF or a CII XML file. The SDK reads it back into a typed object, then the three official schematrons judge it: <b>EN 16931 (CEN)</b>, <b>Factur-X</b>, and the French <b>BR-FR</b> rules of the XP&nbsp;Z12-012 standard.</p>
+    <p class="lede">Drop in a Factur-X PDF or a CII XML file. The official schematrons of its profile judge it: <b>EN 16931 (CEN)</b> and <b>Factur-X</b>, or those of the Basic WL, Extended and EXTENDED-CTC-FR profiles, always with the French <b>BR-FR</b> rules of the XP&nbsp;Z12-012 standard. For EN 16931, the SDK also reads it back into a typed object.</p>
 
     <noscript>
       <p class="noscript">This validator runs entirely in your browser: it needs JavaScript to read the file and execute the schematrons. Your file is never uploaded either way. Without JavaScript, the SDK is still usable from <a href="https://www.npmjs.com/package/facturx-sdk">npm</a>.</p>
@@ -81,8 +81,8 @@
       <h2>What this tool checks</h2>
       <div class="note-grid">
         <div>
-          <h3>Four judges</h3>
-          <p>The SDK checks the model, the arithmetic in integer cents and the French rules, giving the exact path of the offending field. The three official schematrons then rule on the XML as it stands, with their own rule codes.</p>
+          <h3>The rules of its profile, not another's</h3>
+          <p>Each profile has its own rules: in EXTENDED-CTC-FR, the net price is only required on detail lines. The tool reads the declared profile (BT-24) and applies only the official rule sets of that profile, published by the FNFE-MPE (France_RFE v1.4.0.04). For EN 16931, four judges: the SDK, with the exact path of the offending field, then the CEN, Factur-X and BR-FR schematrons on the XML as it stands. A profile with no official rule set (Minimum, Basic) is not judged.</p>
         </div>
         <div>
           <h3>Three tolerances, stated openly</h3>

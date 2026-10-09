@@ -460,8 +460,8 @@ const fr = {
     stale: 'La facture a changé depuis le dernier passage.',
     judges: {
       cen: ['EN 16931 (CEN)', 'schematron officiel CII'],
-      facturx: ['Factur-X EN 16931', 'schematron du profil 1.09'],
-      brfr: ['BR-FR (XP Z12-012)', 'schematron Flux 2 V1.3.0'],
+      facturx: ['Factur-X EN 16931', 'schematron du profil 1.09.2'],
+      brfr: ['BR-FR (XP Z12-012)', 'schematron Flux 2 V1.4.0.04'],
     } as Record<string, [string, string]>,
     judgeOk: 'Conforme',
     judgeFailed: 'Non conforme',
@@ -1040,8 +1040,8 @@ const en: Strings = {
     stale: 'The invoice changed since the last run.',
     judges: {
       cen: ['EN 16931 (CEN)', 'official CII schematron'],
-      facturx: ['Factur-X EN 16931', 'profile 1.09 schematron'],
-      brfr: ['BR-FR (XP Z12-012)', 'Flux 2 schematron V1.3.0'],
+      facturx: ['Factur-X EN 16931', 'profile 1.09.2 schematron'],
+      brfr: ['BR-FR (XP Z12-012)', 'Flux 2 schematron V1.4.0.04'],
     },
     judgeOk: 'Compliant',
     judgeFailed: 'Not compliant',

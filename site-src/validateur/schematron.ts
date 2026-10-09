@@ -39,15 +39,27 @@ function ensureSaxon(): Promise<SaxonTransform> {
   return saxonLoading;
 }
 
-const FILES: Record<SchematronId, string> = {
-  cen: 'EN16931-CII-validation.sef.json.gz',
-  facturx: 'FACTUR-X_EN16931.sef.json.gz',
-  brfr: 'BR-FR-Flux2-CII.sef.json.gz',
+/** Jeu de règles compilé de chaque juge (servi compressé, suffixe `.gz`). */
+export const SEF_FILES: Record<SchematronId, string> = {
+  cen: 'EN16931-CII-validation.sef.json',
+  facturx: 'FACTUR-X_EN16931.sef.json',
+  'facturx-basicwl': 'FACTUR-X_BASIC-WL.sef.json',
+  'facturx-extended': 'FACTUR-X_EXTENDED.sef.json',
+  'extended-ctc-fr': 'EXTENDED-CTC-FR-CII.sef.json',
+  brfr: 'BR-FR-Flux2-CII.sef.json',
 };
 
 const cache = new Map<SchematronId, unknown>();
 
-const schemasBase = () => assetUrl('schemas/');
+/**
+ * Version des artefacts France_RFE servis, qui nomme leur dossier. nginx garde les jeux de règles un an
+ * en cache (« le nom change quand le contenu change ») : une nouvelle version doit changer d'adresse,
+ * faute de quoi un visiteur déjà venu jugerait avec les anciennes règles. Égale à `FNFE_TAG`
+ * (scripts/fetch-schemas.mjs), sous lequel `pnpm validator:fetch` les publie.
+ */
+export const RULES_VERSION = 'v1.4.0.04';
+
+const schemasBase = () => assetUrl(`schemas/${RULES_VERSION}/`);
 
 /** Décompresse si le corps est gzippé ; certains serveurs le font déjà pour un `.gz`. */
 async function readMaybeGzip(response: Response): Promise<string> {
@@ -68,7 +80,7 @@ async function readMaybeGzip(response: Response): Promise<string> {
 async function loadSef(id: SchematronId): Promise<unknown> {
   const cached = cache.get(id);
   if (cached) return cached;
-  const url = new URL(FILES[id], schemasBase()).href;
+  const url = new URL(`${SEF_FILES[id]}.gz`, schemasBase()).href;
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(

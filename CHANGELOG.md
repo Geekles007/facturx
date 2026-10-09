@@ -2,6 +2,14 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Depuis 1.0.0, une rupture d'API n'arrive que dans une version majeure ; une nouvelle règle de validation est une version mineure.
 
+## [Non publié]
+
+### Vérification
+- Les schematrons officiels viennent désormais de **France_RFE v1.4.0.04**, les artefacts de validation de la réforme publiés par le FNFE-MPE (XP Z12-012 V1.4) : CEN EN 16931 inchangé, profil Factur-X EN 16931 en 1.09.2, règles françaises BR-FR v1.4. Les fichiers de référence du SDK les passent avec zéro assertion en échec, aux trois mêmes tolérances près. Aucun changement d'API.
+
+### Validateur en ligne
+- Chaque fichier est jugé avec **les règles de son profil** (BT-24) : EN 16931 (SDK, CEN, Factur-X, BR-FR), Basic WL, Extended ou EXTENDED-CTC-FR (schematron du profil et BR-FR). Un EXTENDED-CTC-FR conforme ne récolte plus de faux BR-26 à BR-28. Un profil sans jeu de règles officiel (Minimum, Basic) n'est pas jugé, et le rapport le dit. Hors EN 16931, le SDK est « non applicable ».
+
 ## [1.6.0] — 2026-09-30
 
 ### Ajouté

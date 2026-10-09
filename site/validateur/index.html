@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Validateur Factur-X — contrôlez une facture sans l'envoyer nulle part</title>
-<meta name="description" content="Déposez un PDF ou un XML Factur-X : les schematrons officiels EN 16931, Factur-X et BR-FR s'exécutent dans votre navigateur. Aucun fichier n'est transmis.">
+<meta name="description" content="Déposez un PDF ou un XML Factur-X : les schematrons officiels de son profil — EN 16931, Factur-X, BR-FR — s'exécutent dans votre navigateur. Aucun fichier n'est transmis.">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fafafa">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
@@ -51,7 +51,7 @@
   <div class="wrap">
     <p class="chip"><span class="dot"></span>Votre fichier ne part pas : tout s'exécute dans votre navigateur</p>
     <h1>Votre facture passe-t-elle les validateurs officiels&nbsp;?</h1>
-    <p class="lede">Déposez un PDF Factur-X ou un XML CII. Le SDK le relit en objet typé, puis les trois schematrons officiels le jugent&nbsp;: <b>EN 16931 (CEN)</b>, <b>Factur-X</b> et les règles françaises <b>BR-FR</b> de la norme XP&nbsp;Z12-012.</p>
+    <p class="lede">Déposez un PDF Factur-X ou un XML CII. Les schematrons officiels de son profil le jugent&nbsp;: <b>EN 16931 (CEN)</b> et <b>Factur-X</b>, ou ceux des profils Basic WL, Extended et EXTENDED-CTC-FR, toujours avec les règles françaises <b>BR-FR</b> de la norme XP&nbsp;Z12-012. En EN 16931, le SDK le relit aussi en objet typé.</p>
 
     <noscript>
       <p class="noscript">Ce validateur s'exécute entièrement dans votre navigateur : il a besoin de JavaScript pour lire le fichier et faire tourner les schematrons. Votre fichier n'est transmis nulle part pour autant. Sans JavaScript, le SDK reste utilisable en ligne de commande depuis <a href="https://www.npmjs.com/package/facturx-sdk">npm</a>.</p>
@@ -79,8 +79,8 @@
       <h2>Ce que contrôle cet outil</h2>
       <div class="note-grid">
         <div>
-          <h3>Quatre juges</h3>
-          <p>Le SDK vérifie le modèle, l'arithmétique en centimes et les règles françaises, avec le chemin exact du champ fautif. Les trois schematrons officiels rendent leur verdict sur le XML tel quel, avec leurs propres codes de règle.</p>
+          <h3>Les règles de son profil, pas d'un autre</h3>
+          <p>Chaque profil a ses règles&nbsp;: en EXTENDED-CTC-FR, le prix net n'est exigé que sur les lignes de détail. L'outil lit le profil déclaré (BT-24) et n'applique que les jeux de règles officiels de ce profil, publiés par le FNFE-MPE (France_RFE v1.4.0.04). En EN 16931, quatre juges&nbsp;: le SDK, avec le chemin exact du champ fautif, puis les schematrons CEN, Factur-X et BR-FR sur le XML tel quel. Un profil sans jeu de règles officiel (Minimum, Basic) n'est pas jugé.</p>
         </div>
         <div>
           <h3>Trois tolérances assumées</h3>

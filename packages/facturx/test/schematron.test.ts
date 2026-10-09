@@ -11,10 +11,11 @@ import {
 } from './helpers/schematron.js';
 
 /**
- * Validation par les schematrons officiels, exécutés avec Saxon-JS (pas de Java) :
+ * Validation par les schematrons officiels de la réforme (France_RFE v1.4.0.04), exécutés avec
+ * Saxon-JS (pas de Java) — ceux du profil EN 16931, le seul que le SDK produit :
  *   - EN 16931 CII (CEN) — les règles BR-*, BR-CO-*, BR-CL-*, BR-S/E/AE/… que le SDK implémente lui-même ;
- *   - profil Factur-X EN 16931 (FNFE / ZUGFeRD) ;
- *   - BR-FR Flux 2 V1.3.0 (AFNOR XP Z12-012), les règles françaises appliquées par les plateformes agréées.
+ *   - profil Factur-X EN 16931 1.09.2 (FNFE / ZUGFeRD) ;
+ *   - BR-FR Flux 2 (AFNOR XP Z12-012 V1.4), les règles françaises appliquées par les plateformes agréées.
  * Les XSLT sont récupérées par `pnpm schemas:fetch` (git-ignorées) ; le test est ignoré si elles manquent.
  */
 const goldenDir = new URL('./golden/', import.meta.url).pathname;

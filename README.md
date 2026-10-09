@@ -6,7 +6,7 @@
 
 SDK **TypeScript pur** — zéro dépendance native, compatible edge/serverless — pour **générer, embarquer et extraire** des factures **Factur-X** au profil **EN 16931**, avec les règles françaises intégrées.
 
-> État : **1.6.0** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3 validé veraPDF), **statuts du cycle de vie** (validation par les règles de gestion officielles, message CDV validé contre le XSD CDAR D22B), guide réforme, exemples exécutables, et les **règles françaises de la norme AFNOR XP Z12-012** (toutes les règles `BR-FR` vérifiables hors ligne), **contre-vérifiées par les schematrons officiels CEN, Factur-X et BR-FR V1.3.0 en CI**. **Publié sur npm : `facturx-sdk`.**
+> État : **1.6.0** — boucle complète (modèle typé, validation, XML CII validé XSD, lecture XML → `Invoice`, PDF/A-3 validé veraPDF), **statuts du cycle de vie** (validation par les règles de gestion officielles, message CDV validé contre le XSD CDAR D22B), guide réforme, exemples exécutables, et les **règles françaises de la norme AFNOR XP Z12-012** (toutes les règles `BR-FR` vérifiables hors ligne), **contre-vérifiées par les schematrons officiels CEN, Factur-X et BR-FR (France_RFE v1.4.0.04) en CI**. **Publié sur npm : `facturx-sdk`.**
 
 ## Vision
 
@@ -26,9 +26,9 @@ Réception obligatoire pour **toutes** les entreprises au 1er septembre 2026, é
 
 ## Validateur en ligne
 
-**[facturx.ibird.dev/validateur](https://facturx.ibird.dev/validateur/)** — déposez un PDF Factur-X ou un XML CII : le SDK le relit en objet typé, puis les trois schematrons officiels (EN 16931 CEN, Factur-X, BR-FR de la norme XP Z12-012) rendent leur verdict, avec le code de règle et l'emplacement exact de chaque anomalie.
+**[facturx.ibird.dev/validateur](https://facturx.ibird.dev/validateur/)** — déposez un PDF Factur-X ou un XML CII : les schematrons officiels **de son profil** rendent leur verdict, avec le code de règle et l'emplacement exact de chaque anomalie. Le profil déclaré (BT-24) choisit les règles : EN 16931 (CEN, Factur-X, et le SDK qui relit la facture en objet typé), Basic WL, Extended ou EXTENDED-CTC-FR, toujours avec les règles françaises BR-FR de la norme XP Z12-012. Un profil sans jeu de règles officiel n'est pas jugé, plutôt que mal jugé.
 
-Tout s'exécute **dans le navigateur** : aucun fichier n'est transmis. Les jeux de règles sont ceux de la CI de ce dépôt. Le contrôle PDF/A-3 par veraPDF n'y figure pas — il exige Java, donc un serveur ; il reste exécuté ici à chaque commit.
+Tout s'exécute **dans le navigateur** : aucun fichier n'est transmis. Les jeux de règles sont ceux de la CI de ce dépôt : France_RFE v1.4.0.04, publiés par le FNFE-MPE. Le contrôle PDF/A-3 par veraPDF n'y figure pas — il exige Java, donc un serveur ; il reste exécuté ici à chaque commit.
 
 ## Studio
 
@@ -187,7 +187,7 @@ const debug = toCiiXml(invoice, { pretty: true, businessProcessId: 'A1' });
 // { validate: false } pour générer malgré des anomalies (debug uniquement)
 ```
 
-Le XML produit est conforme au XSD Factur-X EN 16931 (`urn:cen.eu:en16931:2017`, CII D16B) et passe **sans assertion en échec les schematrons officiels** CEN EN 16931, profil Factur-X et règles françaises BR-FR Flux 2 V1.3.0. Le lecteur est éprouvé sur **30 fichiers tiers** (corpus ZUGFeRD / KoSIT, Factur-X FR) : lus, ré-émis conformes, sans perte d'élément signifiant. Pour rejouer ces validations en local : `pnpm schemas:fetch && pnpm samples:fetch` (fichiers git-ignorés, voir `packages/facturx/test/schemas/README.md`).
+Le XML produit est conforme au XSD Factur-X EN 16931 (`urn:cen.eu:en16931:2017`, CII D16B) et passe **sans assertion en échec les schematrons officiels** CEN EN 16931, profil Factur-X et règles françaises BR-FR Flux 2 (France_RFE v1.4.0.04). Le lecteur est éprouvé sur **30 fichiers tiers** (corpus ZUGFeRD / KoSIT, Factur-X FR) : lus, ré-émis conformes, sans perte d'élément signifiant. Pour rejouer ces validations en local : `pnpm schemas:fetch && pnpm samples:fetch` (fichiers git-ignorés, voir `packages/facturx/test/schemas/README.md`).
 
 ### PDF/A-3 : embarquer et extraire
 

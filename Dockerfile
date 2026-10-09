@@ -19,8 +19,9 @@ COPY examples/receive-node/package.json examples/receive-node/
 RUN pnpm install --frozen-lockfile
 
 COPY . .
-# Télécharge le runtime Saxon-JS (saxonica.com) et les schematrons officiels (mustangproject),
-# les compile, puis produit site/validateur/. Nécessite un accès réseau pendant la construction.
+# Télécharge le runtime Saxon-JS (saxonica.com) et les schematrons officiels (France_RFE, XSD
+# mustangproject), les compile, puis produit site/validateur/. Nécessite un accès réseau pendant
+# la construction.
 RUN pnpm site:dist
 
 # --- Étape 2 : servir

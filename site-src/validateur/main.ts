@@ -32,12 +32,15 @@ const t = strings();
 const SEVERITY_LABEL: Record<Severity, string> = t.severity;
 const STATUS_LABEL: Record<JudgeReport['status'], string> = t.status;
 
-const PROFILES: Record<string, string> = {
-  'urn:cen.eu:en16931:2017': 'EN 16931',
+/** Profils connus mais sans jeu de règles officiel : nommés dans le rapport, jamais jugés. */
+const OTHER_PROFILES: Record<string, string> = {
   'urn:factur-x.eu:1p0:minimum': 'Minimum',
-  'urn:factur-x.eu:1p0:basicwl': 'Basic WL',
-  'urn:factur-x.eu:1p0:basic': 'Basic',
-  'urn:cen.eu:en16931:2017#conformant#urn:factur-x.eu:1p0:extended': 'Extended',
+  'urn:cen.eu:en16931:2017#compliant#urn:factur-x.eu:1p0:basic': 'Basic',
+};
+
+const profileLabel = (report: AnalysisReport): string | undefined => {
+  const { guidelineId } = report.document;
+  return report.profile?.name ?? (guidelineId && (OTHER_PROFILES[guidelineId] ?? guidelineId));
 };
 
 const el = <K extends keyof HTMLElementTagNameMap>(
@@ -93,14 +96,16 @@ function renderFinding(finding: Finding): HTMLLIElement {
   return item;
 }
 
-function renderJudge(judge: JudgeReport): HTMLElement {
+function renderJudge(judge: JudgeReport, profile: string): HTMLElement {
   const card = el('article', 'judge');
   card.dataset.status = judge.status;
   const head = el('div', 'judge-head');
   head.append(el('h3', undefined, judge.name), el('span', 'badge', STATUS_LABEL[judge.status]));
   // Le descriptif vient de la table par identifiant ; le nom du juge, lui, est un nom propre.
   card.append(head, el('p', 'judge-detail', t.judgeDetail[judge.id] ?? judge.detail));
-  if (judge.note) card.append(el('p', 'note', judge.note));
+  // Un juge hors de son profil le dit dans la langue de la page ; les autres notes viennent du moteur.
+  const note = judge.status === 'na' ? t.notApplicable(profile) : judge.note;
+  if (note) card.append(el('p', 'note', note));
   if (judge.findings.length === 0 && judge.status === 'ok') {
     card.append(el('p', 'none', t.noFindings));
   } else if (judge.findings.length > 0) {
@@ -117,12 +122,17 @@ function describe(report: AnalysisReport): string {
     formatBytes(report.source.bytes),
     report.source.kind === 'pdf' ? 'PDF' : 'XML',
   ];
-  const { guidelineId, businessProcessId, attachmentName } = report.document;
-  if (guidelineId) parts.push(t.profile(PROFILES[guidelineId] ?? guidelineId));
+  const { businessProcessId, attachmentName } = report.document;
+  const profile = profileLabel(report);
+  if (profile) parts.push(t.profile(profile));
   if (businessProcessId) parts.push(t.framework(businessProcessId));
   if (attachmentName) parts.push(attachmentName);
   return parts.join(' · ');
 }
+
+/** Juges qui se sont prononcés ou devaient le faire : un juge hors de son profil ne compte pas. */
+const applicable = (report: AnalysisReport): number =>
+  report.judges.filter((j) => j.status !== 'na').length;
 
 function renderReport(report: AnalysisReport): void {
   output.replaceChildren();
@@ -144,6 +154,19 @@ function renderReport(report: AnalysisReport): void {
     return;
   }
 
+  if (report.unsupportedProfile) {
+    verdict.dataset.state = 'warn';
+    heading.textContent = t.unsupported;
+    verdict.append(
+      heading,
+      el('p', 'summary', describe(report)),
+      el('p', 'note', t.unsupportedDetail(profileLabel(report) ?? '?')),
+    );
+    output.append(verdict);
+    heading.focus();
+    return;
+  }
+
   const failed = report.judges.filter((j) => j.status === 'failed').length;
   const skipped = report.judges.filter((j) => j.status === 'skipped').length;
   if (failed > 0) {
@@ -154,7 +177,7 @@ function renderReport(report: AnalysisReport): void {
     heading.textContent = t.incomplete(skipped);
   } else {
     verdict.dataset.state = 'ok';
-    heading.textContent = t.conformant;
+    heading.textContent = t.conformant(applicable(report), report.profile?.name ?? '');
   }
   verdict.append(heading, el('p', 'summary', describe(report)));
 
@@ -166,7 +189,7 @@ function renderReport(report: AnalysisReport): void {
   verdict.append(actions);
 
   const judges = el('div', 'judges');
-  for (const judge of report.judges) judges.append(renderJudge(judge));
+  for (const judge of report.judges) judges.append(renderJudge(judge, report.profile?.name ?? ''));
   output.append(verdict, judges);
   heading.focus();
 }
@@ -199,7 +222,11 @@ async function handleFile(file: File): Promise<void> {
       },
     );
     setStatus(
-      report.error ? t.interrupted : t.done(report.judges.length),
+      report.error
+        ? t.interrupted
+        : report.unsupportedProfile
+          ? t.notJudged
+          : t.done(applicable(report)),
       report.error ? 'error' : 'idle',
     );
     renderReport(report);

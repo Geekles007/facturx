@@ -8,7 +8,7 @@
 
 export interface Strings {
   severity: Record<'fatal' | 'warning' | 'tolerated', string>;
-  status: Record<'ok' | 'failed' | 'skipped', string>;
+  status: Record<'ok' | 'failed' | 'skipped' | 'na', string>;
   /** Motifs de tolérance, par code de règle — évite de traduire par correspondance de texte. */
   tolerated: Record<string, string>;
   steps: { pdf: string; sdk: string };
@@ -21,7 +21,13 @@ export interface Strings {
   unreadable: string;
   nonConformant: (failed: number) => string;
   incomplete: (skipped: number) => string;
-  conformant: string;
+  conformant: (judges: number, profile: string) => string;
+  /** Le profil n'a aucun jeu de règles officiel : titre, explication, ligne d'état. */
+  unsupported: string;
+  unsupportedDetail: (profile: string) => string;
+  notJudged: string;
+  /** Pourquoi le SDK ne se prononce pas hors EN 16931. */
+  notApplicable: (profile: string) => string;
   download: string;
   analysing: (filename: string) => string;
   interrupted: string;
@@ -34,9 +40,16 @@ export interface Strings {
   reportFilename: (stem: string) => string;
 }
 
+/** Les petits nombres en toutes lettres, comme dans une phrase. */
+const frenchCount = (n: number): string =>
+  ['zéro', 'un', 'deux', 'trois', 'quatre'][n] ?? String(n);
+/** « both » pour deux, « all three » au-delà : l'anglais ne dit pas « all two ». */
+const englishAll = (n: number): string =>
+  n === 2 ? 'both' : `all ${['zero', 'one', 'two', 'three', 'four'][n] ?? String(n)}`;
+
 const fr: Strings = {
   severity: { fatal: 'bloquant', warning: 'avertissement', tolerated: 'toléré' },
-  status: { ok: 'Conforme', failed: 'Non conforme', skipped: 'Non exécuté' },
+  status: { ok: 'Conforme', failed: 'Non conforme', skipped: 'Non exécuté', na: 'Non applicable' },
   tolerated: {
     'PEPPOL-EN16931-R008':
       'règle PEPPOL : ram:ApplicableHeaderTradeDelivery est obligatoire dans le XSD Factur-X même sans information de livraison',
@@ -49,8 +62,11 @@ const fr: Strings = {
   judgeDetail: {
     sdk: 'modèle EN 16931 et règles françaises',
     cen: 'schematron officiel CII',
-    facturx: 'schematron du profil 1.09',
-    brfr: 'schematron Flux 2 V1.3.0',
+    facturx: 'schematron du profil 1.09.2',
+    'facturx-basicwl': 'schematron du profil 1.09.2',
+    'facturx-extended': 'schematron du profil 1.09.2',
+    'extended-ctc-fr': 'schematron CII du profil étendu français',
+    brfr: 'schematron Flux 2 V1.4.0.04',
   },
   units: { kb: 'Ko', mb: 'Mo' },
   noFindings: 'Aucune anomalie relevée.',
@@ -58,7 +74,13 @@ const fr: Strings = {
   unreadable: 'Lecture impossible',
   nonConformant: (n) => `Non conforme — ${n} juge${n > 1 ? 's' : ''} en échec`,
   incomplete: (n) => `Verdict incomplet — ${n} juge${n > 1 ? 's' : ''} n'a pas pu s'exécuter`,
-  conformant: 'Conforme aux quatre jeux de règles',
+  conformant: (n, profile) => `Conforme aux ${frenchCount(n)} jeux de règles du profil ${profile}`,
+  unsupported: 'Profil non couvert',
+  unsupportedDetail: (profile) =>
+    `Aucun jeu de règles officiel de la réforme ne couvre le profil ${profile}. Le validateur juge les profils EN 16931, Basic WL, Extended et EXTENDED-CTC-FR, chacun avec ses propres règles : appliquer celles d'un autre profil rendrait un faux verdict.`,
+  notJudged: 'Analyse terminée — profil non couvert, rien n’a été jugé.',
+  notApplicable: (profile) =>
+    `Le SDK ne couvre que le profil EN 16931 : il ne se prononce pas sur un fichier ${profile}.`,
   download: 'Télécharger le rapport JSON',
   analysing: (f) => `Analyse de ${f}…`,
   interrupted: 'Analyse interrompue.',
@@ -73,7 +95,7 @@ const fr: Strings = {
 
 const en: Strings = {
   severity: { fatal: 'blocking', warning: 'warning', tolerated: 'tolerated' },
-  status: { ok: 'Conformant', failed: 'Not conformant', skipped: 'Not run' },
+  status: { ok: 'Conformant', failed: 'Not conformant', skipped: 'Not run', na: 'Not applicable' },
   tolerated: {
     'PEPPOL-EN16931-R008':
       'PEPPOL rule: ram:ApplicableHeaderTradeDelivery is mandatory in the Factur-X XSD even with no delivery information',
@@ -86,8 +108,11 @@ const en: Strings = {
   judgeDetail: {
     sdk: 'EN 16931 model and French rules',
     cen: 'official CII schematron',
-    facturx: 'profile 1.09 schematron',
-    brfr: 'Flux 2 schematron V1.3.0',
+    facturx: 'profile 1.09.2 schematron',
+    'facturx-basicwl': 'profile 1.09.2 schematron',
+    'facturx-extended': 'profile 1.09.2 schematron',
+    'extended-ctc-fr': 'CII schematron of the French extended profile',
+    brfr: 'Flux 2 schematron V1.4.0.04',
   },
   units: { kb: 'KB', mb: 'MB' },
   noFindings: 'No findings.',
@@ -95,7 +120,13 @@ const en: Strings = {
   unreadable: 'Could not be read',
   nonConformant: (n) => `Not conformant — ${n} judge${n > 1 ? 's' : ''} failed`,
   incomplete: (n) => `Incomplete verdict — ${n} judge${n > 1 ? 's' : ''} could not run`,
-  conformant: 'Conformant to all four rule sets',
+  conformant: (n, profile) => `Conformant to ${englishAll(n)} rule sets of the ${profile} profile`,
+  unsupported: 'Profile not covered',
+  unsupportedDetail: (profile) =>
+    `No official rule set of the French reform covers the ${profile} profile. The validator judges the EN 16931, Basic WL, Extended and EXTENDED-CTC-FR profiles, each with its own rules: applying another profile's rules would give a false verdict.`,
+  notJudged: 'Analysis complete — profile not covered, nothing was judged.',
+  notApplicable: (profile) =>
+    `The SDK only covers the EN 16931 profile: it does not rule on the ${profile} profile.`,
   download: 'Download the JSON report',
   analysing: (f) => `Analysing ${f}…`,
   interrupted: 'Analysis interrupted.',

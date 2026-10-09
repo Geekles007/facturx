@@ -8,7 +8,7 @@ A **pure TypeScript** SDK — no native dependencies, edge/serverless friendly �
 
 **Factur-X is ZUGFeRD.** Same standard, two names: a hybrid file where a human-readable PDF/A-3 carries the machine-readable CII XML inside it. A file produced here is a valid ZUGFeRD 2.x EN 16931 file, and the reader is exercised against the German **ZUGFeRD / KoSIT** corpus in CI. What is specific to France is the *rule set* on top (`BR-FR`), not the format.
 
-> Status: **1.6.0** — complete loop (typed model, validation, CII XML validated against the XSD, XML → `Invoice` reading, PDF/A-3 validated by veraPDF), **lifecycle statuses** (validated against the official business rules, CDV message validated against the UN/CEFACT CDAR D22B schema), executable examples, and the **French rules of the AFNOR XP Z12-012 standard** (every `BR-FR` rule that can be checked offline), **cross-checked in CI by the official CEN, Factur-X and BR-FR V1.3.0 schematrons**.
+> Status: **1.6.0** — complete loop (typed model, validation, CII XML validated against the XSD, XML → `Invoice` reading, PDF/A-3 validated by veraPDF), **lifecycle statuses** (validated against the official business rules, CDV message validated against the UN/CEFACT CDAR D22B schema), executable examples, and the **French rules of the AFNOR XP Z12-012 standard** (every `BR-FR` rule that can be checked offline), **cross-checked in CI by the official CEN, Factur-X and BR-FR schematrons (France_RFE v1.4.0.04)**.
 
 ## Why
 
@@ -32,9 +32,9 @@ The in-depth guide, a readiness checklist and the known gaps are in [docs/reform
 
 ## Online validator
 
-**[facturx.ibird.dev/validateur](https://facturx.ibird.dev/validateur/)** — drop in a Factur-X PDF or a CII XML file. The SDK reads it back into a typed object, then the three official schematrons (CEN EN 16931, Factur-X, and the French BR-FR rules of XP Z12-012) return their verdict, each finding carrying its rule code and the exact location of the problem.
+**[facturx.ibird.dev/validateur](https://facturx.ibird.dev/validateur/)** — drop in a Factur-X PDF or a CII XML file. The official schematrons **of its profile** return their verdict, each finding carrying its rule code and the exact location of the problem. The declared profile (BT-24) picks the rules: EN 16931 (CEN, Factur-X, and the SDK reading the invoice back into a typed object), Basic WL, Extended or EXTENDED-CTC-FR, always with the French BR-FR rules of XP Z12-012. A profile with no official rule set is not judged, rather than misjudged.
 
-Everything runs **in your browser**: no file is uploaded anywhere. The rule sets are the ones this repository runs in CI. The veraPDF PDF/A-3 check is not there — it needs Java, therefore a server — but it runs here on every commit.
+Everything runs **in your browser**: no file is uploaded anywhere. The rule sets are the ones this repository runs in CI: France_RFE v1.4.0.04, published by the FNFE-MPE. The veraPDF PDF/A-3 check is not there — it needs Java, therefore a server — but it runs here on every commit.
 
 ## Studio
 
@@ -148,7 +148,7 @@ const debug = toCiiXml(invoice, { pretty: true });
 // { validate: false } generates despite findings — for debugging only
 ```
 
-The XML conforms to the Factur-X EN 16931 XSD (`urn:cen.eu:en16931:2017`, CII D16B) and passes the official CEN EN 16931, Factur-X profile and French BR-FR Flux 2 V1.3.0 schematrons **with zero failed assertions**. The reader is exercised on **30 third-party files** (ZUGFeRD / KoSIT corpus, French Factur-X samples): read, re-emitted, and compared without losing a meaningful element.
+The XML conforms to the Factur-X EN 16931 XSD (`urn:cen.eu:en16931:2017`, CII D16B) and passes the official CEN EN 16931, Factur-X profile and French BR-FR Flux 2 schematrons (France_RFE v1.4.0.04) **with zero failed assertions**. The reader is exercised on **30 third-party files** (ZUGFeRD / KoSIT corpus, French Factur-X samples): read, re-emitted, and compared without losing a meaningful element.
 
 ### PDF/A-3: embed and extract
 

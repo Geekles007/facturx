@@ -131,7 +131,7 @@ const finalInvoice = { ...draft, ...computeTotals(draft, { prepaidAmount }) };  
 
 ## Conformité AFNOR XP Z12-012 : ce qui est vérifié
 
-La norme **AFNOR XP Z12-012** (formats et profils du socle, juillet 2025) fixe les règles françaises `BR-FR-xx` que les plateformes agréées appliquent. Le SDK en implémente le noyau applicable à une facture EN 16931, avec les identifiants officiels comme codes d'anomalie. **Chaque fichier de référence du SDK est validé en CI par les schematrons officiels** — CEN EN 16931 (syntaxe CII), profil Factur-X EN 16931 et **BR-FR Flux 2 V1.3.0** — exécutés avec Saxon-JS (`test/schematron.test.ts`), en plus du XSD et de veraPDF :
+La norme **AFNOR XP Z12-012** (formats et profils du socle, juillet 2025) fixe les règles françaises `BR-FR-xx` que les plateformes agréées appliquent. Le SDK en implémente le noyau applicable à une facture EN 16931, avec les identifiants officiels comme codes d'anomalie. **Chaque fichier de référence du SDK est validé en CI par les schematrons officiels** — CEN EN 16931 (syntaxe CII), profil Factur-X EN 16931 et **BR-FR Flux 2**, tels que les publie le FNFE-MPE dans **France_RFE v1.4.0.04** (XP Z12-012 V1.4) — exécutés avec Saxon-JS (`test/schematron.test.ts`), en plus du XSD et de veraPDF :
 
 | Règle | Objet | Dans le SDK |
 |---|---|---|

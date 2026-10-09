@@ -272,3 +272,29 @@ Le format retenu est celui de l'EPC (EPC069-12, « GiroCode ») : lu par les app
 
 ### D64. Un encodeur QR intégré, dessiné en vectoriel
 Une dépendance pour quelques centaines de lignes d'ISO/IEC 18004 aurait été la première du SDK hors pdf-lib : l'encodeur est écrit dans le dépôt, en mode octet seulement, les quarante versions et les quatre niveaux. Il est vérifié contre une implémentation indépendante — à masque égal, le symbole de la bibliothèque `qrcode`, bit pour bit, sur toutes les versions et tous les niveaux — et chaque symbole des tests est relu par jsQR, un décodeur tiers, en dépendance de développement seulement. La mise en page porte les modules (`LayoutQrCode`) ; le PDF les peint en un seul tracé rempli, une suite de modules par rectangle — des rectangles remplis un à un laisseraient un liseré clair entre voisins à l'écran — : net à toute échelle, sans image ni transparence, PDF/A-3b selon veraPDF. Le symbole mesure un pouce, davantage si les données l'exigent pour qu'un module ne descende pas sous 0,4 mm, et sa zone de silence de quatre modules est réservée par la mise en page ; un test vérifie qu'aucun trait ne s'y pose, dans les six modèles. Le PDF rastérisé par poppler, comme l'aperçu SVG du Studio rastérisé par le navigateur, se décode en le contenu attendu.
+
+## 2026-10-09 — Session 25 : les règles du profil de la facture
+
+### D65. Le validateur juge chaque fichier avec les règles de son profil, en France_RFE v1.4.0.04
+Le validateur appliquait à tout fichier les règles du profil EN 16931 : le CEN, le Factur-X EN 16931 et BR-FR. Or chaque profil a ses règles. En EXTENDED-CTC-FR, BR-26 à BR-28 sont désactivées : le prix net n'est exigé que sur les lignes de détail. En BASIC WL, la facture n'a pas de lignes, donc pas de BR-16. Les exemples officiels du FNFE-MPE, conformes chacun aux règles de leur profil, sortaient donc tous « non conformes » de l'outil, avec BR-26, BR-27, BR-CO-04 ou BR-16. Le signalement est venu d'un lecteur qui avait fait tourner les schematrons de la v1.4.0.04.
+
+Les jeux de règles viennent désormais tous de **France_RFE**, au commit déjà épinglé pour le CDAR, qui est le tag v1.4.0.04 (XP Z12-012 V1.4). mustangproject ne fournit plus que les XSD. Le validateur lit le BT-24 et choisit d'après la table des identifiants acceptés par les bases de codes Factur-X officielles :
+
+| Profil (BT-24) | Juges |
+|---|---|
+| EN 16931 | SDK, CEN, Factur-X EN 16931, BR-FR |
+| Basic WL (`factur-x` ou `zugferd`) | Factur-X BASIC WL, BR-FR |
+| Extended (`factur-x` ou `zugferd`) | Factur-X EXTENDED, BR-FR |
+| EXTENDED-CTC-FR | EXTENDED-CTC-FR CII, BR-FR |
+
+Le CEN accompagne le Factur-X en EN 16931 parce que les deux ne se recouvrent pas : BR-CL-23, les codes d'unité, n'est que dans le CEN (France_RFE #84). Un profil absent de la table (Minimum, Basic, XRechnung…) **n'est pas jugé** : le rapport le dit au lieu de rendre un faux verdict avec les règles d'un autre profil. Hors EN 16931, le juge SDK est **non applicable** : ce statut ne compte pas dans le verdict, contrairement à « non exécuté », qui interdit toujours d'annoncer la conformité.
+
+Le schematron BR-FR est le même dans chaque dossier de profil. Il existe en deux variantes : la principale, où les 171 règles sont `fatal`, et `_WARNING`, qui en rétrograde 145 en avertissements comme le faisait la V1.3.0. La principale est retenue. Le verdict n'en dépend pas, puisque toute anomalie non tolérée fait échouer, mais une plateforme agréée refusera ces factures, et le libellé « bloquant » le dit.
+
+Côté SDK, rien ne change. Ses fichiers de référence passent la v1.4.0.04 avec les mêmes trois tolérances, et le CEN est identique octet pour octet. Le Factur-X passe de 1.09 à 1.09.2. Deux contrôles le tiennent en CI :
+- les vingt exemples officiels (`test/schemas/exemples/`, récupérés au même commit) passent par le vrai `analyze()` avec les vrais SEF, et doivent être reconnus sous le profil de leur dossier puis acceptés ;
+- l'exemple EXTENDED-CTC-FR à sous-lignes doit relever BR-26 sous le CEN.
+
+Une mutation qui renvoie l'EXTENDED-CTC-FR vers les règles EN 16931 fait échouer les cinq exemples de ce profil.
+
+Les jeux de règles sont publiés sous `schemas/<tag>/`. nginx les garde un an en cache, selon le principe « le nom change quand le contenu change ». Sans ce dossier versionné, `BR-FR-Flux2-CII.sef.json.gz`, inchangé de nom mais pas de contenu, aurait servi la V1.3.0 aux visiteurs déjà venus. Un test vérifie que la version demandée par le site est celle que `validator:fetch` dépose. Les SEF Extended et EXTENDED-CTC-FR (0,37 et 0,18 Mo compressés) ne sont téléchargés que si l'on dépose un fichier de ce profil ; le parcours EN 16931 garde son poids.

@@ -16,12 +16,68 @@ import {
 export const JUDGES = [
   { id: 'sdk', name: 'facturx-sdk', detail: 'modèle EN 16931 et règles françaises' },
   { id: 'cen', name: 'EN 16931 (CEN)', detail: 'schematron officiel CII' },
-  { id: 'facturx', name: 'Factur-X EN 16931', detail: 'schematron du profil 1.09' },
-  { id: 'brfr', name: 'BR-FR (XP Z12-012)', detail: 'schematron Flux 2 V1.3.0' },
+  { id: 'facturx', name: 'Factur-X EN 16931', detail: 'schematron du profil 1.09.2' },
+  { id: 'facturx-basicwl', name: 'Factur-X BASIC WL', detail: 'schematron du profil 1.09.2' },
+  { id: 'facturx-extended', name: 'Factur-X EXTENDED', detail: 'schematron du profil 1.09.2' },
+  {
+    id: 'extended-ctc-fr',
+    name: 'EXTENDED-CTC-FR',
+    detail: 'schematron CII du profil étendu français',
+  },
+  { id: 'brfr', name: 'BR-FR (XP Z12-012)', detail: 'schematron Flux 2 V1.4.0.04' },
 ] as const;
 
 export type JudgeId = (typeof JUDGES)[number]['id'];
 export type SchematronId = Exclude<JudgeId, 'sdk'>;
+
+/**
+ * Profils couverts par les jeux de règles officiels de la réforme (France_RFE v1.4.0.04), reconnus
+ * à leur BT-24 tel que l'acceptent les bases de codes Factur-X. Chaque profil a ses propres règles :
+ * en EXTENDED-CTC-FR, BR-26 à BR-28 sont désactivées — les règles EN 16931 y verraient des erreurs
+ * qui n'en sont pas. Le CEN accompagne le profil Factur-X en EN 16931 parce que l'un et l'autre ne
+ * se recouvrent pas (BR-CL-23, les codes d'unité, n'est que dans le CEN).
+ */
+export const PROFILES = [
+  {
+    id: 'en16931',
+    name: 'EN 16931',
+    guidelines: ['urn:cen.eu:en16931:2017'],
+    schematrons: ['cen', 'facturx', 'brfr'],
+  },
+  {
+    id: 'basicwl',
+    name: 'Basic WL',
+    guidelines: ['urn:factur-x.eu:1p0:basicwl', 'urn:zugferd.de:2p0:basicwl'],
+    schematrons: ['facturx-basicwl', 'brfr'],
+  },
+  {
+    id: 'extended',
+    name: 'Extended',
+    guidelines: [
+      'urn:cen.eu:en16931:2017#conformant#urn:factur-x.eu:1p0:extended',
+      'urn:cen.eu:en16931:2017#conformant#urn:zugferd.de:2p0:extended',
+    ],
+    schematrons: ['facturx-extended', 'brfr'],
+  },
+  {
+    id: 'extended-ctc-fr',
+    name: 'EXTENDED-CTC-FR',
+    guidelines: ['urn:cen.eu:en16931:2017#conformant#urn.cpro.gouv.fr:1p0:extended-ctc-fr'],
+    schematrons: ['extended-ctc-fr', 'brfr'],
+  },
+] as const satisfies readonly {
+  id: string;
+  name: string;
+  guidelines: readonly string[];
+  schematrons: readonly SchematronId[];
+}[];
+
+export type ProfileId = (typeof PROFILES)[number]['id'];
+
+/** Le profil dont le BT-24 est celui-ci, s'il a des jeux de règles officiels. */
+export function profileOf(guidelineId: string): (typeof PROFILES)[number] | undefined {
+  return PROFILES.find((p) => (p.guidelines as readonly string[]).includes(guidelineId));
+}
 
 /**
  * Avertissements tolérés, avec la raison : identiques à ceux de la CI du SDK
@@ -52,7 +108,11 @@ export interface JudgeReport {
   id: JudgeId;
   name: string;
   detail: string;
-  status: 'ok' | 'failed' | 'skipped';
+  /**
+   * `skipped` : le juge aurait dû se prononcer et n'a pas pu — le verdict reste incomplet.
+   * `na` : le juge ne couvre pas ce profil (le SDK hors EN 16931) — il ne compte pas.
+   */
+  status: 'ok' | 'failed' | 'skipped' | 'na';
   /** Pourquoi ce juge n'a pas pu se prononcer. */
   note?: string | undefined;
   findings: Finding[];
@@ -72,8 +132,12 @@ export interface DocumentInfo {
 export interface AnalysisReport {
   source: { kind: 'pdf' | 'xml'; filename: string; bytes: number };
   document: DocumentInfo;
+  /** Profil reconnu à son BT-24, qui fixe les jeux de règles appliqués. */
+  profile?: { id: ProfileId; name: string } | undefined;
+  /** Le BT-24 ne désigne aucun profil couvert par un jeu de règles officiel : rien n'est jugé. */
+  unsupportedProfile?: boolean | undefined;
   judges: JudgeReport[];
-  /** Vrai seulement si les quatre juges se sont prononcés sans relever d'anomalie bloquante. */
+  /** Vrai seulement si chaque juge applicable s'est prononcé sans relever d'anomalie bloquante. */
   ok: boolean;
   /** Échec avant toute analyse (PDF illisible, XML absent ou hors CII). */
   error?: { code: string; message: string; path?: string | undefined };
@@ -185,35 +249,49 @@ export async function analyze(
     xml = new TextDecoder('utf-8').decode(file.bytes).replace(/^﻿/, '');
   }
 
+  let profile: (typeof PROFILES)[number] | undefined;
   try {
     const { guidelineId, businessProcessId } = readCiiGuideline(xml);
     report.document.guidelineId = guidelineId;
     report.document.businessProcessId = businessProcessId;
+    profile = profileOf(guidelineId);
   } catch (error) {
     if (error instanceof FacturXParseError) return fail(error.code, error.message, error.path);
     throw error;
   }
 
-  // Juge 1 — le SDK : lecture en objet typé puis validation complète.
-  deps.onProgress?.(deps.steps?.sdk ?? 'Lecture et validation par le SDK');
+  // Un profil sans jeu de règles officiel : juger avec ceux d'un autre profil produirait un faux verdict.
+  if (!profile) {
+    report.unsupportedProfile = true;
+    return report;
+  }
+  report.profile = { id: profile.id, name: profile.name };
+
+  // Juge 1 — le SDK : lecture en objet typé puis validation complète. Il ne couvre que l'EN 16931.
   const sdk: JudgeReport = { ...judgeMeta('sdk'), status: 'ok', findings: [] };
-  try {
-    const invoice = fromCiiXml(xml, { validate: false });
-    const result = validateInvoice(invoice);
-    sdk.findings = result.issues.map(issueToFinding);
-    sdk.status = result.ok ? 'ok' : 'failed';
-  } catch (error) {
-    if (!(error instanceof FacturXParseError)) throw error;
-    sdk.status = 'failed';
-    sdk.note = "Le SDK n'a pas pu construire une facture typée à partir de ce document.";
-    sdk.findings = [
-      { code: error.code, message: error.message, path: error.path, severity: 'fatal' },
-    ];
+  if (profile.id !== 'en16931') {
+    sdk.status = 'na';
+    sdk.note = `Le SDK ne couvre que le profil EN 16931 : il ne se prononce pas sur un fichier ${profile.name}.`;
+  } else {
+    deps.onProgress?.(deps.steps?.sdk ?? 'Lecture et validation par le SDK');
+    try {
+      const invoice = fromCiiXml(xml, { validate: false });
+      const result = validateInvoice(invoice);
+      sdk.findings = result.issues.map(issueToFinding);
+      sdk.status = result.ok ? 'ok' : 'failed';
+    } catch (error) {
+      if (!(error instanceof FacturXParseError)) throw error;
+      sdk.status = 'failed';
+      sdk.note = "Le SDK n'a pas pu construire une facture typée à partir de ce document.";
+      sdk.findings = [
+        { code: error.code, message: error.message, path: error.path, severity: 'fatal' },
+      ];
+    }
   }
   report.judges.push(sdk);
 
-  // Juges 2 à 4 — les schematrons officiels, sur le XML tel quel, même si le SDK a échoué.
-  for (const id of ['cen', 'facturx', 'brfr'] as const) {
+  // Les schematrons officiels du profil, sur le XML tel quel, même si le SDK a échoué.
+  for (const id of profile.schematrons) {
     const judge: JudgeReport = { ...judgeMeta(id), status: 'ok', findings: [] };
     deps.onProgress?.(`Schematron ${judge.name}`);
     try {
@@ -228,6 +306,6 @@ export async function analyze(
   }
 
   // Un juge qui n'a pas pu s'exécuter n'est pas un juge satisfait : le verdict reste incomplet.
-  report.ok = report.judges.every((j) => j.status === 'ok');
+  report.ok = report.judges.every((j) => j.status === 'ok' || j.status === 'na');
   return report;
 }
