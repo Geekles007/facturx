@@ -7,6 +7,9 @@ Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Cha
 ### Vérification
 - Les schematrons officiels viennent désormais de **France_RFE v1.4.0.04**, les artefacts de validation de la réforme publiés par le FNFE-MPE (XP Z12-012 V1.4) : CEN EN 16931 inchangé, profil Factur-X EN 16931 en 1.09.2, règles françaises BR-FR v1.4. Les fichiers de référence du SDK les passent avec zéro assertion en échec, aux trois mêmes tolérances près. Aucun changement d'API.
 
+### Modifié
+- **BR-FR-14** : une prestation de services peut porter une adresse de livraison, pourvu qu'elle soit complète (ligne 1, ville, code postal, pays). Le SDK la refusait. La norme la dit « pas à transmettre » pour les services, mais la déclare non contrôlable, et ni le schematron BR-FR officiel ni les exemples du FNFE-MPE ne l'interdisent : les six exemples officiels en cadre S1 en portent une. `fromCiiXml` refusait donc de lire une facture que la chaîne officielle accepte. Une règle assouplie ne refuse rien de ce qui passait.
+
 ### Validateur en ligne
 - Chaque fichier est jugé avec **les règles de son profil** (BT-24) : EN 16931 (SDK, CEN, Factur-X, BR-FR), Basic WL, Extended ou EXTENDED-CTC-FR (schematron du profil et BR-FR). Un EXTENDED-CTC-FR conforme ne récolte plus de faux BR-26 à BR-28. Un profil sans jeu de règles officiel (Minimum, Basic) n'est pas jugé, et le rapport le dit. Hors EN 16931, le SDK est « non applicable ».
 

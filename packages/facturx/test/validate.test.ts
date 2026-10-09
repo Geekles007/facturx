@@ -526,13 +526,32 @@ describe('BR-FR-04 types de document et BR-FR-14 adresse de livraison', () => {
     expect(validateInvoice(invoice).ok).toBe(true);
   });
 
-  it('BR-FR-14 : pas d’adresse de livraison pour une prestation de services', () => {
+  // La norme dit l'adresse « pas à transmettre » pour une prestation de services, mais la déclare non
+  // contrôlable : le schematron BR-FR officiel ne l'interdit pas, et les exemples officiels du
+  // FNFE-MPE en cadre S1 la portent tous (D66). Refuser ce que la chaîne officielle accepte ferait
+  // rejeter à la réception une facture valide.
+  it('BR-FR-14 : une prestation de services peut porter une adresse de livraison complète', () => {
     const invoice = simpleInvoice(); // services
     invoice.delivery = {
       date: '2026-09-10',
       address: { line1: 'ZI des Docks', city: 'Lyon', postCode: '69007', countryCode: 'FR' },
     };
-    expect(codesAndPaths(invoice)).toContain('BR-FR-14 @ delivery.address');
+    expect(validateInvoice(invoice).ok).toBe(true);
+  });
+
+  it('BR-FR-14 : une adresse de livraison fournie doit être complète (services)', () => {
+    const invoice = simpleInvoice(); // services
+    invoice.delivery = {
+      date: '2026-09-10',
+      address: { line1: 'ZI des Docks', countryCode: 'FR' },
+    };
+    expect(codesAndPaths(invoice)).toEqual(
+      expect.arrayContaining([
+        'BR-FR-14 @ delivery.address.city',
+        'BR-FR-14 @ delivery.address.postCode',
+      ]),
+    );
+    expect(codesAndPaths(invoice)).not.toContain('BR-FR-14 @ delivery.address');
   });
 
   it('une facture définitive après acompte (cadre *4) référence ses factures d’acompte', () => {

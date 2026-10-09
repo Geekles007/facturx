@@ -257,7 +257,8 @@ const fr = {
     start: 'Début',
     end: 'Fin',
     address: 'Livré à une autre adresse que celle du client',
-    addressServices: "Pas d'adresse de livraison pour une prestation de services (BR-FR-14).",
+    addressServices:
+      "Pour une prestation de services, la norme ne demande pas d'adresse de livraison (BR-FR-14) : ne l'indiquez que si elle a un sens, un lieu d'intervention par exemple.",
     partyName: 'Destinataire',
     locationId: 'Identifiant du lieu',
   },
@@ -839,7 +840,8 @@ const en: Strings = {
     start: 'Start',
     end: 'End',
     address: 'Delivered to another address than the customer’s',
-    addressServices: 'No delivery address for a supply of services (BR-FR-14).',
+    addressServices:
+      'For a supply of services, the standard does not ask for a delivery address (BR-FR-14): only give one if it means something, such as the place where the work is done.',
     partyName: 'Recipient',
     locationId: 'Location ID',
   },

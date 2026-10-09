@@ -41,7 +41,7 @@ Nouvelles mentions obligatoires (en plus de celles de l'art. L441-9 C. com.) :
 | Mention | Où dans Factur-X | Dans le SDK |
 |---|---|---|
 | **SIREN** du client | BT-47 (`0002`) | `buyer.siren` ✅ — **exigé** pour un acheteur professionnel établi en France (`FR-BUYER-SIREN`), clé de Luhn vérifiée ; `buyer.consumer: true` pour un particulier (B2C) |
-| **Adresse de livraison** si différente de l'adresse du client | BG-15, règle **BR-FR-14** | `delivery.address` ✅ — si fournie : ligne 1, ville, code postal, pays exigés ; refusée pour une prestation de services |
+| **Adresse de livraison** si différente de l'adresse du client | BG-15, règle **BR-FR-14** | `delivery.address` ✅ — si fournie : ligne 1, ville, code postal, pays exigés. Pour une prestation de services, la norme ne la demande pas, sans l'interdire en pratique (voir D66) |
 | **Nature de l'opération** : livraison de biens / prestation de services / mixte | cadre de facturation BT-23 (`B1` / `S1` / `M1`), règle **BR-FR-08** | `operationCategory` ✅ — exigée, écrite en BT-23 et relue ; `businessProcess` pour les 12 autres cadres (`*2` déjà payée, `*4` définitive après acompte, `S5`/`S6` sous-/cotraitance, `*7` déjà e-reportée). **Mapping confirmé** par la norme AFNOR XP Z12-012 |
 | **Option pour le paiement de la TVA d'après les débits** | BT-8 `DueDateTypeCode` = `5` (CII), règle **BR-FR-MAP-03** | `vatOnDebits: true` ✅ — écrit dans chaque ventilation, relu, exclusif de `taxPointDate` (BR-CO-03). **Confirmé** par XP Z12-012 (« valeurs 5 en CII et 3 en UBL ») ; la mention lisible est à imprimer par votre PDF |
 | Pénalités de retard, indemnité forfaitaire de 40 €, escompte | **notes BG-1 codées `PMD`, `PMT`, `AAB`** (règles **BR-FR-05/06** : une fois chacune) + texte BT-20 | ✅ générées depuis `paymentTerms` (`latePenaltyRate`, `recoveryIndemnity`, `earlyPaymentDiscount`) ou fournies dans `notes` ; validées |
@@ -143,7 +143,7 @@ La norme **AFNOR XP Z12-012** (formats et profils du socle, juillet 2025) fixe l
 | BR-FR-09 | SIRET cohérent avec le SIREN | `siret` / `siren` |
 | BR-FR-10 / 11 | SIREN vendeur obligatoire ; SIREN acheteur obligatoire (e-invoicing) | `seller.siren`, `buyer.siren` (`buyer.consumer` pour le B2C) |
 | BR-FR-12 / 13 / 21 / 22 | adresse électronique de l'acheteur (BT-49) obligatoire (sauf `buyer.consumer`) ; en e-invoicing (`processing: 'B2B'`), schéma 0225 commençant par le SIREN — du vendeur en autofacturation | `electronicAddress`, `processing` |
-| BR-FR-14 | adresse de livraison fournie ⇒ BT-75/77/78/80 présents ; jamais pour une prestation de services | `delivery.address` |
+| BR-FR-14 | adresse de livraison fournie ⇒ BT-75/77/78/80 présents, y compris pour une prestation de services | `delivery.address` |
 | BR-FR-15 / 16 | catégories de TVA S, E, AE, K, G, O, Z ; taux dans la liste française | `tax.category`, `tax.rate` |
 | BR-FR-17 / 18 | pièces jointes BG-24 : qualificatifs (`BON_COMMANDE`, `RIB`, `LISIBLE`…), une seule `LISIBLE` | `attachments` |
 | BR-FR-19 | 100 Mo par facture : pièces jointes bornées par pièce et cumulées | `attachments`, `DEFAULT_LIMITS` |

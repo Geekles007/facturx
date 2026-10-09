@@ -82,6 +82,28 @@ describe.skipIf(!available)('exemples officiels de France_RFE', () => {
     60_000,
   );
 
+  /**
+   * Ce que le SDK relève dans les exemples EN 16931, au-delà des schematrons : uniquement leurs
+   * données fictives. Une règle du SDK plus stricte que la chaîne officielle apparaîtrait ici —
+   * c'est ainsi qu'on a vu BR-FR-14 refuser une adresse de livraison sur une prestation (D66).
+   */
+  const FICTITIOUS = new Set([
+    'FORMAT-BIC', // « BIC_MONCOMPTE »
+    'FORMAT-VAT-ID', // « FR37288100000008 » : quatorze chiffres au lieu de onze
+  ]);
+
+  it.each(examples.filter((e) => e.profile === 'en16931'))(
+    '$name : le SDK n’y relève que des données fictives',
+    async ({ path }) => {
+      const report = await analyze(
+        { filename: 'exemple.xml', bytes: readFileSync(path) },
+        { extractPdf: async () => undefined, runSchematron: async () => [] },
+      );
+      const sdk = report.judges.find((j) => j.id === 'sdk');
+      expect(sdk?.findings.map((f) => f.code).filter((code) => !FICTITIOUS.has(code))).toEqual([]);
+    },
+  );
+
   it('sous les règles EN 16931, un EXTENDED-CTC-FR conforme récolterait BR-26', async () => {
     const xml = readFileSync(
       join(

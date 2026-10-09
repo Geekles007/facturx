@@ -42,7 +42,8 @@ export interface Delivery {
   /**
    * BG-15 — Adresse de livraison, à fournir si elle diffère de celle de l'acheteur (BG-8).
    * Règle FR BR-FR-14 : si fournie, `line1` (BT-75), `city` (BT-77), `postCode` (BT-78) et `countryCode` (BT-80)
-   * sont obligatoires ; ne pas la transmettre pour une prestation de services.
+   * sont obligatoires. La norme ne la demande pas pour une prestation de services ; le SDK l'accepte, comme
+   * les validateurs officiels.
    */
   address?: Address;
 }

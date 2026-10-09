@@ -402,30 +402,24 @@ export function checkFrenchRules(
     checkTax(tb, `taxBreakdown[${i}]`, c);
   }
 
-  // BR-FR-14 : adresse de livraison (BG-15) fournie ⇒ complète, et jamais pour une prestation de services
+  // BR-FR-14 : adresse de livraison (BG-15) fournie ⇒ complète. La norme la dit « pas à transmettre »
+  // pour une prestation de services, mais non contrôlable : ni le schematron officiel ni les exemples
+  // du FNFE-MPE ne l'interdisent, le SDK non plus (D66).
   const shipTo = inv.delivery?.address;
   if (shipTo) {
-    if (inv.operationCategory === 'services') {
-      c.add(
-        'BR-FR-14',
-        'delivery.address',
-        'L’adresse de livraison (BG-15) ne doit pas être transmise pour une prestation de services.',
-      );
-    } else {
-      const required: [keyof typeof shipTo, string][] = [
-        ['line1', 'BT-75'],
-        ['city', 'BT-77'],
-        ['postCode', 'BT-78'],
-        ['countryCode', 'BT-80'],
-      ];
-      for (const [key, bt] of required) {
-        if (!isNonEmptyString(shipTo[key])) {
-          c.add(
-            'BR-FR-14',
-            `delivery.address.${key}`,
-            `L’adresse de livraison (BG-15) doit comporter ${bt} (${key}).`,
-          );
-        }
+    const required: [keyof typeof shipTo, string][] = [
+      ['line1', 'BT-75'],
+      ['city', 'BT-77'],
+      ['postCode', 'BT-78'],
+      ['countryCode', 'BT-80'],
+    ];
+    for (const [key, bt] of required) {
+      if (!isNonEmptyString(shipTo[key])) {
+        c.add(
+          'BR-FR-14',
+          `delivery.address.${key}`,
+          `L’adresse de livraison (BG-15) doit comporter ${bt} (${key}).`,
+        );
       }
     }
   }
