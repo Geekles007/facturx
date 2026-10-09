@@ -2,6 +2,17 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Depuis 1.0.0, une rupture d'API n'arrive que dans une version majeure ; une nouvelle règle de validation est une version mineure.
 
+## [Non publié]
+
+### Ajouté
+- **Identifiants fiscaux selon la catégorie de TVA** (EN 16931, règles 02, 03 et 04 de chaque famille : lignes, remises, frais de document).
+  - En S, Z, E, AE, L et M, le vendeur porte son numéro de TVA (BT-31) ou son identifiant fiscal (BT-32).
+  - En AE, l'acheteur porte en plus son numéro de TVA (BT-48) ou son SIREN (BT-47).
+  - En K et G, le numéro de TVA du vendeur est exigé ; en K, celui de l'acheteur aussi.
+  - En O, aucun des deux numéros de TVA ne doit figurer.
+
+  Le SDK acceptait ces factures, et le schematron CEN les refusait. Les codes sont les identifiants officiels, `BR-IC-…` pour K, `BR-AF-…` pour L et `BR-AG-…` pour M. En franchise en base, BR-FR-CO-16 seule s'applique. Nouvelles règles pouvant refuser une facture acceptée jusque-là : version mineure.
+
 ## [1.7.0] — 2026-10-09
 
 ### Ajouté

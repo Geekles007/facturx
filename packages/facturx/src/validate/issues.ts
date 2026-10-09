@@ -78,6 +78,8 @@ export type IssueCode =
   // Catégories TVA : présence de la ventilation (-01), taux ligne (-05), remise (-06), frais (-07),
   // base imposable (-08), montant TVA (-09), motif d'exonération (-10)
   | `BR-${TaxRuleFamily}-${'01' | '05' | '06' | '07' | '08' | '09' | '10'}`
+  // Identifiants fiscaux exigés ou interdits par catégorie : lignes (02), remises (03), frais (04)
+  | `BR-${TaxIdRuleFamily}-${'02' | '03' | '04'}`
   // Règles françaises
   // Règles françaises officielles (AFNOR XP Z12-012)
   | 'BR-FR-01'
@@ -127,6 +129,12 @@ export type IssueCode =
   | 'CALC-TAX-RATE';
 
 export type TaxRuleFamily = 'S' | 'Z' | 'E' | 'AE' | 'K' | 'G' | 'O' | 'L' | 'M';
+
+/**
+ * Familles sous leur nom officiel EN 16931 : K → IC (livraison intracommunautaire), L → AF (IGIC),
+ * M → AG (IPSI). `TaxRuleFamily` garde les lettres de catégorie pour les codes déjà publiés.
+ */
+export type TaxIdRuleFamily = 'S' | 'Z' | 'E' | 'AE' | 'IC' | 'G' | 'O' | 'AF' | 'AG';
 
 /** Une anomalie de validation, localisée par un chemin dans l'objet `Invoice`. */
 export interface Issue {

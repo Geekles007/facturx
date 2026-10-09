@@ -405,21 +405,17 @@ export function checkFrenchRules(
   // BR-FR-CO-16 (annexe A V1.4) : la franchise en base s'exprime en catégorie E avec le code
   // VATEX-FR-FRANCHISE ; un vendeur sans numéro de TVA répète son SIREN en BT-32. Que le vendeur soit
   // en franchise, seul lui le sait (« règle non vérifiable ») : on contrôle ce que le fichier déclare.
-  let franchise = false;
   for (const [i, tb] of (Array.isArray(inv.taxBreakdown) ? inv.taxBreakdown : []).entries()) {
-    if (tb?.exemptionReasonCode !== 'VATEX-FR-FRANCHISE') continue;
-    if (tb.category === 'E') franchise = true;
-    else {
-      c.add(
-        'BR-FR-CO-16',
-        `taxBreakdown[${i}].category`,
-        'La franchise en base (VATEX-FR-FRANCHISE) s’exprime en catégorie de TVA E (BT-118).',
-        { expected: 'E', actual: tb.category },
-      );
-    }
+    if (tb?.exemptionReasonCode !== 'VATEX-FR-FRANCHISE' || tb.category === 'E') continue;
+    c.add(
+      'BR-FR-CO-16',
+      `taxBreakdown[${i}].category`,
+      'La franchise en base (VATEX-FR-FRANCHISE) s’exprime en catégorie de TVA E (BT-118).',
+      { expected: 'E', actual: tb.category },
+    );
   }
   const seller = inv.seller;
-  if (franchise && seller && !isNonEmptyString(seller.vatId)) {
+  if (declaresFranchise(inv) && seller && !isNonEmptyString(seller.vatId)) {
     const registration = seller.taxRegistrationId;
     if (!isNonEmptyString(registration) || (seller.siren && registration !== seller.siren)) {
       c.add(
@@ -566,4 +562,11 @@ export function checkFrenchRules(
       );
     }
   }
+}
+
+/** La facture se déclare en franchise en base : une ventilation E avec le code VATEX-FR-FRANCHISE. */
+export function declaresFranchise(inv: Invoice): boolean {
+  return (Array.isArray(inv.taxBreakdown) ? inv.taxBreakdown : []).some(
+    (tb) => tb?.category === 'E' && tb.exemptionReasonCode === 'VATEX-FR-FRANCHISE',
+  );
 }

@@ -317,4 +317,23 @@ Le cas visé est la micro-entreprise sans numéro de TVA. Sans cette règle, le 
 
 Le Studio l'a révélé : son test de franchise en base, un vendeur sans numéro de TVA ni BT-32, affirmait une facture sans anomalie, alors que le CEN la refuse. Le Studio ne remplit pas BT-32 à la place de l'utilisateur, conformément à D61 (la validation dit ce qui manque, le Studio n'invente rien). L'anomalie pointe sur le champ « Identifiant fiscal local », et la section repliée qui le contient s'ouvre au clic.
 
-BR-E-02 reste non implémentée dans le SDK pour les autres exonérations E. Une exonération qui n'est pas la franchise, sans identifiant fiscal du vendeur, passe le SDK et pas le CEN : c'est un écart connu, à traiter à part.
+BR-E-02 reste non implémentée dans le SDK pour les autres exonérations E. Une exonération qui n'est pas la franchise, sans identifiant fiscal du vendeur, passe le SDK et pas le CEN : c'est un écart connu, à traiter à part. *Traité par D68.*
+
+### D68. Les identifiants fiscaux selon la catégorie de TVA : toute la famille, sous les noms officiels
+BR-E-02 n'était qu'un cas d'un trou plus large. Chaque catégorie de TVA a ses règles 02 (lignes), 03 (remises) et 04 (frais de document). Elles disent quels identifiants fiscaux la facture doit porter, ou ne doit pas porter. Le SDK n'en appliquait aucune, et le CEN les appliquait toutes. Un vendeur sans numéro de TVA en S, Z, E ou G, un acheteur sans numéro de TVA en K, un numéro de TVA en O : autant de factures que le SDK disait conformes et que le CEN refusait.
+
+`validate/tax-ids.ts` les applique toutes :
+
+| Catégorie | Exigence |
+|---|---|
+| S, Z, E, AE, L, M | BT-31 ou BT-32 du vendeur |
+| AE | en plus, BT-48 ou BT-47 (SIREN) de l'acheteur |
+| K, G | BT-31 du vendeur, BT-32 ne suffit pas ; en K, BT-48 de l'acheteur |
+| O | ni BT-31 du vendeur ni BT-48 de l'acheteur |
+
+Le schematron déclenche la règle par élément. Son remède étant sur une partie, le SDK émet une anomalie par règle, sur le champ à corriger (`seller.vatId`, `buyer.vatId`). Le représentant fiscal (BT-63) n'est pas modélisé : il n'entre pas dans les conditions. En franchise en base, BR-FR-CO-16 dit déjà quoi porter en BT-32 : BR-E-02 ne s'y ajoute pas.
+
+**Noms officiels.** Ces règles portent les identifiants de la norme : `BR-IC-…` pour K (livraison intracommunautaire), `BR-AF-…` pour L (IGIC), `BR-AG-…` pour M (IPSI). Les règles par catégorie déjà publiées (`BR-K-05`, `BR-L-10`…) emploient à tort la lettre de la catégorie. Les codes d'anomalie font partie de l'API stable, et les renommer est une rupture : c'est une décision à part. Les nouveaux codes, eux, naissent justes.
+
+**Vérification.** Les cas du fixture `test/fixtures/tax-categories.ts` portent leurs verdicts, écrits à la main. Le SDK y est confronté (`tax-identifiers.test.ts`), le schematron CEN aussi (`schematron.test.ts`) : les dix-huit cas donnent exactement les mêmes règles des deux côtés. Hors périmètre, connus : BR-IC-11 et BR-IC-12, date et pays de livraison d'une livraison intracommunautaire.
+

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { computeTotals, type Invoice, percent, toCiiXml, validateInvoice } from '../src/index.js';
 import { simpleDraft } from './fixtures/invoices.js';
+import { invoiceWithTaxes, TAX_ID_CASES, TAX_ID_RULE } from './fixtures/tax-categories.js';
 import {
   blockingFailures,
   describeFailures,
@@ -90,4 +91,22 @@ describe.skipIf(!schematronsAvailable())('schematrons officiels (Saxon-JS)', () 
       expect(failuresOf(invoice)).toContain('BR-E-02');
     }, 60_000);
   });
+
+  /**
+   * Identifiants fiscaux exigés ou interdits selon la catégorie de TVA (règles 02 à 04) : pour chaque
+   * cas du SDK, le schematron CEN doit relever exactement les mêmes règles. Les verdicts attendus,
+   * écrits à la main dans le fixture, sont ainsi confrontés au validateur de référence.
+   */
+  it.each(TAX_ID_CASES)(
+    'identifiants fiscaux — %s : même verdict que le CEN',
+    (_, setup, expected) => {
+      const xml = toCiiXml(invoiceWithTaxes(setup), { validate: false });
+      const cen = runSchematron(join(schemasDir, 'EN16931-CII-validation.sef.json'), xml)
+        .map((f) => f.id ?? '')
+        .filter((id) => TAX_ID_RULE.test(id));
+      const sdk = expected.map((issue) => issue.split(' @ ')[0]);
+      expect([...new Set(cen)].sort()).toEqual([...new Set(sdk)].sort());
+    },
+    60_000,
+  );
 });

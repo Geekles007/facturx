@@ -4,6 +4,7 @@ import { checkArithmetic } from './arithmetic.js';
 import { checkFrenchRules } from './french.js';
 import { FacturXValidationError, IssueCollector, type ValidationResult } from './issues.js';
 import { checkRequired } from './required.js';
+import { checkTaxIdentifiers } from './tax-ids.js';
 
 export { taxKey } from './arithmetic.js';
 export * from './formats.js';
@@ -23,6 +24,7 @@ export function validateInvoice(invoice: Invoice, options: ValidateOptions = {})
   const c = new IssueCollector();
   checkRequired(invoice, c);
   checkArithmetic(invoice, c);
+  checkTaxIdentifiers(invoice, c);
   checkFrenchRules(invoice, c, resolveLimits(options.limits));
   return c.hasIssues ? { ok: false, issues: c.issues } : { ok: true, invoice, issues: [] };
 }
