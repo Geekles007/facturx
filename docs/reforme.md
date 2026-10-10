@@ -154,7 +154,26 @@ La norme **AFNOR XP Z12-012** (formats et profils du socle, juillet 2025) fixe l
 | BR-FR-CO-16 | franchise en base (E + `VATEX-FR-FRANCHISE`) d'un vendeur sans numéro de TVA : son SIREN répété en BT-32. Annexe A V1.4, « non vérifiable » et dans aucun schematron : seul est bloqué le BT-32 absent, que le CEN refuse aussi (BR-E-02) | `seller.taxRegistrationId` |
 | BR-FR-MAP-03 | TVA sur les débits : BT-8 = 5 en CII | `vatOnDebits` |
 
-Non implémentées : BR-FR-07 (codes de notes libres — disponibles dans `NoteSubjectCode`, aucune contrainte à vérifier), BR-FR-10/11 « présent et actif dans l'annuaire » (vérification en ligne, rôle de la plateforme agréée). **Toutes les règles vérifiables hors ligne sur le contenu d'une facture sont couvertes.** Règle maison en complément : `FR-DEPOSIT-REFERENCE` — une facture définitive après acompte (cadre `*4`) doit référencer ses factures d'acompte (BT-25).
+Non implémentées : BR-FR-07 (codes de notes libres — disponibles dans `NoteSubjectCode`, aucune contrainte à vérifier), BR-FR-10/11 « présent et actif dans l'annuaire » (vérification en ligne, rôle de la plateforme agréée). Règle maison en complément : `FR-DEPOSIT-REFERENCE` — une facture définitive après acompte (cadre `*4`) doit référencer ses factures d'acompte (BT-25).
+
+### Pas encore vérifiées : des règles de la V1.4
+
+Le schematron BR-FR v1.4.0.04 porte des règles que le SDK ne vérifie pas encore. Une facture qui en enfreint une passe `validateInvoice`, et la chaîne officielle la refuse. Chaque ligne du tableau a été éprouvée ainsi : une facture fautive, acceptée par le SDK, refusée par le schematron.
+
+| Règle | Exigence | Dans le SDK |
+|---|---|---|
+| BR-FR-31 | une seule note `BAR` | la note générée depuis `processing` est unique, mais deux notes `BAR` fournies dans `notes` sont acceptées |
+| BR-FR-32 | identifiant de partie en schéma `0002` ou `0231` : 9 chiffres | vérifié pour `siren` (BR-FR-10), pas pour `globalIds` |
+| BR-FR-CO-03 | avoir remise globale (262) : contrat (BT-12) et période de facturation (BG-14) | non vérifié |
+| BR-FR-CO-05 | avoir (261, 381, 396) : une facture antérieure (BT-25) avec sa date (BT-26) | non vérifié |
+| BR-FR-CO-07 | échéance (BT-9) postérieure ou égale à la date de facture, sauf acompte et cadres B2/S2/M2 | non vérifié |
+| BR-FR-CO-08 | cadres B4/S4/M4 : pas de facture d'acompte (386) | non vérifié ; `FR-DEPOSIT-REFERENCE` ne signale que l'absence de référence |
+| BR-FR-CO-09 | cadres B2/S2/M2 (facture déjà payée) : échéance à la date du paiement, BT-113 égal au TTC, net à payer nul | non vérifié |
+| BR-FR-CO-10 | un même schéma une seule fois parmi les identifiants globaux d'une partie | non vérifié pour `globalIds` |
+| BR-FR-CO-12 | devise autre que l'euro : devise de comptabilité EUR (BT-6) et TVA en euros (BT-111) | BT-6 et BT-111 hors modèle : une facture hors euro ne peut pas encore être conforme |
+| BR-FR-CO-14 / 15 | vendeur membre d'un assujetti unique (schéma `0231`) : note `TXD` « MEMBRE_ASSUJETTI_UNIQUE » et représentant fiscal (BG-11, BT-63) | BG-11 hors modèle : la facture d'un tel vendeur ne peut pas encore être conforme |
+
+Sans objet : BR-FR-27 et 28 (attributs d'article, BG-32) et BR-FR-30 (objets facturés à la ligne, BT-128) portent sur des éléments que le SDK ne modélise pas. BR-FR-29 ne peut pas être enfreinte : le SDK écrit un seul objet facturé (BT-18), sans schéma `AFL` ni `AVV`.
 
 ## Écarts du modèle : couverts
 
