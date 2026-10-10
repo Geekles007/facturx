@@ -75,15 +75,15 @@
     <p class="label reveal">Jugé par les outils de référence, à chaque commit</p>
     <ul class="judges reveal" style="--i:1" aria-label="Validateurs officiels exécutés en intégration continue">
       <li><b>XSD</b><span class="sub">Factur-X EN 16931</span></li>
-      <li><b>CEN</b><span class="sub">schematron EN 16931 · CII</span></li>
+      <li><b>CEN</b><span class="sub">schematron EN 16931 · CII et UBL</span></li>
       <li><b>Factur-X</b><span class="sub">schematron profil 1.09.2</span></li>
       <li><b>BR-FR</b><span class="sub">schematron Flux 2 V1.4.0.04</span></li>
       <li><b>veraPDF</b><span class="sub">PDF/A-3b</span></li>
       <li><b>ZUGFeRD</b><span class="sub">corpus KoSIT, 30 fichiers</span></li>
     </ul>
     <dl class="stats">
-      <div class="reveal" style="--i:2"><dd data-count="295">0</dd><dt>tests, tous exécutés avant publication</dt></div>
-      <div class="reveal" style="--i:3"><dd><span data-count="22">0</span><small>/26</small></dd><dt>règles françaises BR-FR — les 4 autres relèvent de l'annuaire</dt></div>
+      <div class="reveal" style="--i:2"><dd data-count="418">0</dd><dt>tests, tous exécutés avant publication</dt></div>
+      <div class="reveal" style="--i:3"><dd data-count="28">0</dd><dt>règles françaises BR-FR vérifiées par le SDK</dt></div>
       <div class="reveal" style="--i:4"><dd data-count="30">0</dd><dt>factures d'autres outils lues et ré-émises sans perte</dt></div>
       <div class="reveal" style="--i:5"><dd>0</dd><dt>dépendance native — edge, serverless, navigateur</dt></div>
       <!-- Chiffre relevé à la construction (scripts/fetch-npm-downloads.mjs), pas chez le visiteur :
@@ -202,7 +202,7 @@
       </article>
       <article class="card reveal" style="--i:3">
         <h3>Règles françaises officielles</h3>
-        <p>22 règles <code>BR-FR</code> de la norme XP Z12-012 : SIREN, cadre de facturation, notes légales, adresses 0225, TVA sur les débits.</p>
+        <p>28 règles <code>BR-FR</code> de la norme XP Z12-012 : SIREN, cadre de facturation, notes légales, adresses 0225, TVA sur les débits, factures rectificatives, franchise en base.</p>
       </article>
       <article class="card reveal" style="--i:4">
         <h3>Les trois syntaxes du socle</h3>
@@ -254,7 +254,7 @@
         <div class="row off"><span class="tick">—</span><span>Envoi à une plateforme agréée, e-reporting, annuaire</span></div>
         <div class="row off"><span class="tick">—</span><span>Conversion d'un PDF quelconque en PDF/A</span></div>
         <div class="row off"><span class="tick">—</span><span>Écriture UBL, autres profils Factur-X en écriture</span></div>
-        <p class="fine">Écrit noir sur blanc dans le <a href="https://github.com/Geekles007/facturx/blob/main/docs/reforme.md">guide de la réforme</a> et le <a href="https://github.com/Geekles007/facturx/blob/main/docs/decisions.md">journal des 62 décisions</a>.</p>
+        <p class="fine">Écrit noir sur blanc dans le <a href="https://github.com/Geekles007/facturx/blob/main/docs/reforme.md">guide de la réforme</a> et le <a href="https://github.com/Geekles007/facturx/blob/main/docs/decisions.md">journal des 69 décisions</a>.</p>
       </div>
     </div>
   </div>
@@ -263,7 +263,7 @@
 <section class="cta">
   <div class="wrap reveal">
     <h2>Commencez par une facture.</h2>
-    <p>Cinq exemples exécutés en intégration continue : émission depuis un modèle JSON, réception d'un dossier de PDF, handler HTTP, acomptes → facture définitive.</p>
+    <p>Quatre exemples exécutés en intégration continue : émission depuis un modèle JSON, réception d'un dossier de PDF, handler HTTP, acomptes → facture définitive.</p>
     <div class="actions">
       <div class="install">
         <span class="prompt" aria-hidden="true">$</span>
