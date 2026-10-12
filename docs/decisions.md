@@ -333,7 +333,7 @@ BR-E-02 n'était qu'un cas d'un trou plus large. Chaque catégorie de TVA a ses 
 
 Le schematron déclenche la règle par élément. Son remède étant sur une partie, le SDK émet une anomalie par règle, sur le champ à corriger (`seller.vatId`, `buyer.vatId`). Le représentant fiscal (BT-63) n'est pas modélisé : il n'entre pas dans les conditions. En franchise en base, BR-FR-CO-16 dit déjà quoi porter en BT-32 : BR-E-02 ne s'y ajoute pas.
 
-**Noms officiels.** Ces règles portent les identifiants de la norme : `BR-IC-…` pour K (livraison intracommunautaire), `BR-AF-…` pour L (IGIC), `BR-AG-…` pour M (IPSI). Les règles par catégorie déjà publiées (`BR-K-05`, `BR-L-10`…) emploient à tort la lettre de la catégorie. Les codes d'anomalie font partie de l'API stable, et les renommer est une rupture : c'est une décision à part. Les nouveaux codes, eux, naissent justes.
+**Noms officiels.** Ces règles portent les identifiants de la norme : `BR-IC-…` pour K (livraison intracommunautaire), `BR-AF-…` pour L (IGIC), `BR-AG-…` pour M (IPSI). Les règles par catégorie déjà publiées (`BR-K-05`, `BR-L-10`…) emploient à tort la lettre de la catégorie. Les codes d'anomalie font partie de l'API stable, et les renommer est une rupture : c'est une décision à part. Les nouveaux codes, eux, naissent justes. *Le CEN 1.3.17 renomme BR-AF et BR-AG : voir D70.*
 
 **Vérification.** Les cas du fixture `test/fixtures/tax-categories.ts` portent leurs verdicts, écrits à la main. Le SDK y est confronté (`tax-identifiers.test.ts`), le schematron CEN aussi (`schematron.test.ts`) : les dix-huit cas donnent exactement les mêmes règles des deux côtés. Hors périmètre, connus : BR-IC-11 et BR-IC-12, date et pays de livraison d'une livraison intracommunautaire.
 
@@ -352,3 +352,22 @@ Comme pour BR-FR-14 (D66), le SDK ne refuse plus ce que la chaîne officielle ac
 **ChargeIndicator en UBL.** L'indicateur remise/frais est un xs:boolean : « 1 » et « 0 » y valent « true » et « false ». La lecture UBL tenait pour une remise tout ce qui n'était pas « true », si bien qu'un frais marqué « 1 » devenait une remise. Elle lit désormais les quatre valeurs et refuse les autres par une `FacturXParseError` FORMAT, avec le chemin du champ. En CII, le schematron Factur-X n'accepte que « true » et « false », sans identifiant de règle à afficher. La lecture CII refusait déjà « 0 » et « 1 », avec le chemin du champ, et l'écriture n'émet que « true » et « false ».
 
 **Déjà en place.** Le validateur reconnaît l'identifiant BT-24 d'EXTENDED-CTC-FR à part de celui de Factur-X EXTENDED (D65).
+
+
+### D70. CEN 1.3.17 : BR-AF et BR-AG deviennent BR-IP et BR-IG, le SDK attend France_RFE
+FacturX API a signalé que la version 1.3.17 des artefacts de validation EN 16931 renomme les règles de l'IGIC et de l'IPSI (ConnectingEurope/eInvoicing-EN16931#519). Elle est publiée le 12 octobre 2026 (tag `validation-1.3.17`).
+
+**Le piège.** Les nouvelles lettres ne suivent pas le nom des taxes : `BR-IP-…` couvre l'IGIC (L, ex-`BR-AF-…`) et `BR-IG-…` l'IPSI (M, ex-`BR-AG-…`). C'est l'inverse de ce qu'on lit d'instinct.
+
+**Mesuré.** Le CEN 1.3.17, compilé depuis la publication de ConnectingEurope, a jugé les factures de référence (CII et UBL) et les dix-huit cas d'identifiants fiscaux de D68, à côté du 1.3.16 épinglé. Seul écart : les cas L et M, où `BR-AF-02` devient `BR-IP-02` et `BR-AG-02` devient `BR-IG-02`. Sur ces cas, rien d'autre ne bouge.
+
+**Le SDK garde BR-AF et BR-AG.** Deux raisons :
+- la chaîne de référence est France_RFE v1.4.0.04 (D65). Elle embarque le CEN 1.3.16, donc BR-AF et BR-AG, et le FNFE-MPE n'a rien publié depuis. Renommer seul ferait parler au SDK une autre langue que le validateur en ligne et que les artefacts officiels de la réforme ;
+- renommer un code d'anomalie est une rupture (D68), donc une version majeure.
+
+**Quand basculer.** Au passage à une France_RFE qui embarque la 1.3.17. Le signal est déjà en place : une fois `FNFE_COMMIT` relevé dans `scripts/fetch-schemas.mjs`, `schematron.test.ts` confronte les cas L et M au nouveau CEN et échoue sur `BR-IP-02` et `BR-IG-02`.
+
+**Ce que fera la 2.0, en une fois.**
+- `BR-AF-02` à `04` deviennent `BR-IP-02` à `04`, et `BR-AG-02` à `04` deviennent `BR-IG-02` à `04` : `tax-ids.ts`, `TaxIdRuleFamily`, `TAX_ID_RULE` et le fixture.
+- La décision laissée ouverte par D68 : les règles par catégorie prennent leur nom officiel. `BR-K-…` devient `BR-IC-…`, `BR-L-…` devient `BR-IP-…` et `BR-M-…` devient `BR-IG-…`, pour les règles 01 et 05 à 10. Deux ruptures de suite sur les mêmes familles seraient pires qu'une.
+- Le taux de l'IPSI. Le SDK exige un taux supérieur à zéro en M (`BR-M-05` à `07`, `CALC-TAX-RATE`), alors que le CEN accepte zéro (`>= 0`, en 1.3.16 comme en 1.3.17). L'écart est sans effet aujourd'hui, puisque BR-FR-15 refuse déjà toute facture en L ou en M. À aligner avec le reste.

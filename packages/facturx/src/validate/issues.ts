@@ -134,6 +134,7 @@ export type TaxRuleFamily = 'S' | 'Z' | 'E' | 'AE' | 'K' | 'G' | 'O' | 'L' | 'M'
 /**
  * Familles sous leur nom officiel EN 16931 : K → IC (livraison intracommunautaire), L → AF (IGIC),
  * M → AG (IPSI). `TaxRuleFamily` garde les lettres de catégorie pour les codes déjà publiés.
+ * Le CEN 1.3.17 renomme AF en IP et AG en IG ; le SDK suivra avec France_RFE (D70).
  */
 export type TaxIdRuleFamily = 'S' | 'Z' | 'E' | 'AE' | 'IC' | 'G' | 'O' | 'AF' | 'AG';
 
