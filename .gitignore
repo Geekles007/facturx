@@ -21,3 +21,6 @@ site/studio/polices/
 
 # Page d'accueil : relevé des téléchargements npm (pnpm downloads:fetch)
 site/npm-downloads.json
+
+# Visuels de communication (images, vidéos et leurs sources Remotion) : hors du dépôt
+media/
