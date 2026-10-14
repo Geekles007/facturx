@@ -16,6 +16,7 @@
     "bump": "node scripts/bump.mjs",
     "release:check": "node scripts/release-check.mjs",
     "schemas:fetch": "node scripts/fetch-schemas.mjs",
+    "rfe:check": "node scripts/check-france-rfe.mjs",
     "samples:fetch": "node scripts/fetch-samples.mjs",
     "validator:fetch": "node scripts/fetch-validator-assets.mjs",
     "downloads:fetch": "node scripts/fetch-npm-downloads.mjs",

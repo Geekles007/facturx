@@ -365,7 +365,7 @@ FacturX API a signalé que la version 1.3.17 des artefacts de validation EN 1693
 - la chaîne de référence est France_RFE v1.4.0.04 (D65). Elle embarque le CEN 1.3.16, donc BR-AF et BR-AG, et le FNFE-MPE n'a rien publié depuis. Renommer seul ferait parler au SDK une autre langue que le validateur en ligne et que les artefacts officiels de la réforme ;
 - renommer un code d'anomalie est une rupture (D68), donc une version majeure.
 
-**Quand basculer.** Au passage à une France_RFE qui embarque la 1.3.17. Le signal est déjà en place : une fois `FNFE_COMMIT` relevé dans `scripts/fetch-schemas.mjs`, `schematron.test.ts` confronte les cas L et M au nouveau CEN et échoue sur `BR-IP-02` et `BR-IG-02`.
+**Quand basculer.** Au passage à une France_RFE qui embarque la 1.3.17. Le test seul ne suffit pas à le savoir : il n'échoue qu'une fois `FNFE_COMMIT` relevé à la main dans `scripts/fetch-schemas.mjs`. Le workflow « Veille France_RFE » (`.github/workflows/france-rfe.yml`) compare donc chaque lundi la branche principale de France_RFE au commit épinglé, et ouvre une issue s'il a bougé, avec la version du CEN embarquée dans le titre (`pnpm rfe:check` fait la même comparaison en local). Une fois le commit relevé, `schematron.test.ts` confronte les cas L et M au nouveau CEN et échoue sur `BR-IP-02` et `BR-IG-02`.
 
 **Ce que fera la 2.0, en une fois.**
 - `BR-AF-02` à `04` deviennent `BR-IP-02` à `04`, et `BR-AG-02` à `04` deviennent `BR-IG-02` à `04` : `tax-ids.ts`, `TaxIdRuleFamily`, `TAX_ID_RULE` et le fixture.

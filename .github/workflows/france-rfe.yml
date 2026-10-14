@@ -1,0 +1,47 @@
+name: Veille France_RFE
+
+# Le projet épingle un commit de fnfempe/France_RFE (FNFE_COMMIT, scripts/fetch-schemas.mjs) et rien
+# ne prévient quand le FNFE-MPE en publie un autre. Chaque lundi, ce workflow compare la branche
+# principale du dépôt au commit épinglé et ouvre une issue s'il a bougé, une seule par état du dépôt.
+# Le cas attendu est le passage au CEN 1.3.17, qui déclenche la 2.0 du SDK (docs/decisions.md, D70).
+#
+# GitHub suspend les workflows planifiés d'un dépôt public sans activité depuis 60 jours : il faut
+# alors le réactiver depuis l'onglet Actions.
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  veille:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Comparer France_RFE au commit épinglé
+        id: rfe
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/check-france-rfe.mjs --github-output
+      - name: Ouvrir une issue, sauf si cet état du dépôt est déjà signalé
+        if: steps.rfe.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEY: ${{ steps.rfe.outputs.key }}
+          TITLE: ${{ steps.rfe.outputs.title }}
+          BODY_FILE: ${{ steps.rfe.outputs.body_file }}
+        run: |
+          # Fermées comprises : une issue close à la main ne doit pas revenir la semaine suivante.
+          deja=$(gh issue list --state all --search "$KEY in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$deja" ]; then
+            echo "Déjà signalé : #$deja ($KEY)."
+            exit 0
+          fi
+          gh issue create --title "$TITLE" --body-file "$BODY_FILE" --assignee "$GITHUB_REPOSITORY_OWNER"
