@@ -15,10 +15,12 @@ import {
   resolveNotes,
   validateInvoice,
 } from '../src/index.js';
+import { V14_CASES, V14_RULE } from './fixtures/french-v14.js';
 import {
   fullInvoice,
   multiRateDraft,
   multiRateInvoice,
+  paidInvoice,
   simpleDraft,
   simpleInvoice,
 } from './fixtures/invoices.js';
@@ -482,8 +484,7 @@ describe('règles AFNOR XP Z12-012 : numéro, dates, cadre, TVA', () => {
   });
 
   it('BR-FR-08 : cadre de facturation valide et cohérent avec la nature de l’opération', () => {
-    const paid = { ...simpleInvoice(), businessProcess: 'S2' as const };
-    expect(validateInvoice(paid).ok).toBe(true);
+    expect(validateInvoice(paidInvoice()).ok).toBe(true);
     const mismatch = { ...simpleInvoice(), businessProcess: 'B1' as const };
     expect(issuesOf(mismatch)).toContainEqual(
       expect.objectContaining({ code: 'BR-FR-08', path: 'businessProcess', actual: 'B1' }),
@@ -607,15 +608,60 @@ describe('BR-FR-CO-04 : une facture rectificative cite une et une seule facture 
   });
 });
 
+/** Les règles de la V1.4 qu'applique D71 : leur code et leur champ, cas par cas. */
+describe('BR-FR v1.4.0.04 : notes BAR, identifiants, avoirs, échéance et cadres de facturation', () => {
+  it.each(V14_CASES)('%s', (_, build, expected) => {
+    expect(
+      codesAndPaths(build())
+        .filter((c) => V14_RULE.test(c))
+        .sort(),
+    ).toEqual([...expected].sort());
+  });
+
+  it('une facture qui satisfait ces règles est valide en entier', () => {
+    const accepted = V14_CASES.filter(([label, , expected]) => {
+      // L'identifiant 0231 relève d'un assujetti unique (BR-FR-CO-14/15, hors modèle) : hors de ce contrôle.
+      return expected.length === 0 && !label.includes('0231');
+    });
+    for (const [label, build] of accepted) expect(issuesOf(build()), label).toEqual([]);
+  });
+
+  it('BR-FR-CO-07 dit la date de facture que l’échéance doit atteindre', () => {
+    const [, build] = V14_CASES.find(([label]) => label.startsWith('échéance antérieure'))!;
+    expect(issuesOf(build())).toContainEqual(
+      expect.objectContaining({
+        code: 'BR-FR-CO-07',
+        expected: '≥ 2026-09-11',
+        actual: '2026-09-01',
+      }),
+    );
+  });
+
+  it('BR-FR-CO-09 attend le TTC comme montant déjà payé, et un net à payer nul', () => {
+    const [, build] = V14_CASES.find(([label]) => label.includes('en partie seulement'))!;
+    expect(issuesOf(build())).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'BR-FR-CO-09', expected: 24000, actual: 10000 }),
+        expect.objectContaining({ code: 'BR-FR-CO-09', expected: 0, actual: 14000 }),
+      ]),
+    );
+  });
+});
+
 describe('BR-FR-04 types de document et BR-FR-14 adresse de livraison', () => {
   it('accepte les neuf codes intégrés à EN 16931 et refuse les autres', () => {
     for (const code of INVOICE_TYPE_CODES) {
       const invoice = { ...simpleInvoice(), typeCode: code };
-      // Une rectificative cite sa facture antérieure (BR-FR-CO-04).
-      if (code === '384')
+      // Une rectificative (BR-FR-CO-04) et un avoir (BR-FR-CO-05) citent leur facture antérieure ;
+      // un avoir de remise globale porte en plus son contrat et sa période (BR-FR-CO-03).
+      if (code === '384' || isCreditNoteType(code))
         invoice.references = {
           precedingInvoices: [{ id: 'F-2026-0000', issueDate: '2026-08-01' }],
         };
+      if (code === '262') {
+        invoice.references = { ...invoice.references, contract: 'CT-2026-04' };
+        invoice.delivery = { period: { start: '2026-08-01', end: '2026-08-31' } };
+      }
       expect(validateInvoice(invoice).ok, code).toBe(true);
     }
     for (const code of ['500', '471', '503', '71']) {

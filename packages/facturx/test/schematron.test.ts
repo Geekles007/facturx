@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { computeTotals, type Invoice, percent, toCiiXml, validateInvoice } from '../src/index.js';
+import { V14_CASES, V14_RULE } from './fixtures/french-v14.js';
 import { simpleDraft, simpleInvoice } from './fixtures/invoices.js';
 import { invoiceWithTaxes, TAX_ID_CASES, TAX_ID_RULE } from './fixtures/tax-categories.js';
 import {
@@ -82,6 +83,24 @@ describe.skipIf(!schematronsAvailable())('schematrons officiels (Saxon-JS)', () 
       const brfrRefuses = failuresOf(invoice).some((id) => id.startsWith('BR-FR-CO-04'));
       expect(sdkRefuses).toBe(count !== 1);
       expect(brfrRefuses).toBe(count !== 1);
+    },
+    60_000,
+  );
+
+  /**
+   * Règles BR-FR v1.4.0.04 qu'applique D71 : pour chaque cas, la chaîne officielle relève exactement
+   * les règles que le SDK signale. Un identifiant global sans schéma est écrit avec un schemeID vide,
+   * que BR-FR-CO-10 laisse passer : le CEN le refuse avant lui (BR-CL-10), et le cas le dit.
+   */
+  it.each(V14_CASES)(
+    'BR-FR v1.4 — %s : même verdict que la chaîne officielle',
+    (_, build, expected, official) => {
+      const ids = failuresOf(build()).flatMap((id) => {
+        const rule = V14_RULE.exec(id)?.[0] ?? (id === 'BR-CL-10' ? id : undefined);
+        return rule === undefined ? [] : [rule];
+      });
+      const sdk = expected.map((issue) => issue.split(' @ ')[0]);
+      expect([...new Set(ids)].sort()).toEqual([...new Set(official ?? sdk)].sort());
     },
     60_000,
   );

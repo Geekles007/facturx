@@ -9,7 +9,13 @@ import {
   toCiiXml,
   XmlError,
 } from '../src/index.js';
-import { fullInvoice, multiRateInvoice, simpleInvoice } from './fixtures/invoices.js';
+import {
+  creditNote,
+  fullInvoice,
+  multiRateInvoice,
+  paidInvoice,
+  simpleInvoice,
+} from './fixtures/invoices.js';
 
 const golden = (name: string) =>
   readFileSync(new URL(`./golden/${name}.xml`, import.meta.url), 'utf8');
@@ -157,8 +163,7 @@ describe('réforme : BT-23, BT-8, avoirs', () => {
   });
 
   it('écrit un avoir avec le type 381', () => {
-    const creditNote = { ...simpleInvoice(), typeCode: '381' as const };
-    expect(toCiiXml(creditNote)).toContain('<ram:TypeCode>381</ram:TypeCode>');
+    expect(toCiiXml(creditNote())).toContain('<ram:TypeCode>381</ram:TypeCode>');
   });
 });
 
@@ -185,8 +190,6 @@ describe('notes légales BR-FR-05 et cadre de facturation dans le XML', () => {
   });
 
   it('écrit le cadre de facturation du modèle en BT-23', () => {
-    expect(toCiiXml({ ...simpleInvoice(), businessProcess: 'S2' })).toContain(
-      '<ram:ID>S2</ram:ID>',
-    );
+    expect(toCiiXml(paidInvoice())).toContain('<ram:ID>S2</ram:ID>');
   });
 });

@@ -150,7 +150,15 @@ La norme **AFNOR XP Z12-012** (formats et profils du socle, juillet 2025) fixe l
 | BR-FR-20 | traitement attendu (note `BAR` : B2B, B2BINT, B2C, OUTOFSCOPE, ARCHIVEONLY) | `processing` |
 | BR-FR-23 / 25 | adresse 0225 : `A-Z a-z 0-9 - _ .` ; toute adresse ≤ 125 caractères | `electronicAddress` |
 | BR-FR-24 / 26 | code de routage 0224 : mêmes caractères, ≤ 100 | `routingCode` |
+| BR-FR-31 | une seule note `BAR` portant un traitement attendu | `notes`, `processing` |
+| BR-FR-32 | identifiant de schéma `0002` ou `0231` : exactement 9 chiffres (le SIREN du vendeur et de l'acheteur relève de BR-FR-10/11) | `globalIds`, `payee.legalId`, `payee.globalId` |
+| BR-FR-CO-03 | avoir de remise globale (262) : contrat (BT-12) et période de facturation complète (BG-14) | `references.contract`, `delivery.period` |
 | BR-FR-CO-04 | facture rectificative (384) : une et une seule facture antérieure citée (BT-25), références complètes ou non, comme le schematron v1.4.0.04 | `references.precedingInvoices` |
+| BR-FR-CO-05 | avoir (261, 381, 396) : au moins une facture antérieure (BT-25) avec sa date (BT-26) | `references.precedingInvoices` |
+| BR-FR-CO-07 | échéance (BT-9) postérieure ou égale à la date de facture, sauf acompte (386) et cadres B2/S2/M2 | `paymentTerms.dueDate` |
+| BR-FR-CO-08 | cadres B4/S4/M4 : pas de facture d'acompte (386) | `businessProcess`, `typeCode` |
+| BR-FR-CO-09 | cadres B2/S2/M2 (facture déjà payée) : montant payé (BT-113) égal au TTC, net à payer nul, échéance renseignée | `totals`, `paymentTerms.dueDate` |
+| BR-FR-CO-10 | identifiants globaux : un schéma chacun, une seule fois par partie, SIRET (`0009`) compris | `globalIds`, `payee.globalId` |
 | BR-FR-CO-16 | franchise en base (E + `VATEX-FR-FRANCHISE`) d'un vendeur sans numéro de TVA : son SIREN répété en BT-32. Annexe A V1.4, « non vérifiable » et dans aucun schematron : seul est bloqué le BT-32 absent, que le CEN refuse aussi (BR-E-02) | `seller.taxRegistrationId` |
 | BR-FR-MAP-03 | TVA sur les débits : BT-8 = 5 en CII | `vatOnDebits` |
 
@@ -162,14 +170,7 @@ Le schematron BR-FR v1.4.0.04 porte des règles que le SDK ne vérifie pas encor
 
 | Règle | Exigence | Dans le SDK |
 |---|---|---|
-| BR-FR-31 | une seule note `BAR` | la note générée depuis `processing` est unique, mais deux notes `BAR` fournies dans `notes` sont acceptées |
-| BR-FR-32 | identifiant de partie en schéma `0002` ou `0231` : 9 chiffres | vérifié pour `siren` (BR-FR-10), pas pour `globalIds` |
-| BR-FR-CO-03 | avoir remise globale (262) : contrat (BT-12) et période de facturation (BG-14) | non vérifié |
-| BR-FR-CO-05 | avoir (261, 381, 396) : une facture antérieure (BT-25) avec sa date (BT-26) | non vérifié |
-| BR-FR-CO-07 | échéance (BT-9) postérieure ou égale à la date de facture, sauf acompte et cadres B2/S2/M2 | non vérifié |
-| BR-FR-CO-08 | cadres B4/S4/M4 : pas de facture d'acompte (386) | non vérifié ; `FR-DEPOSIT-REFERENCE` ne signale que l'absence de référence |
-| BR-FR-CO-09 | cadres B2/S2/M2 (facture déjà payée) : échéance à la date du paiement, BT-113 égal au TTC, net à payer nul | non vérifié |
-| BR-FR-CO-10 | un même schéma une seule fois parmi les identifiants globaux d'une partie | non vérifié pour `globalIds` |
+| BR-FR-20 | contenu d'une note `BAR` : B2B, B2BINT, B2C, B2CINT, OUTOFSCOPE, ARCHIVEONLY | vérifié pour `processing`, pas pour une note `BAR` fournie dans `notes` ; B2CINT (V1.4) n'est pas encore une valeur de `processing` |
 | BR-FR-CO-12 | devise autre que l'euro : devise de comptabilité EUR (BT-6) et TVA en euros (BT-111) | BT-6 et BT-111 hors modèle : une facture hors euro ne peut pas encore être conforme |
 | BR-FR-CO-14 / 15 | vendeur membre d'un assujetti unique (schéma `0231`) : note `TXD` « MEMBRE_ASSUJETTI_UNIQUE » et représentant fiscal (BG-11, BT-63) | BG-11 hors modèle : la facture d'un tel vendeur ne peut pas encore être conforme |
 

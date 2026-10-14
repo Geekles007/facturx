@@ -2,6 +2,21 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Depuis 1.0.0, une rupture d'API n'arrive que dans une version majeure ; une nouvelle règle de validation est une version mineure.
 
+## [Non publié]
+
+### Ajouté
+- **Huit règles du schematron BR-FR v1.4.0.04** que le SDK ne vérifiait pas. Pour chacune, il acceptait une facture que la plateforme refuse :
+  - **BR-FR-31** : une seule note `BAR` porte le traitement attendu.
+  - **BR-FR-32** : un identifiant de schéma `0002` (SIREN) ou `0231` compte exactement 9 chiffres, dans `globalIds` comme pour le bénéficiaire (`payee.legalId`, `payee.globalId`).
+  - **BR-FR-CO-03** : un avoir de remise globale (262) porte son contrat (BT-12) et sa période de facturation complète (BG-14).
+  - **BR-FR-CO-05** : un avoir (261, 381, 396) cite au moins une facture antérieure (BT-25) avec sa date (BT-26).
+  - **BR-FR-CO-07** : l'échéance (BT-9) ne précède pas la date de facture, sauf pour une facture d'acompte ou une facture déjà payée.
+  - **BR-FR-CO-08** : une facture définitive après acompte (cadres B4, S4, M4) n'est pas une facture d'acompte (386).
+  - **BR-FR-CO-09** : une facture déjà payée (cadres B2, S2, M2) porte son TTC en montant déjà payé (BT-113), un net à payer nul et son échéance.
+  - **BR-FR-CO-10** : un identifiant global porte son schéma, et un même schéma n'apparaît qu'une fois par partie, SIRET (`0009`) compris.
+
+  Chaque règle est confrontée au schematron officiel sur les mêmes factures (`test/fixtures/french-v14.ts`). Nouvelles règles pouvant refuser une facture acceptée jusque-là : version mineure.
+
 ## [1.9.0] — 2026-10-09
 
 ### Ajouté
