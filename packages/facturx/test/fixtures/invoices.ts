@@ -57,6 +57,21 @@ export function simpleInvoice(): Invoice {
   return { ...draft, ...computeTotals(draft) };
 }
 
+/** Facture déjà payée (cadre S2) : son TTC en montant déjà payé, un net à payer nul (BR-FR-CO-09). */
+export function paidInvoice(): Invoice {
+  const draft: InvoiceDraft = { ...simpleDraft(), businessProcess: 'S2' };
+  return { ...draft, ...computeTotals(draft, { prepaidAmount: cents(24000) }) };
+}
+
+/** Avoir (381) citant la facture qu'il corrige, avec sa date (BR-FR-CO-05). */
+export function creditNote(): Invoice {
+  return {
+    ...simpleInvoice(),
+    typeCode: '381',
+    references: { precedingInvoices: [{ id: 'F-2026-0000', issueDate: '2026-08-01' }] },
+  };
+}
+
 /**
  * Facture multi-taux avec remises :
  * - ligne 1 : 3 × 50,00 à 20 % avec remise de ligne 10,00 → 140,00

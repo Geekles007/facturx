@@ -376,3 +376,31 @@ FacturX API a signalé que la version 1.3.17 des artefacts de validation EN 1693
 - La décision laissée ouverte par D68 : les règles par catégorie prennent leur nom officiel. `BR-K-…` devient `BR-IC-…`, `BR-L-…` devient `BR-IP-…` et `BR-M-…` devient `BR-IG-…`, pour les règles 01 et 05 à 10. Deux ruptures de suite sur les mêmes familles seraient pires qu'une.
 - Le taux de l'IPSI. Le SDK exige un taux supérieur à zéro en M (`BR-M-05` à `07`, `CALC-TAX-RATE`), alors que le CEN accepte zéro (`>= 0`, en 1.3.16 comme en 1.3.17). L'écart est sans effet aujourd'hui, puisque BR-FR-15 refuse déjà toute facture en L ou en M. À aligner avec le reste.
 - La tolérance de CII-SR-475, que la 1.3.17 ne lève plus à tort : à retirer de `test/helpers/schematron.ts`, de `site-src/validateur/analyze.ts` et de ses libellés dans `i18n.ts`.
+
+
+### D71. Huit règles BR-FR v1.4.0.04 que la plateforme appliquait et le SDK pas
+Depuis le passage à France_RFE v1.4.0.04 (D65), le guide listait les règles du schematron BR-FR que le SDK ne vérifiait pas. Pour chacune, une facture fautive passait `validateInvoice` et la plateforme la refusait. Huit tiennent dans le modèle, et le SDK les applique désormais :
+
+| Règle | Le SDK refuse | Champ signalé |
+|---|---|---|
+| BR-FR-31 | deux notes `BAR` portant un traitement | `notes` |
+| BR-FR-32 | un identifiant de schéma `0002` ou `0231` qui n'a pas exactement 9 chiffres | `*.globalIds[i].value`, `payee.legalId`, `payee.globalId.value` |
+| BR-FR-CO-03 | un avoir de remise globale (262) sans contrat (BT-12) ou sans période complète (BG-14) | `references.contract`, `delivery.period` |
+| BR-FR-CO-05 | un avoir (261, 381, 396) sans facture antérieure datée (BT-25, BT-26) | `references.precedingInvoices` |
+| BR-FR-CO-07 | une échéance antérieure à la date de facture, hors acompte et facture déjà payée | `paymentTerms.dueDate` |
+| BR-FR-CO-08 | une facture d'acompte (386) en cadre B4, S4 ou M4 | `typeCode` |
+| BR-FR-CO-09 | une facture déjà payée (B2, S2, M2) dont le montant payé n'est pas le TTC, dont le net à payer n'est pas nul, ou sans échéance | `totals.prepaidAmount`, `totals.amountDueForPayment`, `paymentTerms.dueDate` |
+| BR-FR-CO-10 | un identifiant global sans schéma, ou un schéma répété dans une partie | `*.globalIds[i].scheme`, `payee.globalId.scheme` |
+
+**Le test du schematron, pas seulement l'énoncé.** Chaque règle reprend le test tel qu'il est écrit, limites comprises :
+- BR-FR-31 ne compte que les notes `BAR` dont le contenu figure dans sa liste, B2CINT compris. La note que génère `processing` s'efface devant une note `BAR` fournie, elle ne s'y ajoute jamais : seules les notes fournies peuvent se doubler.
+- BR-FR-32 vise tout identifiant de schéma `0002` ou `0231`. Pour le SIREN du vendeur et de l'acheteur, BR-FR-10 et 11 le disaient déjà, plus strictes (clé de Luhn) : le SDK n'ajoute pas une seconde anomalie. Le SIREN du bénéficiaire (BT-61), lui, n'était vérifié nulle part.
+- BR-FR-CO-05 admet aussi une référence sur chaque ligne, que le modèle EN 16931 ne porte pas : seule la référence d'en-tête compte. BR-FR-CO-05, 07 et 08 citent aussi les types 500, 502 et 503, que BR-CL-01 refuse déjà.
+- BR-FR-CO-09 compare des montants : un montant payé (BT-113) absent n'égale pas le TTC. Une facture déjà payée doit donc porter son paiement.
+- BR-FR-CO-10 : le SIRET s'écrit en identifiant global `0009`, il compte donc parmi les schémas de la partie. Un identifiant global sans schéma s'écrit avec un `schemeID` vide, que BR-FR-CO-10 laisse passer et que le CEN refuse (BR-CL-10). Le SDK le signale en BR-FR-CO-10, la règle qui énonce l'exigence.
+
+**Vérification.** Les 31 cas de `test/fixtures/french-v14.ts` portent leurs verdicts, écrits à la main avant le code. Le SDK y est confronté (`validate.test.ts`), et la chaîne officielle aussi (`schematron.test.ts`, les trois schematrons) : chaque cas relève exactement les mêmes règles des deux côtés. Sur les exemples EN 16931 officiels de France_RFE, le SDK ne relève toujours que leurs données fictives (`official.test.ts`) : aucune des huit règles n'est plus stricte que la chaîne officielle.
+
+**Ce que des tests entérinaient.** Cinq tests tenaient pour valides une facture déjà payée (S2) sans montant payé, ou un avoir (381) sans facture d'origine, deux factures que la plateforme refuse. Ils passent maintenant par deux fixtures, `paidInvoice()` et `creditNote()`.
+
+**Restent.** BR-FR-CO-12 et BR-FR-CO-14/15 demandent des éléments hors modèle (BT-6, BT-111, BG-11). Un écart de BR-FR-20 est apparu en chemin : le SDK vérifie `processing`, pas le contenu d'une note `BAR` fournie dans `notes`, et il ne connaît pas encore B2CINT, ajouté par la V1.4. Les deux vont ensemble, puisque vérifier le contenu sans connaître B2CINT refuserait une valeur que la chaîne officielle accepte. Le libellé de B2CINT reste à sourcer avant de l'ajouter à `ProcessingCode`.

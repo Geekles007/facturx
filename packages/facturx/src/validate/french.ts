@@ -30,6 +30,180 @@ import {
 import type { IssueCollector } from './issues.js';
 
 const INVOICE_ID_CHARS = /^[A-Za-z0-9+_/-]+$/;
+const NINE_DIGITS = /^\d{9}$/;
+/** BR-FR-31 : les traitements attendus que compte le schematron (B2CINT y figure depuis la V1.4). */
+const BAR_TREATMENTS: ReadonlySet<string> = new Set([
+  'B2B',
+  'B2BINT',
+  'B2C',
+  'B2CINT',
+  'OUTOFSCOPE',
+  'ARCHIVEONLY',
+]);
+/** BR-FR-CO-05 : les avoirs qui citent leur facture antérieure (502 et 503 sont refusés par BR-CL-01). */
+const CREDIT_NOTES_CITING: ReadonlySet<string> = new Set(['261', '381', '396']);
+
+function globalIdsOf(party: Party | undefined) {
+  return Array.isArray(party?.globalIds) ? party.globalIds : [];
+}
+
+/**
+ * BR-FR-32 et BR-FR-CO-10 : identifiants globaux (BT-29-1, BT-46-1, BT-60-1) et SIREN du bénéficiaire.
+ * Le SIREN du vendeur et de l'acheteur relève déjà de BR-FR-10/11, plus strictes (clé de Luhn).
+ */
+function checkGlobalIds(inv: Invoice, c: IssueCollector): void {
+  const nineDigits = (path: string, value: unknown) => {
+    if (typeof value === 'string' && !NINE_DIGITS.test(value.trim())) {
+      c.add(
+        'BR-FR-32',
+        path,
+        'Un identifiant de schéma 0002 (SIREN) ou 0231 compte exactement 9 chiffres.',
+        { actual: value },
+      );
+    }
+  };
+  const missingScheme = (path: string) =>
+    c.add('BR-FR-CO-10', path, 'Un identifiant global porte son schéma (ISO 6523).');
+
+  for (const [path, party] of [
+    ['seller', inv.seller],
+    ['buyer', inv.buyer],
+  ] as const) {
+    // Le SIRET s'écrit en identifiant global 0009 : il compte parmi les schémas de la partie.
+    const seen = new Set(party?.siret === undefined ? [] : ['0009']);
+    for (const [i, id] of globalIdsOf(party).entries()) {
+      const scheme = id?.scheme;
+      if (!isNonEmptyString(scheme)) {
+        missingScheme(`${path}.globalIds[${i}].scheme`);
+        continue;
+      }
+      if (scheme === '0002' || scheme === '0231')
+        nineDigits(`${path}.globalIds[${i}].value`, id.value);
+      if (seen.has(scheme)) {
+        c.add(
+          'BR-FR-CO-10',
+          `${path}.globalIds[${i}].scheme`,
+          scheme === '0009' && party?.siret !== undefined
+            ? 'Le SIRET s’écrit déjà en identifiant global 0009 : il ne se répète pas dans `globalIds`.'
+            : `Le schéma « ${scheme} » n’apparaît qu’une fois parmi les identifiants globaux d’une partie.`,
+          { actual: scheme },
+        );
+      }
+      seen.add(scheme);
+    }
+  }
+
+  const payee = inv.payee;
+  if (payee?.legalId !== undefined) nineDigits('payee.legalId', payee.legalId);
+  const payeeId = payee?.globalId;
+  if (payeeId !== undefined) {
+    if (!isNonEmptyString(payeeId.scheme)) missingScheme('payee.globalId.scheme');
+    else if (payeeId.scheme === '0002' || payeeId.scheme === '0231')
+      nineDigits('payee.globalId.value', payeeId.value);
+  }
+}
+
+/**
+ * BR-FR-CO-03, 05, 07, 08 et 09 : ce que le type de document (BT-3) et le cadre de facturation (BT-23)
+ * exigent des références, de l'échéance et des montants.
+ */
+function checkDocumentFramework(inv: Invoice, c: IssueCollector): void {
+  // BR-FR-CO-03 : un avoir de remise globale porte son contrat et sa période de facturation complète.
+  if (inv.typeCode === '262') {
+    if (!isNonEmptyString(inv.references?.contract)) {
+      c.add(
+        'BR-FR-CO-03',
+        'references.contract',
+        'Un avoir de remise globale (262) porte la référence du contrat (BT-12).',
+      );
+    }
+    const period = inv.delivery?.period;
+    if (!isNonEmptyString(period?.start) || !isNonEmptyString(period?.end)) {
+      c.add(
+        'BR-FR-CO-03',
+        'delivery.period',
+        'Un avoir de remise globale (262) porte sa période de facturation (BG-14), début et fin (BT-73, BT-74).',
+      );
+    }
+  }
+
+  // BR-FR-CO-05 : un avoir cite au moins une facture antérieure, avec sa date. Le schematron admet aussi
+  // une référence sur chaque ligne, que le modèle EN 16931 ne porte pas.
+  if (CREDIT_NOTES_CITING.has(inv.typeCode)) {
+    const dated = (inv.references?.precedingInvoices ?? []).some(
+      (ref) => isNonEmptyString(ref?.id) && isNonEmptyString(ref.issueDate),
+    );
+    if (!dated) {
+      c.add(
+        'BR-FR-CO-05',
+        'references.precedingInvoices',
+        `Un avoir (${inv.typeCode}) cite au moins une facture antérieure (BT-25) avec sa date (BT-26).`,
+      );
+    }
+  }
+
+  const framework = isBusinessProcessCode(inv.businessProcess) ? inv.businessProcess : undefined;
+  const alreadyPaid = framework?.endsWith('2') === true;
+
+  // BR-FR-CO-07 : l'échéance ne précède pas la date de facture, sauf pour une facture d'acompte ou une
+  // facture déjà payée, dont l'échéance est la date du paiement.
+  const due = inv.paymentTerms?.dueDate;
+  if (
+    typeof due === 'string' &&
+    isValidIsoDate(due) &&
+    typeof inv.issueDate === 'string' &&
+    isValidIsoDate(inv.issueDate) &&
+    due < inv.issueDate &&
+    inv.typeCode !== '386' &&
+    !alreadyPaid
+  ) {
+    c.add(
+      'BR-FR-CO-07',
+      'paymentTerms.dueDate',
+      'L’échéance (BT-9) ne précède pas la date de facture (BT-2), sauf pour une facture d’acompte ou déjà payée.',
+      { expected: `≥ ${inv.issueDate}`, actual: due },
+    );
+  }
+
+  // BR-FR-CO-08 : une facture définitive après acompte n'est pas elle-même une facture d'acompte.
+  if (framework?.endsWith('4') && inv.typeCode === '386') {
+    c.add(
+      'BR-FR-CO-08',
+      'typeCode',
+      'Une facture définitive après acompte (cadre B4, S4 ou M4) ne peut pas être une facture d’acompte (386).',
+      { actual: inv.typeCode },
+    );
+  }
+
+  // BR-FR-CO-09 : une facture déjà payée porte son TTC en montant déjà payé, un net à payer nul et son
+  // échéance, qui est la date du paiement.
+  if (alreadyPaid) {
+    const t = inv.totals;
+    if (t && t.prepaidAmount !== t.taxInclusiveAmount) {
+      c.add(
+        'BR-FR-CO-09',
+        'totals.prepaidAmount',
+        'Une facture déjà payée (cadre B2, S2 ou M2) porte son TTC (BT-112) en montant déjà payé (BT-113).',
+        { expected: t.taxInclusiveAmount, actual: t.prepaidAmount },
+      );
+    }
+    if (t && t.amountDueForPayment !== 0) {
+      c.add(
+        'BR-FR-CO-09',
+        'totals.amountDueForPayment',
+        'Une facture déjà payée (cadre B2, S2 ou M2) a un net à payer (BT-115) nul.',
+        { expected: 0, actual: t.amountDueForPayment },
+      );
+    }
+    if (!isNonEmptyString(due)) {
+      c.add(
+        'BR-FR-CO-09',
+        'paymentTerms.dueDate',
+        'Une facture déjà payée (cadre B2, S2 ou M2) porte son échéance (BT-9) : la date du paiement.',
+      );
+    }
+  }
+}
 
 function checkPartyIds(
   party: Party | undefined,
@@ -192,6 +366,7 @@ export function checkFrenchRules(
   const buyerIsFrenchBusiness =
     inv.buyer?.address?.countryCode === 'FR' && inv.buyer.consumer !== true;
   checkPartyIds(inv.buyer, 'buyer', 'BR-FR-11', buyerIsFrenchBusiness, c);
+  checkGlobalIds(inv, c);
 
   // BR-FR-08 : nature de l'opération et cadre de facturation (BT-23)
   if (inv.operationCategory === undefined) {
@@ -351,6 +526,19 @@ export function checkFrenchRules(
     }
   }
 
+  // BR-FR-31 : une seule note BAR porte le traitement attendu. Le schematron ne compte que les notes au
+  // contenu de sa liste ; celle que génère `processing` s'efface devant une note BAR fournie.
+  const treatments = (Array.isArray(inv.notes) ? inv.notes : []).filter(
+    (n) =>
+      n?.subjectCode === 'BAR' && typeof n.text === 'string' && BAR_TREATMENTS.has(n.text.trim()),
+  ).length;
+  if (treatments > 1) {
+    c.add('BR-FR-31', 'notes', 'Une seule note « BAR » (BT-21) porte le traitement attendu.', {
+      expected: '≤ 1',
+      actual: treatments,
+    });
+  }
+
   // BR-FR-19 : taille des pièces jointes (par pièce, et 100 Mo cumulés par facture)
   let attachedTotal = 0;
   for (const [i, a] of (inv.attachments ?? []).entries()) {
@@ -466,6 +654,7 @@ export function checkFrenchRules(
       );
     }
   }
+  checkDocumentFramework(inv, c);
 
   // Date de la vente / prestation : date de livraison OU période (L441-9)
   const d = inv.delivery;

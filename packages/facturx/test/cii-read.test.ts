@@ -10,7 +10,13 @@ import {
   readCiiGuideline,
   toCiiXml,
 } from '../src/index.js';
-import { fullInvoice, multiRateInvoice, simpleInvoice } from './fixtures/invoices.js';
+import {
+  creditNote,
+  fullInvoice,
+  multiRateInvoice,
+  paidInvoice,
+  simpleInvoice,
+} from './fixtures/invoices.js';
 
 /** Forme attendue après un aller-retour : identique, plus le cadre de facturation BT-23 relu. */
 function roundTripExpectation(invoice: Invoice): Invoice {
@@ -195,8 +201,7 @@ describe('réforme : lecture de BT-23, BT-8 et des avoirs', () => {
   });
 
   it('lit un avoir 381 et le valide', () => {
-    const creditNote: Invoice = { ...simpleInvoice(), typeCode: '381' };
-    const parsed = fromCiiXml(toCiiXml(creditNote));
+    const parsed = fromCiiXml(toCiiXml(creditNote()));
     expect(parsed.typeCode).toBe('381');
   });
 });
@@ -222,9 +227,7 @@ describe('notes légales à la lecture', () => {
   });
 
   it('lit le cadre de facturation en businessProcess', () => {
-    expect(
-      fromCiiXml(toCiiXml({ ...simpleInvoice(), businessProcess: 'S2' })).businessProcess,
-    ).toBe('S2');
+    expect(fromCiiXml(toCiiXml(paidInvoice())).businessProcess).toBe('S2');
   });
 });
 
