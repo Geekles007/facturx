@@ -361,6 +361,10 @@ FacturX API a signalé que la version 1.3.17 des artefacts de validation EN 1693
 
 **Mesuré.** Le CEN 1.3.17, compilé depuis la publication de ConnectingEurope, a jugé les factures de référence (CII et UBL) et les dix-huit cas d'identifiants fiscaux de D68, à côté du 1.3.16 épinglé. Seul écart : les cas L et M, où `BR-AF-02` devient `BR-IP-02` et `BR-AG-02` devient `BR-IG-02`. Sur ces cas, rien d'autre ne bouge.
 
+**Mesuré sur tout le reste.** Les deux versions ont ensuite jugé 93 documents : le corpus tiers (KoSIT et mustangproject, PDF compris), les exemples officiels de France_RFE, les golden et les 32 exemples livrés avec la 1.3.17. Aucun ne porte de catégorie L ou M, le renommage n'y paraît donc pas. 83 rendent exactement le même verdict. Les 10 autres ne changent que d'avertissements : aucune règle bloquante n'apparaît ni ne disparaît.
+- Neuf factures EXTENDED et EXTENDED-CTC-FR récoltent CII-SR-036 et CII-SR-038 (`ParentLineID` et `LineStatusReasonCode` « should not be present »). La 1.3.17 corrige leur XPath (ConnectingEurope #521) : elles visaient la ligne, où ces éléments n'apparaissent jamais, et visent désormais son document de ligne, où le profil EXTENDED porte ses sous-lignes. C'est sans effet sur le validateur, qui ne juge pas ces profils avec le CEN (D65), ni sur le SDK, qui n'émet aucun de ces éléments.
+- `golden/full.xml` perd CII-SR-475. La 1.3.17 corrige le contexte de la règle (#508) : elle comptait ensemble les BT-123 de toutes les pièces jointes 916, elle les compte désormais pièce par pièce. C'est le faux avertissement que la CI et le validateur tolèrent aujourd'hui (BR-FR-17 veut une description par pièce).
+
 **Le SDK garde BR-AF et BR-AG.** Deux raisons :
 - la chaîne de référence est France_RFE v1.4.0.04 (D65). Elle embarque le CEN 1.3.16, donc BR-AF et BR-AG, et le FNFE-MPE n'a rien publié depuis. Renommer seul ferait parler au SDK une autre langue que le validateur en ligne et que les artefacts officiels de la réforme ;
 - renommer un code d'anomalie est une rupture (D68), donc une version majeure.
@@ -371,3 +375,4 @@ FacturX API a signalé que la version 1.3.17 des artefacts de validation EN 1693
 - `BR-AF-02` à `04` deviennent `BR-IP-02` à `04`, et `BR-AG-02` à `04` deviennent `BR-IG-02` à `04` : `tax-ids.ts`, `TaxIdRuleFamily`, `TAX_ID_RULE` et le fixture.
 - La décision laissée ouverte par D68 : les règles par catégorie prennent leur nom officiel. `BR-K-…` devient `BR-IC-…`, `BR-L-…` devient `BR-IP-…` et `BR-M-…` devient `BR-IG-…`, pour les règles 01 et 05 à 10. Deux ruptures de suite sur les mêmes familles seraient pires qu'une.
 - Le taux de l'IPSI. Le SDK exige un taux supérieur à zéro en M (`BR-M-05` à `07`, `CALC-TAX-RATE`), alors que le CEN accepte zéro (`>= 0`, en 1.3.16 comme en 1.3.17). L'écart est sans effet aujourd'hui, puisque BR-FR-15 refuse déjà toute facture en L ou en M. À aligner avec le reste.
+- La tolérance de CII-SR-475, que la 1.3.17 ne lève plus à tort : à retirer de `test/helpers/schematron.ts`, de `site-src/validateur/analyze.ts` et de ses libellés dans `i18n.ts`.
