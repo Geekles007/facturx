@@ -404,3 +404,36 @@ Depuis le passage à France_RFE v1.4.0.04 (D65), le guide listait les règles du
 **Ce que des tests entérinaient.** Cinq tests tenaient pour valides une facture déjà payée (S2) sans montant payé, ou un avoir (381) sans facture d'origine, deux factures que la plateforme refuse. Ils passent maintenant par deux fixtures, `paidInvoice()` et `creditNote()`.
 
 **Restent.** BR-FR-CO-12 et BR-FR-CO-14/15 demandent des éléments hors modèle (BT-6, BT-111, BG-11). Un écart de BR-FR-20 est apparu en chemin : le SDK vérifie `processing`, pas le contenu d'une note `BAR` fournie dans `notes`, et il ne connaît pas encore B2CINT, ajouté par la V1.4. Les deux vont ensemble, puisque vérifier le contenu sans connaître B2CINT refuserait une valeur que la chaîne officielle accepte. Le libellé de B2CINT reste à sourcer avant de l'ajouter à `ProcessingCode`.
+
+
+### D72. BR-FR v1.4.0.03 contre v1.4.0.04 : le corpus ne bouge pas, deux échéances faisaient planter la .03
+FacturX API a demandé l'effet du correctif fix04 (France_RFE v1.4.0.03 → v1.4.0.04, 3 et 4 septembre 2026) sur le corpus de D70. Le SDK n'a jamais embarqué la .03 : il est passé de BR-FR V1.3.0 à la v1.4.0.04 (D65).
+
+**Ce que le fix04 change en BR-FR.**
+- BR-FR-CO-07 et CO-09 lisent toutes les échéances (BT-9). Le profil EXTENDED admet plusieurs `SpecifiedTradePaymentTerms`, donc plusieurs `DueDateDateTime`. La .03 les passait à `string()`, qui n'en accepte qu'une.
+- Les montants et les dates sont comparés en `xs:decimal` au lieu de `number()` : CO-09, MV-05, MV-09, MV-10 et le contrôle de date.
+- BR-FR-MV-10 compte les sous-lignes GROUP, en plus des DETAIL, dans sa tolérance de 0,01 par sous-ligne.
+- BR-FR-20 cite B2CINT dans son message. Le test l'acceptait déjà en .03.
+- En UBL, d'autres corrections : notes sans sujet, présence du BT-23, XPath de l'échéance d'un avoir.
+
+**Mesuré sur les 93 documents.** Les schematrons BR-FR CII et UBL des deux tags, compilés depuis France_RFE, ont jugé les 93 documents de D70 : 93 verdicts identiques, règle par règle, sans erreur d'exécution. La v1.4.0.04 compilée pour la mesure juge comme le SEF épinglé du projet sur tous les documents CII.
+
+**Ce que le corpus n'atteint pas.** Ce zéro dit surtout que le corpus passe à côté du fix04 :
+- aucun document ne porte deux échéances, 61 en portent une ;
+- aucun n'est en cadre B2, S2 ou M2 (facture déjà payée), donc BR-FR-CO-09 ne s'y applique pas ;
+- sept sont en cadre S8 ou B9 avec des lignes GROUP, mais aucune de ces lignes GROUP n'est elle-même une sous-ligne.
+
+**Cas ciblés.** Chaque variante part d'un exemple officiel de France_RFE en EXTENDED-CTC-FR, accepté par les deux versions, et n'y change qu'un point.
+
+| Variante | v1.4.0.03 | v1.4.0.04 |
+|---|---|---|
+| UC13 (B1) avec une seconde échéance, postérieure à la facture | erreur XPTY0004, aucun verdict | acceptée |
+| UC13 avec une seconde échéance, antérieure à la facture | erreur XPTY0004, aucun verdict | BR-FR-CO-07 |
+| UC13 en cadre B2, deux échéances | erreur XPTY0004, aucun verdict | acceptée |
+| UC10 (S8), ligne 3 passée en GROUP sous la ligne 1, TTC de la ligne 1 décalé de 0,02 | BR-FR-MV-10 | acceptée |
+
+Les témoins rendent le même verdict des deux côtés : UC13 et UC10 tels quels, UC13 en B2 avec une seule échéance, UC10 avec le seul décalage de 0,02 (deux sous-lignes DETAIL, donc 0,02 de tolérance).
+
+**Le vrai changement.** En .03, une facture CII à plusieurs échéances faisait échouer tout le schematron BR-FR : la chaîne officielle ne rendait aucun verdict, quel que soit le reste de la facture. La .04 la juge. Les autres corrections CII ne touchent que des cas limites : la tolérance d'arrondi de MV-10 et la précision des comparaisons. Les corrections UBL n'ont pas été éprouvées par des cas ciblés.
+
+**Effet sur le SDK : aucun.** Le SDK n'émet qu'une échéance (`paymentTerms.dueDate`), en profil EN 16931, sans sous-lignes. Ses règles BR-FR-CO-07 et CO-09 (D71) reprennent le test de la .04, et le validateur en ligne juge en .04 depuis D65.
