@@ -70,12 +70,12 @@ Navigateur : le Studio (Preact, statique sur Coolify)
                                    ├─ Auth : e-mail et mot de passe
                                    ├─ Postgres + RLS
                                    ├─ Storage : PDF émis, logos, polices (privé) ; polices du Studio (public)
-                                   └─ Edge Functions (avec le SDK) : emettre, relancer, supprimer-compte, purger
+                                   └─ Edge Functions (avec le SDK) : emettre, importer, relancer, supprimer-compte, purger
                                          └──► Brevo : e-mails d'authentification (SMTP) et relances (API)
 ```
 
 - **Deux chemins vers la base.** Lire, et écrire ce qui n'engage à rien (brouillons, clients, catalogue, entreprise, paiements), se fait depuis le navigateur sous RLS. Émettre et relancer passent par une Edge Function.
-- **Le SDK ne change pas.** Les fonctions l'importent depuis npm (`npm:facturx-sdk@<version>`), à la version exacte du bundle du Studio. Chaque facture garde la version du SDK qui l'a produite.
+- **Le SDK ne change pas.** Les fonctions emploient le SDK du dépôt, celui du bundle du Studio : `pnpm compte:preparer` copie `packages/facturx/dist/` et les modules partagés dans `supabase/functions/_vendor/` (non versionné) avant les tests et le déploiement. Le serveur n'attend donc pas une publication npm, et ne dépend pas de la façon dont le bundler des fonctions traite un import hors de leur dossier. Chaque facture garde la version du SDK qui l'a produite.
 - **Le Studio sans compte ne paie rien.** `supabase-js` et le code du compte sont chargés par `import()` à la première connexion, comme Saxon-JS l'est au premier usage du validateur (D51).
 - **Une entreprise par compte en v1**, mais tout est rattaché à une `entreprise` et l'accès passe par `membres` : ajouter un associé ou un comptable n'impose pas de migration lourde.
 - **Configuration.** L'URL du projet et la clé publique sont injectées dans le bundle par `pnpm site:build` depuis des variables d'environnement. La clé de service ne quitte jamais les secrets des fonctions.
@@ -109,13 +109,13 @@ Montants en centimes (`bigint`). Dates d'affaires en `date`, horodatages en `tim
 
 | Table | Colonnes principales | Règles |
 |---|---|---|
-| `entreprises` | `id`, `profil jsonb` (`CompanyProfile`), `cree_le`, `suppression_demandee_le` (nullable) | lecture et mise à jour par ses membres |
-| `membres` | `entreprise_id`, `user_id`, `role` (`titulaire`) | base de toutes les règles RLS ; créée avec l'entreprise à l'inscription |
+| `entreprises` | `id`, `profil jsonb` (`CompanyProfile`), `apparence_defaut jsonb`, `cree_le`, `suppression_demandee_le` (nullable) | lecture, et mise à jour de `profil` et `apparence_defaut` seulement, par ses membres |
+| `membres` | `entreprise_id`, `user_id`, `role` (`titulaire`), `cgu_version`, `cgu_acceptees_le` | base de toutes les règles RLS ; créée avec l'entreprise à l'inscription, qui exige l'acceptation des CGU |
 | `clients` | `id`, `party jsonb` (`FormParty`), `nom`, `email`, `modifie_le` | libres |
 | `produits` | `id`, `fiche jsonb` (`ProductRecord` sans `uid`), `nom`, `modifie_le` | libres |
 | `brouillons` | `id`, `form jsonb`, `appearance jsonb`, `version int`, `modifie_le` | libres ; `version` croît à chaque enregistrement |
 | `numerotation` | `entreprise_id` (clé), `gabarit`, `prochain`, `annuelle`, `annee` | écriture par l'Edge Function `emettre` ; l'utilisateur peut changer le gabarit et `annuelle`, et augmenter `prochain`, jamais le diminuer (déclencheur) |
-| `factures` | `id`, `numero`, `type_code`, `date_emission`, `date_echeance` (nullable), `client_id` (nullable), `client_nom`, `client_email`, `devise`, `ttc`, `net_a_payer`, `invoice jsonb`, `form jsonb`, `appearance jsonb`, `pdf_chemin`, `sdk_version`, `facture_origine_id` (nullable), `brouillon_id` (unique), `origine` (`emise` ou `importee`), `emise_le`, `emise_par` | `unique (entreprise_id, numero)` ; lecture par les membres ; aucune écriture depuis le navigateur ; un déclencheur refuse toute modification et toute suppression, sauf dans la transaction de purge d'un compte supprimé, qui s'annonce par `set local facturx.purge = 'on'` |
+| `factures` | `id`, `numero`, `type_code`, `date_emission`, `date_echeance` (nullable), `client_id` (nullable), `client_nom`, `client_email`, `devise`, `ht`, `ttc`, `net_a_payer`, `invoice jsonb`, `form jsonb`, `appearance jsonb`, `pdf_chemin`, `sdk_version`, `facture_origine_id` (nullable), `brouillon_id` (unique), `origine` (`emise` ou `importee`), `emise_le`, `emise_par` | `unique (entreprise_id, numero)` ; lecture par les membres ; aucune écriture depuis le navigateur ; un déclencheur refuse toute modification et toute suppression, sauf dans la transaction de purge d'un compte supprimé, qui s'annonce par `set local facturx.purge = 'on'` |
 | `paiements` | `id`, `facture_id`, `date`, `montant`, `moyen`, `note`, `cree_le`, `cree_par`, `annule_le` (nullable) | insertion et annulation par les membres ; `montant > 0` ; `date` ≤ aujourd'hui ; pas de paiement sur un avoir ; un déclencheur refuse qu'un paiement porte le total encaissé au-delà du reste dû ; jamais supprimé, seulement annulé |
 | `relances` | `id`, `facture_id`, `niveau` (1 à 3), `envoyee_le`, `destinataire`, `objet`, `corps`, `message_id`, `etat` | écriture par l'Edge Function `relancer` seulement ; ajout seul |
 
@@ -148,7 +148,7 @@ L'Edge Function `emettre` reçoit `{ brouillonId, version, invoice, appearance }
 3. **Vérifier le brouillon.** Il appartient à l'entreprise et sa `version` est celle reçue ; sinon 409. Ce qu'on émet est ce que l'utilisateur voit.
 4. **Ouvrir une transaction** sur une connexion Postgres directe (PostgREST ne tient pas une transaction sur plusieurs étapes) et verrouiller la ligne `numerotation` de l'entreprise (`SELECT … FOR UPDATE`). Deux émissions simultanées se suivent.
 5. **Contrôler la date.** `issueDate` ne doit être ni postérieure à aujourd'hui (Europe/Paris), ni antérieure à la date de la dernière facture émise par l'entreprise ; sinon 409. La numérotation reste chronologique.
-6. **Attribuer le numéro.** Rang selon `nextRank`, numéro selon `formatNumber`, contrôle par `numberProblems`. Ces fonctions quittent `library.ts` pour `site-src/shared/numerotation.ts`, importé par le Studio et par la fonction ; si le bundler des fonctions refuse un import hors de `supabase/functions/`, le fichier y est copié à la construction et un test vérifie que les deux copies sont identiques. En mode compte, on ne saisit pas de numéro à la main.
+6. **Attribuer le numéro.** Rang selon `nextRank`, numéro selon `formatNumber`, contrôle par `numberProblems`. Ces fonctions quittent `library.ts` pour `site-src/shared/numerotation.ts`, que le Studio importe et que `pnpm compte:preparer` copie dans les fonctions (§ 5). En mode compte, on ne saisit pas de numéro à la main : le Studio propose le numéro suivant, et le serveur le remplace par celui qu'il attribue.
 7. **Valider.** `validateInvoice` sur la facture numérotée. Des anomalies : 422 avec la liste, annulation de la transaction.
 8. **Pour un avoir**, vérifier que chaque facture citée existe dans l'entreprise, et renseigner `facture_origine_id`.
 9. **Produire le PDF.** `renderInvoicePdf` puis `embedFacturX`, avec les polices du bucket `polices`, ou la police et le logo de l'utilisateur depuis `fichiers`. Déposer le PDF dans `factures`.
@@ -220,7 +220,7 @@ Le Studio affiche « envoyée » et jamais « reçue » : le fournisseur a accep
 
 **Ne rien perdre de ce qu'on tape.** En mode compte, le brouillon ouvert est enregistré sur le serveur au fil de la saisie (avec un délai d'une seconde après la dernière frappe) et recopié dans IndexedDB. Hors ligne, le Studio affiche « hors ligne, non enregistré » et rattrape l'enregistrement au retour du réseau. Émettre, enregistrer un paiement et relancer demandent le réseau.
 
-**Importer les données locales.** À la première connexion, si IndexedDB contient des données, le Studio propose de les importer : entreprise, clients, catalogue, numérotation, historique. Les factures émises en local arrivent avec leur PDF et `origine = 'importee'`, puisque leur numéro n'a pas été attribué par le serveur ; on peut y enregistrer des paiements et les relancer. La numérotation reprend au plus haut rang connu. Les données locales restent dans le navigateur tant que l'utilisateur ne demande pas à les effacer.
+**Importer les données locales.** À la première connexion, si IndexedDB contient des données, le Studio propose de les importer : entreprise, clients, catalogue, numérotation, historique. Les factures émises en local passent par l'Edge Function `importer`, qui les lit dans leur PDF (`extractInvoice`) et les enregistre avec `origine = 'importee'`, puisque leur numéro n'a pas été attribué par le serveur ; on peut y enregistrer des paiements et les relancer. La numérotation reprend au plus haut rang connu. Les données locales restent dans le navigateur tant que l'utilisateur ne demande pas à les effacer.
 
 **Exporter.** « Exporter mes données » produit une archive : un JSON au format portable de la sauvegarde actuelle (`toPortableJson`), et tous les PDF.
 
@@ -259,7 +259,7 @@ Les fonctions répondent `{ code, message, details? }` avec ces statuts :
 |---|---|---|---|
 | 401 | `SESSION` | jeton absent ou expiré | renvoie à la connexion, en gardant le brouillon |
 | 403 | `DROITS`, `NON_CONFIRME`, `SUPPRESSION` | pas membre ; adresse non confirmée ; suppression du compte demandée | explique ; propose de renvoyer la confirmation, ou d'annuler la suppression |
-| 409 | `BROUILLON_MODIFIE`, `DATE` | version périmée ; date hors bornes | recharge le brouillon ; indique la date admise |
+| 409 | `BROUILLON_MODIFIE`, `DATE`, `DOUBLON`, `PDF_DEJA_DEPOSE` | version périmée ; date hors bornes ; numéro déjà importé ; PDF déjà déposé (repli du § 7) | recharge le brouillon ; indique la date admise ; liste les doublons de l'import |
 | 422 | `ANOMALIES` | `validateInvoice` refuse ; `details` porte les `Issue` | ouvre l'onglet Contrôle sur le champ en cause (`focusField`) |
 | 429 | `LIMITE` | limite de débit | indique quand réessayer |
 | 502 | `ENVOI` | Brevo refuse | dit que la relance n'est pas partie |
