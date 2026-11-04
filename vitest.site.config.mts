@@ -2,6 +2,11 @@ import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // Le projet Supabase du compte est injecté à la construction ; les tests n'en ont aucun.
+  define: {
+    __FACTURX_SUPABASE_URL__: '""',
+    __FACTURX_SUPABASE_KEY__: '""',
+  },
   // Le Studio importe le profil sRGB comme des octets (`loader: binary` d'esbuild à la construction) ;
   // les tests le chargent de la même façon.
   plugins: [

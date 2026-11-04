@@ -180,7 +180,7 @@ interface InputProps {
   value: string;
   onValue: (value: string) => void;
   path?: string | undefined;
-  type?: 'text' | 'date' | 'email' | 'tel' | 'url';
+  type?: 'text' | 'date' | 'email' | 'password' | 'tel' | 'url';
   decimal?: boolean;
   suffix?: string;
   class?: string;
@@ -404,6 +404,8 @@ export function Segmented<T extends string>({
 /** Attributs d'un bouton : ceux dont le Studio se sert. */
 interface ButtonAttrs {
   id?: string;
+  /** `submit` pour envoyer le formulaire qui contient le bouton ; `button` sinon. */
+  type?: 'button' | 'submit';
   class?: string;
   title?: string | undefined;
   disabled?: boolean | undefined;

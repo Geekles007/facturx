@@ -1922,6 +1922,27 @@ input[type="date"].input {
   font-size: 13.5px;
 }
 
+/* ---------- compte ---------- */
+
+.compte-email {
+  display: inline-block;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+.compte-form {
+  display: grid;
+  gap: 12px;
+}
+/* `.dialog-body p` grise les paragraphes : le message d'erreur et l'aide gardent leur couleur. */
+.compte-form .field-issue {
+  color: var(--ko);
+}
+.compte-form .field-hint {
+  color: var(--faint);
+}
+
 /* ---------- dialogue ---------- */
 
 .dialog {
@@ -2077,6 +2098,17 @@ input[type="date"].input {
 
 /* ---------- petits écrans ---------- */
 
+/* Le compte ne doit pas écraser le titre du document : ses libellés ne paraissent que s'il y a la place. */
+@media (max-width: 1500px) {
+  .hide-lg {
+    display: none;
+  }
+  .btn-ui:has(.hide-lg) {
+    gap: 0;
+    padding: 0 9px;
+  }
+}
+
 @media (max-width: 1320px) {
   .doc-title span:not(.money) {
     display: none;
@@ -2202,6 +2234,13 @@ input[type="date"].input {
   }
   .topbar .brand span {
     display: none;
+  }
+  /* Le bouton du compte s'ajoute à la barre d'un téléphone : ses boutons-icônes se serrent. */
+  .topbar-actions {
+    gap: 2px;
+  }
+  .topbar-actions .btn-ui:has(.hide-md, .hide-lg) {
+    padding: 0 6px;
   }
   .font-list,
   .mentions,

@@ -4,7 +4,8 @@
  *   pnpm site:build
  *
  * - bundle du validateur : site-src/validateur/main.ts → site/validateur/app.js (+ fragments chargés à la demande)
- * - bundle du Studio : site-src/studio/main.tsx → site/studio/app.js (+ fragments), et ses polices
+ * - bundle du Studio : site-src/studio/main.tsx → site/studio/app.js (+ fragments), et ses polices ;
+ *   FACTURX_SUPABASE_URL et FACTURX_SUPABASE_KEY (clé publique) y injectent le projet du compte
  * - exemples cliquables dérivés des fichiers de référence du SDK
  *
  * Les jeux de règles et le runtime XSLT viennent de `pnpm validator:fetch`.
@@ -66,6 +67,10 @@ mkdirSync(studioDir, { recursive: true });
 for (const name of readdirSync(studioDir)) {
   if (name === 'app.js' || /^chunk-.*\.js$/.test(name)) rmSync(join(studioDir, name));
 }
+// Le projet Supabase du compte : URL et clé publique (jamais la clé de service), lues dans
+// l'environnement à la construction. Vides, le Studio n'offre aucun compte et reste local.
+const supabaseUrl = process.env.FACTURX_SUPABASE_URL?.trim() ?? '';
+const supabaseKey = process.env.FACTURX_SUPABASE_KEY?.trim() ?? '';
 const studio = await build({
   entryPoints: [join(root, 'site-src/studio/main.tsx')],
   outdir: studioDir,
@@ -83,6 +88,10 @@ const studio = await build({
   jsxImportSource: 'preact',
   // Le profil sRGB de l'OutputIntent, embarqué tel quel dans le bundle (456 octets).
   loader: { '.icc': 'binary' },
+  define: {
+    __FACTURX_SUPABASE_URL__: JSON.stringify(supabaseUrl),
+    __FACTURX_SUPABASE_KEY__: JSON.stringify(supabaseKey),
+  },
 });
 let studioBytes = 0;
 for (const info of Object.values(studio.metafile.outputs)) studioBytes += info.bytes;

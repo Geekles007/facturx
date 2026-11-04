@@ -2,13 +2,15 @@
  * facturx Studio — démarrage.
  *
  * Relit ce que ce navigateur a conservé (brouillon, entreprise, clients, catalogue, historique,
- * numérotation) ; à la première visite, ouvre la facture d'exemple. Tout s'exécute ici : le Studio
- * n'a pas de serveur. Un seul signal sans contenu part quand un PDF Factur-X est produit, pour le
- * décompte (site/README.md, « Compter les factures du Studio »).
+ * numérotation) ; à la première visite, ouvre la facture d'exemple. Sans compte, tout s'exécute ici :
+ * le Studio n'a pas de serveur. Un seul signal sans contenu part quand un PDF Factur-X est produit,
+ * pour le décompte (site/README.md, « Compter les factures du Studio »). Avec un compte, la session
+ * est restaurée avant la lecture de ce qui a été conservé.
  */
 
 import { render } from 'preact';
 import { App } from './app.js';
+import { compteActif, retourDeLien, sessionProbable } from './compte/session.js';
 import { defaultAppearance, defaultCompany, defaultNumbering } from './library.js';
 import { blankForm, blankParty, type InvoiceForm } from './model.js';
 import { sampleForm } from './sample.js';
@@ -44,6 +46,12 @@ function hydrateForm(saved: InvoiceForm): InvoiceForm {
 async function boot(): Promise<void> {
   const root = document.getElementById('studio');
   if (!root) return;
+  // Qui n'a pas de session ne télécharge ni `supabase-js` ni le code du compte. Le retour d'un lien
+  // de confirmation arrive sans session : il charge le compte, qui la lit dans l'adresse. Si le
+  // fragment ne se charge pas (hors ligne), le Studio démarre en mode local.
+  if (compteActif() && (sessionProbable() || retourDeLien())) {
+    await import('./compte/index.js').then((m) => m.demarrer()).catch(() => undefined);
+  }
   const loaded = await loadPersisted().catch(() => undefined);
   const ui = store.get().ui;
   if (loaded) {

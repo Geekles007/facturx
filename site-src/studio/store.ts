@@ -30,6 +30,21 @@ export interface Toast {
   text: string;
 }
 
+/** Le compte connecté, tel que `compte/demarrer` l'a relevé sur le serveur. */
+export interface CompteUi {
+  email: string;
+  /** Adresse confirmée ; le serveur refuse d'émettre tant qu'elle ne l'est pas. */
+  confirme: boolean;
+  entrepriseId: string;
+  /** Date de la demande de suppression du compte (délai de grâce en cours), sinon rien. */
+  suppressionDemandeeLe: string | undefined;
+  /** `expiree` : le serveur a refusé le jeton ; la saisie reste en local jusqu'à la reconnexion. */
+  session: 'active' | 'expiree';
+}
+
+/** Volet du dialogue de connexion. */
+export type VoletConnexion = 'connexion' | 'inscription' | 'oubli';
+
 export interface UiState {
   tab: Tab;
   /** Champ à atteindre : l'éditeur y fait défiler, l'ouvre s'il est replié, et le met en valeur. */
@@ -47,6 +62,12 @@ export interface UiState {
   issued: string | undefined;
   /** Première visite : l'exemple est affiché. */
   sample: boolean;
+  /** Défini quand une session a été restaurée au démarrage ; sans lui, le Studio est local. */
+  compte: CompteUi | undefined;
+  /** Les écritures sur le serveur passent-elles ? Sans compte, toujours `ok`. */
+  reseau: 'ok' | 'hors-ligne';
+  /** Volet du dialogue de connexion ouvert, ou rien. */
+  connexion: VoletConnexion | undefined;
 }
 
 export interface StudioState {
@@ -119,6 +140,9 @@ const initialUi = (): UiState => ({
   storage: 'pending',
   issued: undefined,
   sample: false,
+  compte: undefined,
+  reseau: 'ok',
+  connexion: undefined,
 });
 
 let state: StudioState = {

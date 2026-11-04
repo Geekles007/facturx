@@ -19,6 +19,12 @@ COPY examples/receive-node/package.json examples/receive-node/
 RUN pnpm install --frozen-lockfile
 
 COPY . .
+# Le projet Supabase du compte, injecté dans le bundle du Studio : l'URL et la clé publique
+# (anon/publishable), jamais la clé de service. Vides, le Studio n'offre aucun compte.
+ARG FACTURX_SUPABASE_URL=""
+ARG FACTURX_SUPABASE_KEY=""
+ENV FACTURX_SUPABASE_URL=$FACTURX_SUPABASE_URL \
+    FACTURX_SUPABASE_KEY=$FACTURX_SUPABASE_KEY
 # Télécharge le runtime Saxon-JS (saxonica.com) et les schematrons officiels (France_RFE, XSD
 # mustangproject), les compile, puis produit site/validateur/. Nécessite un accès réseau pendant
 # la construction.

@@ -591,6 +591,52 @@ const fr = {
     deleteConfirm: 'Supprimer définitivement ?',
     issuedOn: (date: string) => `émise le ${date}`,
   },
+  compte: {
+    signIn: 'Se connecter',
+    create: 'Créer un compte gratuit',
+    createShort: 'Créer un compte',
+    signOut: 'Se déconnecter',
+    menu: 'Mon compte',
+    dialogTitle: {
+      connexion: 'Se connecter',
+      inscription: 'Créer un compte gratuit',
+      oubli: 'Mot de passe oublié',
+    },
+    signUpIntro:
+      'Avec un compte, vos factures, clients et réglages sont conservés sur un serveur en Europe, et vous les retrouvez sur tous vos appareils. Sans compte, rien ne change : tout reste dans ce navigateur.',
+    forgotIntro:
+      'Indiquez votre adresse : nous vous envoyons un lien pour choisir un nouveau mot de passe.',
+    email: 'Adresse e-mail',
+    password: 'Mot de passe',
+    forgot: 'Mot de passe oublié ?',
+    acceptBefore: "J'accepte les ",
+    acceptLink: 'CGU',
+    submit: {
+      connexion: 'Se connecter',
+      inscription: 'Créer mon compte',
+      oubli: 'Envoyer le lien',
+    },
+    missingFields: "Renseignez l'adresse e-mail et le mot de passe.",
+    missingEmail: "Renseignez l'adresse e-mail.",
+    acceptRequired: 'Acceptez les CGU pour créer un compte.',
+    confirmationSent: (email: string) =>
+      `Un e-mail de confirmation est parti vers ${email}. Ouvrez le lien qu'il contient pour activer votre compte, puis connectez-vous.`,
+    resetSent: (email: string) =>
+      `Si un compte existe pour ${email}, un lien pour choisir un nouveau mot de passe vient d'y être envoyé.`,
+    errors: {
+      credentials: 'Adresse ou mot de passe incorrect.',
+      notConfirmed:
+        "Cette adresse n'est pas encore confirmée : ouvrez le lien de l'e-mail de confirmation.",
+      exists: 'Un compte existe déjà avec cette adresse.',
+      weak: 'Ce mot de passe est trop faible : choisissez-en un plus long ou plus varié.',
+      invalidEmail: "Cette adresse e-mail n'est pas valide.",
+      rateLimit: "Trop de tentatives ou d'e-mails envoyés : réessayez dans quelques minutes.",
+      signupClosed: 'Les inscriptions sont fermées pour le moment.',
+      network: 'Le serveur est injoignable : vérifiez votre connexion, puis réessayez.',
+      other: "L'opération a échoué. Réessayez dans un instant.",
+      loadFailed: "Le module de connexion n'a pas pu être chargé : vérifiez votre connexion.",
+    },
+  },
 };
 
 export type Strings = typeof fr;
@@ -1167,6 +1213,50 @@ const en: Strings = {
       `${clients} customer${clients > 1 ? 's' : ''}, ${products} item${products > 1 ? 's' : ''}, ${invoices} issued invoice${invoices > 1 ? 's' : ''}`,
     deleteConfirm: 'Delete permanently?',
     issuedOn: (date: string) => `issued on ${date}`,
+  },
+  compte: {
+    signIn: 'Sign in',
+    create: 'Create a free account',
+    createShort: 'Create an account',
+    signOut: 'Sign out',
+    menu: 'My account',
+    dialogTitle: {
+      connexion: 'Sign in',
+      inscription: 'Create a free account',
+      oubli: 'Forgot your password',
+    },
+    signUpIntro:
+      'With an account, your invoices, customers and settings are kept on a server in Europe, and you find them on all your devices. Without one, nothing changes: everything stays in this browser.',
+    forgotIntro: 'Enter your address: we will email you a link to choose a new password.',
+    email: 'Email address',
+    password: 'Password',
+    forgot: 'Forgot your password?',
+    acceptBefore: 'I accept the ',
+    acceptLink: 'terms of use',
+    submit: {
+      connexion: 'Sign in',
+      inscription: 'Create my account',
+      oubli: 'Send the link',
+    },
+    missingFields: 'Enter your email address and password.',
+    missingEmail: 'Enter your email address.',
+    acceptRequired: 'Accept the terms of use to create an account.',
+    confirmationSent: (email: string) =>
+      `A confirmation email is on its way to ${email}. Open the link it contains to activate your account, then sign in.`,
+    resetSent: (email: string) =>
+      `If an account exists for ${email}, a link to choose a new password has just been sent there.`,
+    errors: {
+      credentials: 'Wrong email address or password.',
+      notConfirmed: 'This address is not confirmed yet: open the link in the confirmation email.',
+      exists: 'An account already exists with this address.',
+      weak: 'This password is too weak: choose a longer or more varied one.',
+      invalidEmail: 'This email address is not valid.',
+      rateLimit: 'Too many attempts or emails sent: try again in a few minutes.',
+      signupClosed: 'Sign-ups are closed for the moment.',
+      network: 'The server cannot be reached: check your connection, then try again.',
+      other: 'The operation failed. Try again in a moment.',
+      loadFailed: 'The sign-in module could not be loaded: check your connection.',
+    },
   },
 };
 

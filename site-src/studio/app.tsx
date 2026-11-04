@@ -8,12 +8,14 @@
 
 import { toCiiXml, validateInvoice } from 'facturx-sdk';
 import type { InvoiceLayout } from 'facturx-sdk/pdf';
+import type { ComponentType } from 'preact';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { compterControle } from '../validateur/compteur.js';
 import { anchorOf, type SectionId, sectionOf as sectionFor } from './anchors.js';
 import { AppearancePanel } from './appearance.js';
 import { CheckPanel } from './check.js';
 import { CodePanel } from './codeview.js';
+import { compteActif } from './compte/session.js';
 import {
   type Derived,
   DerivedContext,
@@ -351,6 +353,78 @@ async function newBlank(): Promise<void> {
   startDraft(newInvoiceForm(profile, numbering), saved ?? store.get().appearance);
 }
 
+/** Termine la session de ce navigateur ; le code du compte est déjà chargé quand on est connecté. */
+async function seDeconnecter(): Promise<void> {
+  const compte = await import('./compte/index.js').catch(() => undefined);
+  if (!compte) {
+    toast(t.compte.errors.loadFailed, 'error');
+    return;
+  }
+  await compte
+    .deconnecter()
+    .catch((error) =>
+      toast(error instanceof Error ? error.message : t.compte.errors.other, 'error'),
+    );
+}
+
+/**
+ * « Se connecter » et « Créer un compte gratuit », ou le menu du compte connecté. Rien de tout
+ * cela n'existe dans un site construit sans projet Supabase.
+ */
+function CompteBoutons() {
+  const compte = useStudio((s) => s.ui.compte);
+  if (compte) {
+    return (
+      <Menu
+        label={t.compte.menu}
+        align="right"
+        trigger={(props) => (
+          <Button icon="user" variant="ghost" title={compte.email} {...props}>
+            <span class="hide-lg compte-email">{compte.email}</span>
+          </Button>
+        )}
+        items={[
+          { label: compte.email, icon: 'user', disabled: true, onSelect: () => undefined },
+          'separator',
+          { label: t.compte.signOut, icon: 'lock', onSelect: seDeconnecter },
+        ]}
+      />
+    );
+  }
+  return (
+    <>
+      <Button
+        icon="user"
+        variant="ghost"
+        title={t.compte.signIn}
+        onClick={() => ui({ connexion: 'connexion' })}
+      >
+        <span class="hide-lg">{t.compte.signIn}</span>
+      </Button>
+      <Button class="hide-lg" onClick={() => ui({ connexion: 'inscription' })}>
+        {t.compte.create}
+      </Button>
+    </>
+  );
+}
+
+/** Charge le dialogue de connexion, et avec lui `supabase-js`, à la première ouverture. */
+function ConnexionALaDemande() {
+  const volet = useStudio((s) => s.ui.connexion);
+  const [Dialogue, setDialogue] = useState<ComponentType>();
+  useEffect(() => {
+    if (!volet || Dialogue) return;
+    import('./compte/connexion.js').then(
+      (m) => setDialogue(() => m.Connexion),
+      () => {
+        toast(t.compte.errors.loadFailed, 'error');
+        ui({ connexion: undefined });
+      },
+    );
+  }, [volet, Dialogue]);
+  return Dialogue ? <Dialogue /> : null;
+}
+
 function TopBar({ derived, onIssue }: { derived: Derived; onIssue: () => void }) {
   const form = useStudio((s) => s.form);
   const appearance = useStudio((s) => s.appearance);
@@ -443,6 +517,7 @@ function TopBar({ derived, onIssue }: { derived: Derived; onIssue: () => void })
         >
           <span class="hide-md">{t.app.library}</span>
         </Button>
+        {compteActif() && <CompteBoutons />}
         <div class="split">
           <Button
             icon={issued ? 'download' : 'check'}
@@ -868,6 +943,7 @@ export function App() {
             </button>
           </nav>
           <LibraryPanel />
+          {compteActif() && <ConnexionALaDemande />}
           <IssueDialog open={issueOpen} onClose={() => setIssueOpen(false)} derived={derived} />
           <Toasts />
           {dragging && (
