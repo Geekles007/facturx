@@ -8,57 +8,17 @@
  */
 
 import { type Invoice, toCiiXml } from 'facturx-sdk';
-import {
-  embedFacturX,
-  type InvoiceLayout,
-  type LayoutInvoiceOptions,
-  layoutInvoice,
-  RENDER_LABELS,
-  type RenderLabels,
-  renderInvoicePdf,
-} from 'facturx-sdk/pdf';
+import { embedFacturX, type InvoiceLayout, layoutInvoice, renderInvoicePdf } from 'facturx-sdk/pdf';
 // Le profil sRGB compact (CC0, 456 octets) que les tests veraPDF du SDK emploient déjà : le même
 // fichier, embarqué dans le bundle, plutôt qu'une copie qui pourrait diverger.
 import srgb from '../../packages/facturx/test/fixtures/sRGB.icc';
+import { type Assets, renderOptions } from '../shared/rendu.js';
 import type { Appearance } from './library.js';
 
-export interface Assets {
-  fonts: { regular: Uint8Array; bold: Uint8Array };
-  logo?: { bytes: Uint8Array; type: 'png' | 'jpeg' };
-}
-
-/** Table de libellés : la langue du document, et ce que l'utilisateur a renommé. */
-export function labelsFor(appearance: Appearance): RenderLabels {
-  const base = RENDER_LABELS[appearance.language];
-  const renamed = Object.fromEntries(
-    Object.entries(appearance.labels).filter(
-      ([, value]) => typeof value === 'string' && value.trim() !== '',
-    ),
-  );
-  return { ...base, ...renamed };
-}
-
-export function renderOptions(appearance: Appearance, assets: Assets): LayoutInvoiceOptions {
-  const options: LayoutInvoiceOptions = {
-    fonts: assets.fonts,
-    labels: Object.keys(appearance.labels).length ? labelsFor(appearance) : appearance.language,
-    locale: appearance.language,
-    theme: {
-      template: appearance.template,
-      accent: appearance.accent,
-      style: appearance.style,
-      pageSize: appearance.pageSize,
-      logo: {
-        position: appearance.logo?.position ?? 'left',
-        height: appearance.logo?.height ?? 44,
-      },
-    },
-    display: appearance.display,
-  };
-  if (appearance.footer.trim()) options.footer = appearance.footer.trim();
-  if (assets.logo) options.logo = assets.logo;
-  return options;
-}
+export { fileStem } from '../shared/numerotation.js';
+// Les options de rendu vivent dans `shared/`, où les Edge Functions les emploient aussi ; le Studio
+// continue de les importer d'ici.
+export { type Assets, labelsFor, renderOptions } from '../shared/rendu.js';
 
 export function layoutFor(
   invoice: Invoice,
@@ -104,7 +64,3 @@ export function download(bytes: Uint8Array | string, filename: string, type: str
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
-
-/** Nom de fichier sûr, tiré du numéro de facture. */
-export const fileStem = (id: string): string =>
-  id.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'facture';

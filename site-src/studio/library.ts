@@ -8,6 +8,7 @@
  */
 
 import type { RenderDisplay, RenderStyle, RenderTemplate } from 'facturx-sdk/pdf';
+import { formatNumber, type Numbering, nextRank } from '../shared/numerotation.js';
 import {
   addDays,
   blankForm,
@@ -178,16 +179,16 @@ export interface SavedInvoice {
 
 // ---------- numérotation ----------
 
-export interface Numbering {
-  /** Gabarit : `{AAAA}` année, `{AA}` année sur deux chiffres, `{MM}` mois, `{N…}` compteur sur autant de chiffres. */
-  pattern: string;
-  /** Prochain numéro de la séquence. */
-  next: number;
-  /** Recommencer à 1 chaque année. */
-  yearly: boolean;
-  /** Année du dernier numéro attribué, pour la remise à zéro annuelle. */
-  year: number;
-}
+// Le gabarit, le rang et les vérifications vivent dans `shared/`, où les Edge Functions les
+// emploient aussi ; le Studio continue de les importer d'ici.
+export {
+  advance,
+  formatNumber,
+  type Numbering,
+  nextRank,
+  numberProblems,
+  rankOf,
+} from '../shared/numerotation.js';
 
 export const defaultNumbering = (): Numbering => ({
   pattern: 'F-{AAAA}-{NNNN}',
@@ -195,64 +196,6 @@ export const defaultNumbering = (): Numbering => ({
   yearly: true,
   year: new Date().getFullYear(),
 });
-
-/** Numéro obtenu avec `pattern` pour le rang `n` à la date `iso`. */
-export function formatNumber(pattern: string, n: number, iso: string): string {
-  const [year = '2026', month = '01'] = iso.split('-');
-  return pattern
-    .replace(/\{(AAAA|YYYY)\}/g, year)
-    .replace(/\{(AA|YY)\}/g, year.slice(2))
-    .replace(/\{MM\}/g, month)
-    .replace(/\{(N+)\}/g, (_, width: string) => String(n).padStart(width.length, '0'));
-}
-
-/** Rang à utiliser pour une facture datée de `iso`, remise à zéro annuelle comprise. */
-export function nextRank(numbering: Numbering, iso: string): number {
-  const year = Number(iso.slice(0, 4));
-  return numbering.yearly && year > numbering.year ? 1 : numbering.next;
-}
-
-/**
- * Rang d'un numéro composé avec `pattern` (`F-2026-0042` → 42), ou `undefined` s'il n'en suit pas
- * le gabarit — un numéro saisi à la main, par exemple.
- */
-export function rankOf(pattern: string, id: string): number | undefined {
-  let groups = 0;
-  const source = pattern
-    .split(/(\{(?:AAAA|YYYY|AA|YY|MM|N+)\})/)
-    .map((part) => {
-      if (/^\{(AAAA|YYYY)\}$/.test(part)) return '\\d{4}';
-      if (/^\{(AA|YY|MM)\}$/.test(part)) return '\\d{2}';
-      if (/^\{N+\}$/.test(part)) {
-        groups++;
-        return '(\\d+)';
-      }
-      return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    })
-    .join('');
-  if (groups !== 1) return undefined;
-  const match = new RegExp(`^${source}$`).exec(id.trim());
-  return match ? Number(match[1]) : undefined;
-}
-
-/**
- * La numérotation après l'émission d'une facture datée de `iso`. Si le numéro émis suit le
- * gabarit avec un rang plus élevé que prévu, la séquence repart de lui : jamais de retour en arrière.
- */
-export function advance(numbering: Numbering, iso: string, id?: string): Numbering {
-  const year = Number(iso.slice(0, 4));
-  const issued = id === undefined ? undefined : rankOf(numbering.pattern, id);
-  const next = Math.max(nextRank(numbering, iso), issued ?? 0) + 1;
-  return { ...numbering, next, year: Math.max(year, numbering.year) };
-}
-
-/** BR-FR-01 et BR-FR-02 : 35 caractères au plus, parmi A-Z a-z 0-9 - + _ /. */
-export function numberProblems(id: string): ('length' | 'chars')[] {
-  const out: ('length' | 'chars')[] = [];
-  if (id.length > 35) out.push('length');
-  if (id !== '' && !/^[A-Za-z0-9+_/-]+$/.test(id)) out.push('chars');
-  return out;
-}
 
 // ---------- nouvelle facture ----------
 
@@ -295,35 +238,5 @@ export function newInvoiceForm(
 
 // ---------- sauvegarde ----------
 
-/** Octets → base64, par blocs (un `String.fromCharCode(...grand tableau)` déborde la pile). */
-export function toBase64(bytes: Uint8Array): string {
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  }
-  return btoa(binary);
-}
-
-export function fromBase64(text: string): Uint8Array {
-  const binary = atob(text);
-  const out = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
-  return out;
-}
-
-/** JSON qui transporte des `Uint8Array` (pièces jointes, logo, polices) en base64 balisé. */
-export function toPortableJson(value: unknown): string {
-  return JSON.stringify(
-    value,
-    (_, v) => (v instanceof Uint8Array ? { $bytes: toBase64(v) } : v),
-    2,
-  );
-}
-
-export function fromPortableJson<T>(text: string): T {
-  return JSON.parse(text, (_, v) =>
-    v && typeof v === 'object' && typeof (v as { $bytes?: unknown }).$bytes === 'string'
-      ? fromBase64((v as { $bytes: string }).$bytes)
-      : v,
-  ) as T;
-}
+// Le JSON portable (octets en base64) vit dans `shared/`, comme la numérotation.
+export { fromBase64, fromPortableJson, toBase64, toPortableJson } from '../shared/portable.js';
