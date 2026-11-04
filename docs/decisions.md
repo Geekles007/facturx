@@ -437,3 +437,14 @@ Les témoins rendent le même verdict des deux côtés : UC13 et UC10 tels quels
 **Le vrai changement.** En .03, une facture CII à plusieurs échéances faisait échouer tout le schematron BR-FR : la chaîne officielle ne rendait aucun verdict, quel que soit le reste de la facture. La .04 la juge. Les autres corrections CII ne touchent que des cas limites : la tolérance d'arrondi de MV-10 et la précision des comparaisons. Les corrections UBL n'ont pas été éprouvées par des cas ciblés.
 
 **Effet sur le SDK : aucun.** Le SDK n'émet qu'une échéance (`paymentTerms.dueDate`), en profil EN 16931, sans sous-lignes. Ses règles BR-FR-CO-07 et CO-09 (D71) reprennent le test de la .04, et le validateur en ligne juge en .04 depuis D65.
+
+## 2026-11-03 — Session 27 : les comptes et le suivi des factures
+
+### D73. Les comptes : ce que devient « rien n'est transmis »
+D51 posait que rien ne quitte le navigateur. Cela reste vrai là où l'utilisateur ne crée pas de compte : le validateur en ligne est entièrement local, et le Studio sans compte aussi (IndexedDB, comme avant). Un compte est un choix, jamais un préalable.
+
+Avec un compte, les données sont sur un serveur : brouillons, clients, catalogue, factures émises, paiements. Elles sont hébergées dans l'UE (Supabase, Paris) et chiffrées au repos par l'hébergeur, mais **lisibles par le service**. Ce n'est pas un chiffrement de bout en bout, et il ne peut pas en être un : le serveur lit la facture pour l'émettre, la numéroter, calculer ce qu'il reste dû et envoyer une relance. La promesse change donc de forme sans disparaître : elle se tient par mode, et c'est l'utilisateur qui fait le choix, à la création du compte, qui exige l'acceptation des CGU.
+
+**`supabase/` passe en AGPL-3.0-or-later**, le reste du dépôt restant en MIT. Le service est ouvert : schéma, règles d'accès, fonctions d'émission et de relance sont dans ce dépôt public, et l'abonnement vendra l'hébergement et la plateforme agréée, pas le code. Sous une licence permissive, un concurrent pourrait héberger ce service sans rien publier de ses modifications. L'AGPL l'en empêche dès qu'il l'offre à des tiers par le réseau. Le SDK et le Studio, eux, restent libres d'usage. `supabase/LICENSE` porte le texte, et `LICENSE` à la racine dit quel dossier relève de quelle licence.
+
+**Le SDK est copié dans les fonctions, pas pris sur npm.** `pnpm compte:preparer` copie `packages/facturx/dist/` et les modules partagés du Studio dans `supabase/functions/_vendor/` (non versionné), avant les tests et le déploiement. La fonction emploie ainsi exactement le SDK du bundle du Studio, sans attendre une publication, et ne dépend pas de la façon dont le bundler des fonctions traite un import hors de leur dossier. Les dépendances de `supabase/functions/deno.json` suivent celles du SDK, à la version exacte, et un test le vérifie. Chaque facture garde la version du SDK qui l'a produite.

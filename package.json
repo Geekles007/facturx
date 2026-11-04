@@ -22,7 +22,10 @@
     "downloads:fetch": "node scripts/fetch-npm-downloads.mjs",
     "site:build": "node scripts/build-site.mjs",
     "site:dist": "pnpm build && pnpm validator:fetch && pnpm downloads:fetch && pnpm site:build",
-    "site:check": "tsc --noEmit -p tsconfig.site.json && vitest run --config vitest.site.config.mts && pnpm site:build"
+    "site:check": "tsc --noEmit -p tsconfig.site.json && vitest run --config vitest.site.config.mts && pnpm site:build",
+    "compte:preparer": "node scripts/compte-preparer.mjs",
+    "compte:start": "supabase start",
+    "compte:test": "node scripts/compte-test.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
