@@ -33,6 +33,20 @@ const vendorDir = join(root, 'supabase/functions/_vendor');
 
 const EN_TETE = '// Généré par `pnpm compte:preparer` (non versionné) : ne pas modifier.\n';
 
+/**
+ * Donne ses types au SDK copié, pour Deno (`deno check`, `deno test`). Deno ne cherche pas le
+ * `.d.ts` voisin d'un `.js` local : `@ts-self-types` le lui désigne. Et les `.d.ts` importent leur
+ * chunk de types en `./cii-read-….js`, qui n'existe pas : Deno veut le `.d.ts`.
+ */
+function typerPourDeno(dossier) {
+  for (const point of ['index', 'pdf']) {
+    const js = join(dossier, `${point}.js`);
+    writeFileSync(js, `// @ts-self-types="./${point}.d.ts"\n${readFileSync(js, 'utf8')}`);
+    const dts = join(dossier, `${point}.d.ts`);
+    writeFileSync(dts, readFileSync(dts, 'utf8').replace(/(from '\.\/[\w-]+)\.js'/g, "$1.d.ts'"));
+  }
+}
+
 /** Vide `_vendor/` puis le reconstruit à partir du SDK construit et des modules partagés. */
 export async function preparer() {
   const dist = join(root, 'packages/facturx/dist');
@@ -46,6 +60,7 @@ export async function preparer() {
   mkdirSync(vendorDir, { recursive: true });
 
   cpSync(dist, join(vendorDir, 'facturx-sdk'), { recursive: true });
+  typerPourDeno(join(vendorDir, 'facturx-sdk'));
 
   // Les modules partagés n'existent qu'à partir de la tâche qui les crée : sans dossier, rien à copier.
   const shared = join(root, 'site-src/shared');

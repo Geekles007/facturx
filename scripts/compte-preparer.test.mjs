@@ -31,4 +31,19 @@ describe('préparation des fonctions du compte', () => {
     const icc = lire('packages/facturx/test/fixtures/sRGB.icc', null);
     expect(lire('supabase/functions/_vendor/srgb.ts')).toContain(icc.toString('base64'));
   });
+
+  // Deno type-check les modules qui importent le SDK (`deno check`, `deno test`) : sans ces deux
+  // retouches, `facturx-sdk/pdf` n'y a aucun type (RenderLabels, LayoutInvoiceOptions…).
+  it('le SDK copié porte ses types pour Deno', async () => {
+    await preparer();
+    for (const point of ['index', 'pdf']) {
+      expect(lire(`supabase/functions/_vendor/facturx-sdk/${point}.js`)).toMatch(
+        new RegExp(`^// @ts-self-types="\\./${point}\\.d\\.ts"\\n`),
+      );
+      // Les .d.ts importent leur chunk de types en `.js`, qui n'existe pas : Deno veut le .d.ts.
+      expect(lire(`supabase/functions/_vendor/facturx-sdk/${point}.d.ts`)).not.toMatch(
+        /from '\.\/[\w-]+\.js'/,
+      );
+    }
+  });
 });
