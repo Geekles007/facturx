@@ -63,9 +63,9 @@
     </section>
 
     <section id="sans-compte">
-    <h2>2. Sans compte, rien n'est transmis</h2>
-    <p>Le Studio sans compte garde tout dans votre navigateur (IndexedDB)&nbsp;: votre entreprise, vos clients, votre catalogue, votre historique et votre numérotation. Le validateur en ligne lit votre fichier dans votre navigateur. Ni l'un ni l'autre n'envoie ce que vous saisissez ou déposez à un serveur, le nôtre comme celui d'un tiers. Tant que vous n'avez pas de session ouverte, le Studio ne charge même pas le code du compte et ne contacte pas Supabase.</p>
-    <p>Une seule chose part, et elle ne contient rien de vous. À chaque PDF produit dans le Studio et à chaque fichier contrôlé dans le validateur, la page appelle une adresse de notre propre site, sans rien y joindre. Le serveur répond sans corps et n'en garde qu'une ligne de journal, avec l'adresse IP tronquée de son dernier octet. Ni nom de fichier, ni verdict, ni cookie, ni identifiant&nbsp;: c'est un décompte, pour savoir si l'outil sert.</p>
+    <h2>2. Sans compte, rien de ce que vous saisissez n'est transmis</h2>
+    <p>Le Studio sans compte garde tout dans votre navigateur (IndexedDB)&nbsp;: votre entreprise, vos clients, votre catalogue, votre historique et votre numérotation. Le validateur en ligne lit votre fichier dans votre navigateur. Ni l'un ni l'autre n'envoie ce que vous saisissez ou déposez à un serveur, le nôtre comme celui d'un tiers. Tant que vous n'ouvrez pas la connexion, le Studio ne charge même pas le code du compte et ne contacte pas Supabase.</p>
+    <p>Une seule chose part, et elle ne porte ni vos saisies ni vos fichiers. À chaque PDF produit dans le Studio et à chaque fichier contrôlé dans le validateur, la page appelle une adresse de notre propre site, sans rien y joindre. Le serveur répond sans corps, mais la requête laisse une ligne dans deux journaux&nbsp;: celui des statistiques, où l'adresse IP est tronquée de son dernier octet, et le journal d'exploitation, éphémère, qui garde l'adresse complète (article 5). Ni nom de fichier, ni verdict, ni cookie, ni identifiant&nbsp;: c'est un décompte, pour savoir si l'outil sert.</p>
     <p>Ces données restent chez vous, et nous ne pouvons donc pas les récupérer&nbsp;: si vous effacez les données du site dans votre navigateur, elles disparaissent. Pensez à la sauvegarde du Studio.</p>
     </section>
 
@@ -82,11 +82,12 @@
     <tr><td data-label="Donnée">Catalogue et brouillons</td><td data-label="À quoi elle sert">Préparer vos factures.</td><td data-label="Notre rôle">Sous-traitant</td></tr>
     <tr><td data-label="Donnée">Factures émises et leur PDF, paiements saisis (date, montant, moyen, note)</td><td data-label="À quoi elle sert">Conserver vos factures, calculer ce qu'il reste à payer, tenir le tableau de bord.</td><td data-label="Notre rôle">Sous-traitant</td></tr>
     <tr><td data-label="Donnée">Relances&nbsp;: destinataire, objet, texte, état d'envoi, identifiant renvoyé par Brevo</td><td data-label="À quoi elle sert">Envoyer la relance, garder l'historique, appliquer les limites d'envoi.</td><td data-label="Notre rôle">Sous-traitant</td></tr>
-    <tr><td data-label="Donnée">Journal du site&nbsp;: adresse IP tronquée, page demandée, navigateur, date</td><td data-label="À quoi elle sert">Faire fonctionner le site et mesurer sa fréquentation.</td><td data-label="Notre rôle">Responsable du traitement</td></tr>
+    <tr><td data-label="Donnée">Journal de statistiques du site&nbsp;: adresse IP tronquée, page demandée, navigateur, date</td><td data-label="À quoi elle sert">Mesurer la fréquentation du site.</td><td data-label="Notre rôle">Responsable du traitement</td></tr>
+    <tr><td data-label="Donnée">Journal d'exploitation du site, éphémère&nbsp;: adresse IP complète, page demandée, navigateur, date</td><td data-label="À quoi elle sert">Diagnostiquer le fonctionnement du site.</td><td data-label="Notre rôle">Responsable du traitement</td></tr>
     </tbody>
     </table>
     </div>
-    <p>Nous traitons les données du compte pour vous rendre le Service que vous avez demandé (exécution du contrat, article 6.1.b du RGPD). Le journal du site et les chiffres d'usage relèvent de notre intérêt légitime à faire fonctionner le Service (article 6.1.f).</p>
+    <p>Nous traitons les données du compte pour vous rendre le Service que vous avez demandé (exécution du contrat, article 6.1.b du RGPD). Les journaux du site et les chiffres d'usage relèvent de notre intérêt légitime à faire fonctionner le Service (article 6.1.f).</p>
     <p>Pour savoir si le Service sert, nous comptons directement dans la base&nbsp;: les comptes créés, les comptes actifs (au moins une facture émise dans le mois), les factures émises et les relances envoyées. Ce sont des totaux, calculés en SQL&nbsp;; aucun traceur n'est ajouté à vos pages.</p>
     </section>
 
@@ -103,7 +104,7 @@
     </table>
     </div>
     <p>Brevo reçoit l'adresse e-mail de votre compte et, pour une relance, l'adresse du destinataire, l'objet, le texte et le PDF joint. Le site lui-même (pages, Studio, validateur) est servi par le serveur de l'éditeur&nbsp;: il ne reçoit aucune donnée de compte, seulement les requêtes de pages et leur journal.</p>
-    <p><b>Supabase est une société américaine.</b> Vos données sont hébergées à Paris, mais l'hébergement en Europe ne change pas la nationalité du prestataire&nbsp;: Supabase Inc. reste soumise au droit des États-Unis. Nous ne pouvons donc pas vous promettre que vos données échappent à toute demande d'une autorité américaine adressée à ce prestataire. Si c'est un obstacle pour vous, utilisez le Studio sans compte&nbsp;: rien ne quitte alors votre navigateur.</p>
+    <p><b>Supabase est une société américaine.</b> Vos données sont hébergées à Paris, mais l'hébergement en Europe ne change pas la nationalité du prestataire&nbsp;: Supabase Inc. reste soumise au droit des États-Unis. Nous ne pouvons donc pas vous promettre que vos données échappent à toute demande d'une autorité américaine adressée à ce prestataire. Si c'est un obstacle pour vous, utilisez le Studio sans compte&nbsp;: rien de ce que vous saisissez ou déposez ne quitte alors votre navigateur.</p>
     <p><b>Pas de chiffrement de bout en bout.</b> Vos données sont chiffrées au repos par l'hébergeur, mais elles restent lisibles par le Service&nbsp;: le serveur lit votre facture pour l'émettre, la numéroter, calculer ce qu'il reste à payer et envoyer une relance. C'est la contrepartie d'un compte, et c'est à vous de faire ce choix.</p>
     </section>
 
@@ -115,8 +116,8 @@
     <tbody>
     <tr><td data-label="Situation">Votre compte existe</td><td data-label="Durée">Vos données sont conservées tant que le compte existe. Une facture émise ne se modifie ni ne se supprime pendant ce temps.</td></tr>
     <tr><td data-label="Situation">Vous demandez la suppression du compte</td><td data-label="Durée">30 jours de délai de grâce, que vous pouvez annuler. Pendant ce délai, le Service n'émet plus rien et n'envoie plus de relance&nbsp;: il ne propose que l'export et l'annulation.</td></tr>
-    <tr><td data-label="Situation">Les 30 jours sont écoulés</td><td data-label="Durée">Tout est effacé&nbsp;: PDF et fichiers, données de l'entreprise (factures, clients, catalogue, paiements, relances), puis l'identifiant de connexion.</td></tr>
-    <tr><td data-label="Situation">Une émission est interrompue et laisse un PDF sans facture</td><td data-label="Durée">Le PDF est effacé au bout d'un jour.</td></tr>
+    <tr><td data-label="Situation">Les 30 jours sont écoulés</td><td data-label="Durée">Tout est effacé à la première passe de nuit qui suit&nbsp;: PDF et fichiers, données de l'entreprise (factures, clients, catalogue, paiements, relances), puis l'identifiant de connexion.</td></tr>
+    <tr><td data-label="Situation">Une émission est interrompue et laisse un PDF sans facture</td><td data-label="Durée">Le PDF est effacé après un jour au moins, à la passe de nuit suivante.</td></tr>
     <tr><td data-label="Situation">Sauvegardes</td><td data-label="Durée">Sauvegardes quotidiennes de l'hébergeur et copie hebdomadaire chiffrée&nbsp;: l'effacement ci-dessus ne les réécrit pas, vos données y subsistent jusqu'à leur renouvellement. Durée de conservation&nbsp;: <span class="a-completer">à compléter</span>.</td></tr>
     <tr><td data-label="Situation">Journaux du site</td><td data-label="Durée">Le journal qui sert aux statistiques ne contient jamais d'adresse complète. Un journal d'exploitation distinct, éphémère, sert au diagnostic et garde les adresses complètes. Durée&nbsp;: <span class="a-completer">à compléter</span>.</td></tr>
     </tbody>
@@ -137,7 +138,7 @@
     <ul>
     <li>Chaque table de la base est protégée par des règles d'accès, qui refusent par défaut&nbsp;: un compte ne lit ni n'écrit les données d'un autre.</li>
     <li>Émettre une facture et envoyer une relance se font uniquement par des fonctions du serveur. Le navigateur n'a aucun droit d'écriture sur une facture émise.</li>
-    <li>Les PDF, les logos et les polices sont dans des espaces privés. Ils ne s'ouvrent que par un lien signé, valable 60 secondes.</li>
+    <li>Vos PDF, vos logos et vos polices sont dans des espaces privés. Ils ne s'ouvrent que par un lien signé, valable 60 secondes.</li>
     <li>La clé de service de la base n'existe que dans les secrets des fonctions du serveur&nbsp;; elle n'est jamais envoyée au navigateur.</li>
     <li>Les données sont sauvegardées chaque jour par l'hébergeur, et une copie chiffrée est déposée chaque semaine chez un autre hébergeur européen.</li>
     <li>Votre session de connexion est gardée dans le stockage de votre navigateur, pour que vous restiez connecté. Pour ne rien perdre de ce que vous tapez, le brouillon ouvert est aussi recopié dans le navigateur.</li>

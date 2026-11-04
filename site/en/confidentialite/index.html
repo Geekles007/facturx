@@ -63,9 +63,9 @@
     </section>
 
     <section id="sans-compte">
-    <h2>2. Without an account, nothing is sent</h2>
-    <p>The account-less Studio keeps everything in your browser (IndexedDB): your company, your customers, your catalogue, your history and your numbering. The online validator reads your file in your browser. Neither sends what you type or drop to any server, ours or a third party's. As long as you have no open session, the Studio does not even load the account code and does not contact Supabase.</p>
-    <p>One thing does go out, and it contains nothing about you. For each PDF produced in the Studio and each file checked in the validator, the page requests an address on our own site, with nothing attached. The server answers with no body and keeps only a log line, with the IP address truncated of its last byte. No file name, no verdict, no cookie, no identifier: it is a count, to know whether the tool is used.</p>
+    <h2>2. Without an account, nothing you enter is sent</h2>
+    <p>The account-less Studio keeps everything in your browser (IndexedDB): your company, your customers, your catalogue, your history and your numbering. The online validator reads your file in your browser. Neither sends what you type or drop to any server, ours or a third party's. As long as you do not open the sign-in, the Studio does not even load the account code and does not contact Supabase.</p>
+    <p>One thing does go out, and it carries neither what you entered nor your files. For each PDF produced in the Studio and each file checked in the validator, the page requests an address on our own site, with nothing attached. The server answers with no body, but the request leaves a line in two logs: the statistics log, where the IP address is truncated of its last byte, and the short-lived operating log, which keeps the full address (section 5). No file name, no verdict, no cookie, no identifier: it is a count, to know whether the tool is used.</p>
     <p>This data stays with you, so we cannot recover it: if you clear the site's data in your browser, it is gone. Think of the Studio's backup.</p>
     </section>
 
@@ -82,11 +82,12 @@
     <tr><td data-label="Data">Catalogue and drafts</td><td data-label="What it is for">Prepare your invoices.</td><td data-label="Our role">Processor</td></tr>
     <tr><td data-label="Data">Issued invoices and their PDFs, recorded payments (date, amount, method, note)</td><td data-label="What it is for">Keep your invoices, work out what is still to be paid, run the dashboard.</td><td data-label="Our role">Processor</td></tr>
     <tr><td data-label="Data">Reminders: recipient, subject, text, sending status, identifier returned by Brevo</td><td data-label="What it is for">Send the reminder, keep the history, apply the sending limits.</td><td data-label="Our role">Processor</td></tr>
-    <tr><td data-label="Data">Site log: truncated IP address, requested page, browser, date</td><td data-label="What it is for">Run the site and measure its traffic.</td><td data-label="Our role">Controller</td></tr>
+    <tr><td data-label="Data">Site statistics log: truncated IP address, requested page, browser, date</td><td data-label="What it is for">Measure the site's traffic.</td><td data-label="Our role">Controller</td></tr>
+    <tr><td data-label="Data">Site operating log, short-lived: full IP address, requested page, browser, date</td><td data-label="What it is for">Diagnose how the site is running.</td><td data-label="Our role">Controller</td></tr>
     </tbody>
     </table>
     </div>
-    <p>We process account data to provide the Service you asked for (performance of a contract, article 6(1)(b) of the GDPR). The site log and the usage figures rest on our legitimate interest in running the Service (article 6(1)(f)).</p>
+    <p>We process account data to provide the Service you asked for (performance of a contract, article 6(1)(b) of the GDPR). The site logs and the usage figures rest on our legitimate interest in running the Service (article 6(1)(f)).</p>
     <p>To know whether the Service is used, we count directly in the database: accounts created, active accounts (at least one invoice issued in the month), invoices issued and reminders sent. These are totals, computed in SQL; no tracker is added to your pages.</p>
     </section>
 
@@ -103,7 +104,7 @@
     </table>
     </div>
     <p>Brevo receives your account's e-mail address and, for a reminder, the recipient's address, the subject, the text and the attached PDF. The site itself (pages, Studio, validator) is served by the publisher's server: it receives no account data, only page requests and their log.</p>
-    <p><b>Supabase is a US company.</b> Your data is hosted in Paris, but hosting in Europe does not change the provider's nationality: Supabase Inc. remains subject to US law. We therefore cannot promise that your data escapes every request from a US authority addressed to that provider. If that is an obstacle for you, use the Studio without an account: nothing then leaves your browser.</p>
+    <p><b>Supabase is a US company.</b> Your data is hosted in Paris, but hosting in Europe does not change the provider's nationality: Supabase Inc. remains subject to US law. We therefore cannot promise that your data escapes every request from a US authority addressed to that provider. If that is an obstacle for you, use the Studio without an account: nothing you enter or drop then leaves your browser.</p>
     <p><b>No end-to-end encryption.</b> Your data is encrypted at rest by the host, but it remains readable by the Service: the server reads your invoice to issue it, number it, work out what is still to be paid and send a reminder. That is the trade-off of having an account, and the choice is yours.</p>
     </section>
 
@@ -115,8 +116,8 @@
     <tbody>
     <tr><td data-label="Situation">Your account exists</td><td data-label="Duration">Your data is kept as long as the account exists. An issued invoice is neither edited nor deleted in the meantime.</td></tr>
     <tr><td data-label="Situation">You request deletion of the account</td><td data-label="Duration">30 days of grace, which you can cancel. During that time the Service issues nothing and sends no reminders: it offers only the export and the cancellation.</td></tr>
-    <tr><td data-label="Situation">The 30 days have passed</td><td data-label="Duration">Everything is erased: PDFs and files, the company's data (invoices, customers, catalogue, payments, reminders), then the sign-in identity.</td></tr>
-    <tr><td data-label="Situation">An issue is interrupted and leaves a PDF without an invoice</td><td data-label="Duration">The PDF is erased after one day.</td></tr>
+    <tr><td data-label="Situation">The 30 days have passed</td><td data-label="Duration">Everything is erased at the first nightly run after that: PDFs and files, the company's data (invoices, customers, catalogue, payments, reminders), then the sign-in identity.</td></tr>
+    <tr><td data-label="Situation">An invoice issuance is interrupted and leaves a PDF without an invoice</td><td data-label="Duration">The PDF is erased after at least one day, at the next nightly run.</td></tr>
     <tr><td data-label="Situation">Backups</td><td data-label="Duration">The host's daily backups and the weekly encrypted copy: the erasure above does not rewrite them, so your data stays in them until they are renewed. Retention period: <span class="a-completer">to be completed</span>.</td></tr>
     <tr><td data-label="Situation">Site logs</td><td data-label="Duration">The log used for statistics never holds a full address. A separate, short-lived operating log is used for diagnosis and keeps full addresses. Period: <span class="a-completer">to be completed</span>.</td></tr>
     </tbody>
@@ -137,7 +138,7 @@
     <ul>
     <li>Every table in the database is protected by access rules that deny by default: one account can neither read nor write another's data.</li>
     <li>Issuing an invoice and sending a reminder are done only by server functions. The browser has no write access to an issued invoice.</li>
-    <li>PDFs, logos and fonts sit in private storage. They open only through a signed link, valid for 60 seconds.</li>
+    <li>Your PDFs, your logos and your fonts sit in private storage. They open only through a signed link, valid for 60 seconds.</li>
     <li>The database's service key exists only in the server functions' secrets; it is never sent to the browser.</li>
     <li>The data is backed up daily by the host, and an encrypted copy is deposited every week with another European host.</li>
     <li>Your sign-in session is kept in your browser's storage, so that you stay signed in. So that nothing you type is lost, the open draft is also copied into the browser.</li>
