@@ -41,6 +41,19 @@ jobs:
           curl -fsS -o /dev/null http://localhost:8080/
           curl -fsS -o /dev/null http://localhost:8080/validateur/
 
+      # Les CGU sont le lien de la boîte de création de compte : une page absente de l'image serait
+      # un lien mort au moment où l'utilisateur doit les accepter. Les adresses sans barre finale
+      # redirigent, sans quoi les chemins relatifs de la page remonteraient d'un cran.
+      - name: Les textes juridiques sont servis, avec ou sans barre finale
+        run: |
+          for chemin in /cgu /confidentialite /sous-traitance; do
+            for langue in "" /en; do
+              curl -fsS -o /dev/null "http://localhost:8080$langue$chemin/"
+              code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8080$langue$chemin")
+              [ "$code" = "301" ] || { echo "$langue$chemin : attendu 301, reçu $code"; exit 1; }
+            done
+          done
+
       - name: /stats/ est fermé sans mot de passe
         run: |
           code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/stats/)
