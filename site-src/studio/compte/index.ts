@@ -11,8 +11,9 @@
 
 import { type AuthError, isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { type Strings, t } from '../i18n.js';
-import { type CompteUi, ui } from '../store.js';
+import { type CompteUi, toast, ui } from '../store.js';
 import { client } from './client.js';
+import { effacerRetourDeLien, oublierSession, retourDeLien } from './session.js';
 
 /** Version des CGU que l'utilisateur accepte en s'inscrivant ; le serveur refuse l'inscription sans elle. */
 export const CGU_VERSION = '2026-11' as const;
@@ -20,19 +21,29 @@ export const CGU_VERSION = '2026-11' as const;
 /** Au-delà, le démarrage renonce au compte plutôt que de retenir l'affichage du Studio. */
 const DELAI_DEMARRAGE_MS = 10_000;
 
+/** Le message d'un lien qui n'ouvre rien reste affiché assez longtemps pour être lu en entier. */
+const DUREE_MESSAGE_LIEN_MS = 15_000;
+
 /** Ce que `membres` donne de l'entreprise du compte, avec la date de suppression demandée. */
 interface LigneMembre {
   entreprise_id: string;
   entreprises: { suppression_demandee_le: string | null } | null;
 }
 
-async function lire(): Promise<CompteUi | undefined> {
+/** Ce que le démarrage a appris en route : la session existe-t-elle, a-t-il renoncé à attendre ? */
+interface Etat {
+  session: boolean;
+  expire: boolean;
+}
+
+async function lire(etat: Etat): Promise<CompteUi | undefined> {
   const sb = client();
-  // Restaure la session (et la renouvelle si son jeton est périmé) ; lit aussi le fragment du lien
-  // de confirmation, au retour de l'e-mail.
+  // Restaure la session (et la renouvelle si son jeton est périmé). Au retour d'un lien reçu par
+  // e-mail, `supabase-js` échange d'abord le code de l'adresse contre la session, s'il le peut.
   const { data } = await sb.auth.getSession();
   const user = data.session?.user;
   if (!user) return undefined;
+  etat.session = true;
   const { data: membre, error } = await sb
     .from('membres')
     .select('entreprise_id, entreprises(suppression_demandee_le)')
@@ -50,22 +61,43 @@ async function lire(): Promise<CompteUi | undefined> {
 }
 
 /**
+ * Après un retour de lien : retire le code ou l'erreur de l'adresse, qu'un rechargement ne doit pas
+ * rejouer, et dit pourquoi aucune session ne s'est ouverte, le cas échéant. Un lien ouvert dans un
+ * autre navigateur que celui de la demande n'a pas de vérificateur à échanger : l'adresse n'en
+ * est pas moins confirmée côté serveur, d'où l'invitation à se connecter.
+ */
+function expliquerRetour(retour: 'code' | 'erreur', etat: Etat): void {
+  effacerRetourDeLien();
+  if (etat.session || etat.expire) return;
+  const phrases = t.compte.link;
+  if (retour === 'erreur') toast(phrases.expired, 'error', DUREE_MESSAGE_LIEN_MS);
+  else toast(phrases.noSession, 'info', DUREE_MESSAGE_LIEN_MS);
+}
+
+/**
  * Restaure la session, relève l'entreprise du compte et renseigne `ui.compte`. Sans session, ou si
  * le serveur ne répond pas, ne renvoie rien : le Studio démarre alors en mode local. Ne lève jamais.
  */
 export async function demarrer(): Promise<CompteUi | undefined> {
+  // Lu avant que `supabase-js` ne touche à l'adresse.
+  const retour = retourDeLien();
+  const etat: Etat = { session: false, expire: false };
   let minuterie: ReturnType<typeof setTimeout> | undefined;
   const delai = new Promise<undefined>((resolve) => {
-    minuterie = setTimeout(() => resolve(undefined), DELAI_DEMARRAGE_MS);
+    minuterie = setTimeout(() => {
+      etat.expire = true;
+      resolve(undefined);
+    }, DELAI_DEMARRAGE_MS);
   });
   try {
-    const compte = await Promise.race([lire(), delai]);
+    const compte = await Promise.race([lire(etat), delai]);
     if (compte) ui({ compte });
     return compte;
   } catch {
     return undefined;
   } finally {
     clearTimeout(minuterie);
+    if (retour) expliquerRetour(retour, etat);
   }
 }
 
@@ -92,7 +124,7 @@ function erreur(cause: AuthError): Error {
 }
 
 /** Où ramènent les liens de l'e-mail (confirmation, réinitialisation) : le Studio, dans sa langue. */
-function retour(): string {
+function adresseDeRetour(): string {
   return `${location.origin}${t.lang === 'en' ? '/en/studio/' : '/studio/'}`;
 }
 
@@ -109,7 +141,7 @@ export async function inscrire(
   const { data, error } = await client().auth.signUp({
     email,
     password: motDePasse,
-    options: { data: { cgu: cguVersion }, emailRedirectTo: retour() },
+    options: { data: { cgu: cguVersion }, emailRedirectTo: adresseDeRetour() },
   });
   if (error) throw erreur(error);
   if (!data.session) return 'confirmation';
@@ -125,13 +157,25 @@ export async function connecter(email: string, motDePasse: string): Promise<void
 
 /** Envoie le lien de réinitialisation ; la réponse est la même que l'adresse ait un compte ou non. */
 export async function reinitialiser(email: string): Promise<void> {
-  const { error } = await client().auth.resetPasswordForEmail(email, { redirectTo: retour() });
+  const { error } = await client().auth.resetPasswordForEmail(email, {
+    redirectTo: adresseDeRetour(),
+  });
   if (error) throw erreur(error);
 }
 
-/** Termine la session de ce navigateur seulement (les autres appareils restent connectés). */
+/**
+ * Termine la session de ce navigateur seulement (les autres appareils restent connectés), puis
+ * recharge, quoi que réponde le serveur. `supabase-js` retire la session locale avant de rendre
+ * l'erreur d'un serveur injoignable : sortir à moitié (menu du compte affiché, session perdue)
+ * serait pire que de ne pas avoir révoqué le jeton côté serveur, qui expire seul. Rien ne lève.
+ */
 export async function deconnecter(): Promise<void> {
-  const { error } = await client().auth.signOut({ scope: 'local' });
-  if (error) throw erreur(error);
-  location.reload();
+  try {
+    await client().auth.signOut({ scope: 'local' });
+  } catch {
+    // Verrou ou stockage indisponible : le nettoyage ci-dessous suffit.
+  } finally {
+    oublierSession();
+    location.reload();
+  }
 }

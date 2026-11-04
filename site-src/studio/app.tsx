@@ -15,7 +15,7 @@ import { anchorOf, type SectionId, sectionOf as sectionFor } from './anchors.js'
 import { AppearancePanel } from './appearance.js';
 import { CheckPanel } from './check.js';
 import { CodePanel } from './codeview.js';
-import { compteActif } from './compte/session.js';
+import { compteActif, oublierSession } from './compte/session.js';
 import {
   type Derived,
   DerivedContext,
@@ -353,18 +353,19 @@ async function newBlank(): Promise<void> {
   startDraft(newInvoiceForm(profile, numbering), saved ?? store.get().appearance);
 }
 
-/** Termine la session de ce navigateur ; le code du compte est déjà chargé quand on est connecté. */
+/**
+ * Termine la session de ce navigateur ; le code du compte est déjà chargé quand on est connecté.
+ * Quoi qu'il arrive, la page est rechargée sans session : le menu du compte ne reste jamais affiché
+ * alors que la session n'existe plus.
+ */
 async function seDeconnecter(): Promise<void> {
   const compte = await import('./compte/index.js').catch(() => undefined);
-  if (!compte) {
-    toast(t.compte.errors.loadFailed, 'error');
-    return;
+  if (compte) {
+    await compte.deconnecter();
+  } else {
+    oublierSession();
+    location.reload();
   }
-  await compte
-    .deconnecter()
-    .catch((error) =>
-      toast(error instanceof Error ? error.message : t.compte.errors.other, 'error'),
-    );
 }
 
 /**

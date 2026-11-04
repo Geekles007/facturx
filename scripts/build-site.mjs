@@ -5,7 +5,8 @@
  *
  * - bundle du validateur : site-src/validateur/main.ts → site/validateur/app.js (+ fragments chargés à la demande)
  * - bundle du Studio : site-src/studio/main.tsx → site/studio/app.js (+ fragments), et ses polices ;
- *   FACTURX_SUPABASE_URL et FACTURX_SUPABASE_KEY (clé publique) y injectent le projet du compte
+ *   FACTURX_SUPABASE_URL et FACTURX_SUPABASE_KEY (clé publique ; une clé de service interrompt la
+ *   construction) y injectent le projet du compte
  * - exemples cliquables dérivés des fichiers de référence du SDK
  *
  * Les jeux de règles et le runtime XSLT viennent de `pnpm validator:fetch`.
@@ -24,6 +25,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { verifierCleSupabase } from './cle-supabase.mjs';
 import { buildBrokenFacturX, buildExampleFacturX } from './example-invoice.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -33,6 +35,18 @@ const goldenDir = join(root, 'packages/facturx/test/golden');
 
 if (!existsSync(join(root, 'packages/facturx/dist/index.js'))) {
   throw new Error('le SDK n’est pas construit : lancer `pnpm build` avant `pnpm site:build`.');
+}
+
+// Le projet Supabase du compte : URL et clé publique, lues dans l'environnement. Vides, le Studio
+// n'offre aucun compte et reste local. Le bundle est public : une clé de service arrête tout
+// avant la moindre écriture.
+const supabaseUrl = process.env.FACTURX_SUPABASE_URL?.trim() ?? '';
+const supabaseKey = process.env.FACTURX_SUPABASE_KEY?.trim() ?? '';
+try {
+  verifierCleSupabase(supabaseKey);
+} catch (error) {
+  console.error(`site:build — ${error.message}`);
+  process.exit(1);
 }
 
 mkdirSync(outDir, { recursive: true });
@@ -67,10 +81,6 @@ mkdirSync(studioDir, { recursive: true });
 for (const name of readdirSync(studioDir)) {
   if (name === 'app.js' || /^chunk-.*\.js$/.test(name)) rmSync(join(studioDir, name));
 }
-// Le projet Supabase du compte : URL et clé publique (jamais la clé de service), lues dans
-// l'environnement à la construction. Vides, le Studio n'offre aucun compte et reste local.
-const supabaseUrl = process.env.FACTURX_SUPABASE_URL?.trim() ?? '';
-const supabaseKey = process.env.FACTURX_SUPABASE_KEY?.trim() ?? '';
 const studio = await build({
   entryPoints: [join(root, 'site-src/studio/main.tsx')],
   outdir: studioDir,

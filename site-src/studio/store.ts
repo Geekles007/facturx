@@ -218,14 +218,15 @@ export function focusField(path: string, tab: Tab = 'content'): void {
 }
 
 let toastId = 0;
-export function toast(text: string, kind: Toast['kind'] = 'ok'): void {
+/** Affiche un message ; `duration` (ms) prolonge celui d'un texte long, qui ne se lit pas en 3 s. */
+export function toast(text: string, kind: Toast['kind'] = 'ok', duration?: number): void {
   const id = ++toastId;
   ui({ toast: { id, kind, text } });
   setTimeout(
     () => {
       if (store.get().ui.toast?.id === id) ui({ toast: undefined });
     },
-    kind === 'error' ? 7000 : 3500,
+    duration ?? (kind === 'error' ? 7000 : 3500),
   );
 }
 

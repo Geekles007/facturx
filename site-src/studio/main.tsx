@@ -47,9 +47,10 @@ async function boot(): Promise<void> {
   const root = document.getElementById('studio');
   if (!root) return;
   // Qui n'a pas de session ne télécharge ni `supabase-js` ni le code du compte. Le retour d'un lien
-  // de confirmation arrive sans session : il charge le compte, qui la lit dans l'adresse. Si le
-  // fragment ne se charge pas (hors ligne), le Studio démarre en mode local.
-  if (compteActif() && (sessionProbable() || retourDeLien())) {
+  // de confirmation arrive sans session, avec un code (ou une erreur) dans l'adresse : il charge le
+  // compte, qui échange le code ou explique l'échec. Si le fragment ne se charge pas (hors ligne),
+  // le Studio démarre en mode local.
+  if (compteActif() && (sessionProbable() || retourDeLien() !== undefined)) {
     await import('./compte/index.js').then((m) => m.demarrer()).catch(() => undefined);
   }
   const loaded = await loadPersisted().catch(() => undefined);

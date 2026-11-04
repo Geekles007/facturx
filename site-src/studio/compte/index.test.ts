@@ -26,15 +26,29 @@ const { auth, from, maybeSingle } = vi.hoisted(() => {
 vi.mock('./client.js', () => ({ client: () => ({ auth, from }) }));
 
 const reload = vi.fn();
+const replaceState = vi.fn();
 const utilisateur = {
   id: 'user-1',
   email: 'a@exemple.test',
   email_confirmed_at: '2026-11-04T10:00:00Z',
 };
 
+/** Pose `location` sur `chemin` (relatif à https://exemple.test), avec ce que le code lit. */
+function poserAdresse(chemin = '/studio/'): void {
+  const url = new URL(chemin, 'https://exemple.test');
+  vi.stubGlobal('location', {
+    origin: url.origin,
+    href: url.href,
+    search: url.search,
+    hash: url.hash,
+    reload,
+  });
+}
+
 beforeEach(() => {
-  vi.stubGlobal('location', { origin: 'https://exemple.test', reload });
-  store.set((s) => ({ ui: { ...s.ui, compte: undefined } }));
+  poserAdresse();
+  vi.stubGlobal('history', { state: null, replaceState });
+  store.set((s) => ({ ui: { ...s.ui, compte: undefined, toast: undefined } }));
 });
 
 afterEach(() => {
@@ -105,6 +119,70 @@ describe('demarrer', () => {
     const demarrage = demarrer();
     await vi.advanceTimersByTimeAsync(10_000);
     await expect(demarrage).resolves.toBeUndefined();
+  });
+});
+
+describe('demarrer, au retour d’un lien reçu par e-mail', () => {
+  const membre = {
+    data: { entreprise_id: 'e-1', entreprises: { suppression_demandee_le: null } },
+    error: null,
+  };
+
+  it('ouvre la session quand le code a pu être échangé, et retire le code de l’adresse', async () => {
+    poserAdresse('/studio/?code=abc123');
+    auth.getSession.mockResolvedValue({ data: { session: { user: utilisateur } } });
+    maybeSingle.mockResolvedValue(membre);
+    expect((await demarrer())?.email).toBe('a@exemple.test');
+    expect(replaceState).toHaveBeenCalledWith(null, '', 'https://exemple.test/studio/');
+    expect(store.get().ui.toast).toBeUndefined();
+  });
+
+  it('dit que l’adresse est confirmée quand le lien a été ouvert dans un autre navigateur', async () => {
+    // Sans le vérificateur du navigateur d'origine, `supabase-js` n'échange rien : pas de session.
+    poserAdresse('/studio/?code=abc123');
+    auth.getSession.mockResolvedValue({ data: { session: null } });
+    expect(await demarrer()).toBeUndefined();
+    expect(store.get().ui.toast).toMatchObject({ kind: 'info', text: t.compte.link.noSession });
+    expect(t.compte.link.noSession).toMatch(/confirmée.*connectez-vous/);
+    expect(replaceState).toHaveBeenCalledWith(null, '', 'https://exemple.test/studio/');
+  });
+
+  it('signale un lien expiré ou invalide, et en retire les paramètres', async () => {
+    poserAdresse(
+      '/studio/?error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid#error_code=otp_expired',
+    );
+    auth.getSession.mockResolvedValue({ data: { session: null } });
+    expect(await demarrer()).toBeUndefined();
+    expect(store.get().ui.toast).toMatchObject({ kind: 'error', text: t.compte.link.expired });
+    expect(replaceState).toHaveBeenCalledWith(null, '', 'https://exemple.test/studio/');
+  });
+
+  it('laisse le message assez longtemps pour être lu', async () => {
+    vi.useFakeTimers();
+    poserAdresse('/studio/?code=abc123');
+    auth.getSession.mockResolvedValue({ data: { session: null } });
+    await demarrer();
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(store.get().ui.toast?.text).toBe(t.compte.link.noSession);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(store.get().ui.toast).toBeUndefined();
+  });
+
+  it('ne dit rien d’une session déjà ouverte, ni d’une adresse ordinaire', async () => {
+    auth.getSession.mockResolvedValue({ data: { session: null } });
+    await demarrer();
+    expect(store.get().ui.toast).toBeUndefined();
+    expect(replaceState).not.toHaveBeenCalled();
+  });
+
+  it('ne conclut pas à l’absence de session quand le serveur tarde', async () => {
+    vi.useFakeTimers();
+    poserAdresse('/studio/?code=abc123');
+    auth.getSession.mockReturnValue(new Promise(() => {}));
+    const demarrage = demarrer();
+    await vi.advanceTimersByTimeAsync(10_000);
+    await demarrage;
+    expect(store.get().ui.toast).toBeUndefined();
   });
 });
 
@@ -186,10 +264,44 @@ describe('reinitialiser', () => {
 });
 
 describe('deconnecter', () => {
+  /** Un `localStorage` en mémoire, avec la session que `supabase-js` y aurait laissée. */
+  function poserStockage(): Map<string, string> {
+    const contenu = new Map([
+      ['draft', '{}'],
+      ['sb-127-auth-token', '{"access_token":"x"}'],
+    ]);
+    vi.stubGlobal('localStorage', {
+      get length() {
+        return contenu.size;
+      },
+      key: (i: number) => [...contenu.keys()][i] ?? null,
+      removeItem: (cle: string) => contenu.delete(cle),
+    });
+    return contenu;
+  }
+
   it('ne ferme que la session de ce navigateur, puis recharge', async () => {
+    poserStockage();
     auth.signOut.mockResolvedValue({ error: null });
     await deconnecter();
     expect(auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
     expect(reload).toHaveBeenCalledOnce();
+  });
+
+  it('recharge aussi quand le serveur refuse ou ne répond pas : on sort de l’état connecté', async () => {
+    const contenu = poserStockage();
+    auth.signOut.mockResolvedValue({ error: new AuthRetryableFetchError('Failed to fetch', 0) });
+    await expect(deconnecter()).resolves.toBeUndefined();
+    expect(reload).toHaveBeenCalledOnce();
+    // Même si le client n'avait pas retiré la session, elle ne survit pas au rechargement.
+    expect([...contenu.keys()]).toEqual(['draft']);
+  });
+
+  it('recharge encore quand le client lève une exception', async () => {
+    const contenu = poserStockage();
+    auth.signOut.mockRejectedValue(new Error('verrou indisponible'));
+    await expect(deconnecter()).resolves.toBeUndefined();
+    expect(reload).toHaveBeenCalledOnce();
+    expect([...contenu.keys()]).toEqual(['draft']);
   });
 });

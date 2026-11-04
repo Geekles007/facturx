@@ -620,9 +620,15 @@ const fr = {
     missingEmail: "Renseignez l'adresse e-mail.",
     acceptRequired: 'Acceptez les CGU pour créer un compte.',
     confirmationSent: (email: string) =>
-      `Un e-mail de confirmation est parti vers ${email}. Ouvrez le lien qu'il contient pour activer votre compte, puis connectez-vous.`,
+      `Un e-mail de confirmation est parti vers ${email}. Ouvrez le lien qu'il contient : dans ce navigateur, votre compte s'ouvre aussitôt ; depuis un autre appareil, il suffira de vous connecter ensuite.`,
     resetSent: (email: string) =>
       `Si un compte existe pour ${email}, un lien pour choisir un nouveau mot de passe vient d'y être envoyé.`,
+    link: {
+      expired:
+        'Ce lien a expiré ou a déjà servi. Connectez-vous ; sinon, demandez un nouveau lien avec « Mot de passe oublié ? ».',
+      noSession:
+        "Ce lien n'a pas pu ouvrir de session dans ce navigateur : il a sans doute été ouvert ailleurs que là où vous l'aviez demandé, ou il a déjà servi. Si c'était la confirmation de votre adresse, elle est confirmée : connectez-vous. S'il s'agissait d'un nouveau mot de passe, redemandez un lien avec « Mot de passe oublié ? ».",
+    },
     errors: {
       credentials: 'Adresse ou mot de passe incorrect.',
       notConfirmed:
@@ -1242,9 +1248,15 @@ const en: Strings = {
     missingEmail: 'Enter your email address.',
     acceptRequired: 'Accept the terms of use to create an account.',
     confirmationSent: (email: string) =>
-      `A confirmation email is on its way to ${email}. Open the link it contains to activate your account, then sign in.`,
+      `A confirmation email is on its way to ${email}. Open the link it contains: in this browser your account opens right away; from another device, you will just need to sign in afterwards.`,
     resetSent: (email: string) =>
       `If an account exists for ${email}, a link to choose a new password has just been sent there.`,
+    link: {
+      expired:
+        'This link has expired or has already been used. Sign in; otherwise, request a new link with “Forgot your password?”.',
+      noSession:
+        'This link could not open a session in this browser: it was probably opened somewhere other than where you requested it, or it has already been used. If it was to confirm your address, the address is confirmed: sign in. If it was for a new password, request another link with “Forgot your password?”.',
+    },
     errors: {
       credentials: 'Wrong email address or password.',
       notConfirmed: 'This address is not confirmed yet: open the link in the confirmation email.',
