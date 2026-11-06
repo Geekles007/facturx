@@ -2,8 +2,10 @@
 -- Studio.
 --
 --   - `factures` (privé) : un PDF par facture émise, sous `{entreprise_id}/{facture_id}.pdf`. Les membres
---     de l'entreprise le lisent (l'Edge Function qui signe l'URL de 60 secondes le fait pour eux), et
---     aucun compte n'y écrit : seules les Edge Functions, en `service_role`, déposent et suppriment ;
+--     de l'entreprise le lisent, donc le téléchargent et signent eux-mêmes son URL par l'API Storage, pour
+--     la durée qu'ils choisissent : les 60 secondes de la spec valent pour les URL que le Studio demande,
+--     la base ne les impose pas. Aucun compte n'y écrit : seules les Edge Functions, en `service_role`,
+--     déposent et suppriment ;
 --   - `fichiers` (privé, 2 Mo, PNG, JPEG et TTF) : le logo et la police de l'entreprise, sous
 --     `{entreprise_id}/…`. Les membres y lisent, déposent, remplacent et suppriment ;
 --   - `polices` (public) : les polices du Studio, déposées au déploiement par `pnpm compte:polices`

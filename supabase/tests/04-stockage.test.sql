@@ -18,6 +18,18 @@
 begin;
 select plan(58);
 
+-- Hermétique : la base peut déjà contenir des objets, les polices que `pnpm compte:polices` y dépose
+-- (dont `geist-regular.ttf`, nom que le test pose aussi) ou les PDF que laissent les tests de fonctions.
+-- Les assertions globales (ce que lit `anon`, l'état final de la table) supposent que la table ne porte
+-- que les objets du test : on la vide donc ici, dans la transaction, que le `rollback` final annule. Rien
+-- n'est effacé pour de vrai (ni les lignes, ni les fichiers, que seule l'API Storage supprime). Plutôt que
+-- de restreindre chaque assertion aux noms du test, ce qui les affaiblirait : « rien d'autre n'est lisible »
+-- ou « rien n'a bougé » doit valoir pour toute la table. Le Storage interdit `delete from storage.objects`
+-- sans `storage.allow_delete_query` (trigger `protect_delete`) : l'API le pose elle-même.
+set local storage.allow_delete_query = 'true';
+delete from storage.objects;
+reset storage.allow_delete_query;
+
 select tests.creer_utilisateur('a@test') as a \gset
 select tests.creer_utilisateur('b@test') as b \gset
 select entreprise_id as entreprise_a from membres where user_id = :'a' \gset
