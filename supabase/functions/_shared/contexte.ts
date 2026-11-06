@@ -59,7 +59,7 @@ export async function contexte(req: Request): Promise<Contexte> {
  * Le projet est-il un projet hébergé par Supabase (`https://<ref>.supabase.co`) ? Une adresse absente
  * ou illisible compte comme hébergée : la garde ferme par défaut.
  */
-function projetHeberge(): boolean {
+export function projetHeberge(): boolean {
   try {
     const { hostname } = new URL(Deno.env.get('SUPABASE_URL') ?? '');
     return hostname === 'supabase.co' || hostname.endsWith('.supabase.co');

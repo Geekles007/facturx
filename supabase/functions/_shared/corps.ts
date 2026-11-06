@@ -48,6 +48,9 @@ export async function lireTexte(req: Request, plafond = PLAFOND_CORPS): Promise<
 export const estObjet = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/** Un identifiant `uuid`, tel que Postgres l'admet : un autre texte ferait lever la requête. */
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Le corps `texte` en JSON portable, qui doit être un objet ; sinon lève 422 `ANOMALIES` (`Issue` de
  * code `CORPS`, chemin vide) sous `message`, que chaque fonction rédige selon ce que le refus laisse

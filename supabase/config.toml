@@ -413,6 +413,11 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/deno.json"
 
+[functions.relancer]
+enabled = true
+verify_jwt = false
+import_map = "./functions/deno.json"
+
 [analytics]
 enabled = true
 port = 55427

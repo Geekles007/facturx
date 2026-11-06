@@ -25,7 +25,7 @@
 import { type Invoice, isValidIsoDate, validateInvoice } from 'facturx-sdk';
 import type postgres from 'postgres';
 import { aujourdhui, contexte } from '../_shared/contexte.ts';
-import { estObjet, lireObjetPortable, lireTexte } from '../_shared/corps.ts';
+import { estObjet, lireObjetPortable, lireTexte, UUID } from '../_shared/corps.ts';
 import { admin, sql } from '../_shared/db.ts';
 import { type Anomalie, anomalies, erreur, json, traiter } from '../_shared/erreurs.ts';
 import { type ApparenceEmise, lireApparence, produirePdf } from '../_shared/pdf.ts';
@@ -44,8 +44,6 @@ import { controlerDate } from './regles.ts';
 const LIMITE_PAR_HEURE = 60;
 
 const SANS_NUMERO = 'aucun numéro n’a été consommé';
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** `sql` ou la transaction ouverte par `sql.begin`. */
 type Requetes = postgres.ISql;
