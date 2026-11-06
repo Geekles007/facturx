@@ -48,3 +48,31 @@ jobs:
       - name: Validateur en ligne (types, tests, bundle)
         run: pnpm site:check
       - run: pnpm examples:check
+
+  # Le compte : les tests pgTAP (supabase/tests) et ceux des Edge Functions (supabase/functions/tests)
+  # contre une pile Supabase locale. Node 24 seulement : la matrice du job `ci` éprouve déjà le SDK.
+  compte:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: CLI Supabase
+        # `@v1` installe le CLI 2.20.3 sans `version` ; on épingle celui avec lequel config.toml a été écrit.
+        uses: supabase/setup-cli@v1
+        with:
+          version: 3.0.0
+      - uses: denoland/setup-deno@v2
+      - name: veraPDF (shim Docker) dans le PATH
+        run: |
+          docker pull --quiet ghcr.io/verapdf/cli:latest
+          echo "$GITHUB_WORKSPACE/scripts" >> "$GITHUB_PATH"
+      - name: Pile Supabase locale (sans les services inutiles aux tests)
+        run: supabase start -x studio,imgproxy,vector,logflare,supavisor
+      - name: SDK, Studio et modules partagés des fonctions
+        run: pnpm build && pnpm site:build && pnpm compte:preparer
+      - run: pnpm compte:test
