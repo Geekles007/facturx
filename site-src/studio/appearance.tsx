@@ -204,14 +204,15 @@ function FontPicker() {
         fonts: boldBytes ? { regular: bytes, bold: boldBytes } : { regular: bytes },
       });
       const regularKey = `font-${uid()}`;
-      await putFile(regularKey, bytes);
+      // Une police que le serveur refuse n'est pas appliquée : le message a dit pourquoi.
+      if (!(await putFile(regularKey, bytes))) return;
       const customFont: NonNullable<Appearance['customFont']> = {
         regularKey,
         name: file.name.replace(/\.(ttf|otf)$/i, ''),
       };
       if (boldBytes) {
         customFont.boldKey = `font-${uid()}`;
-        await putFile(customFont.boldKey, boldBytes);
+        if (!(await putFile(customFont.boldKey, boldBytes))) return;
       }
       setAppearance({ font: 'custom', customFont });
       setRegular(undefined);
@@ -312,7 +313,8 @@ function LogoPicker() {
     try {
       const { bytes, type } = await normalizeLogo(file);
       const key = `logo-${uid()}`;
-      await putFile(key, bytes);
+      // Un logo que le serveur refuse (trop lourd) n'est pas appliqué : le message a dit pourquoi.
+      if (!(await putFile(key, bytes))) return;
       setAppearance({
         logo: {
           key,

@@ -20,7 +20,7 @@ import { ErreurConservation, estDuCompte } from './persistence.js';
 import type { Assets } from './pipeline.js';
 import { buildFacturX, download, fileStem } from './pipeline.js';
 import { storage } from './storage.js';
-import { enregistrerMaintenant, store, toast, ui } from './store.js';
+import { brouillonAffiche, enregistrerMaintenant, store, toast, ui } from './store.js';
 
 /** Nouveaux identifiants d'interface pour chaque élément de liste d'un formulaire copié. */
 function refreshUids(form: InvoiceForm): InvoiceForm {
@@ -168,23 +168,58 @@ export function openIssued(saved: SavedInvoice): void {
 export function messageEnAttente(raison?: string): string {
   const s = store.get().ui;
   const phrases = t.compte.conservation.enAttente;
+  if (s.storage === 'injoignable') return phrases.injoignable;
   if (s.compte?.session === 'expiree' || raison === 'SESSION') return phrases.session;
   if (s.conflit || raison === 'BROUILLON_MODIFIE') return phrases.conflit;
-  if (s.reseau === 'hors-ligne' || s.storage === 'injoignable' || raison === 'RESEAU')
-    return phrases.reseau;
-  return phrases.refus;
+  if (s.brouillonRefuse !== undefined) return phrases.refus(s.brouillonRefuse);
+  if (s.reseau === 'hors-ligne' || raison === 'RESEAU') return phrases.reseau;
+  if (raison === 'EN_COURS') return phrases.enCours;
+  return phrases.refus(raison ?? '');
 }
 
 /**
- * En mode compte, avant de quitter le brouillon ouvert : sa saisie part au serveur. Faux, avec un
- * message qui dit pourquoi, si elle ne peut pas partir (hors ligne, session expirée, conflit) :
- * changer de document la perdrait, on reste donc sur lui. Sans compte, toujours vrai.
+ * En mode compte, avant de quitter le brouillon ouvert : sa saisie part au serveur, et l'on attend
+ * la fin des envois. Faux, avec un message qui dit pourquoi, si elle ne peut pas partir (hors
+ * ligne, session expirée, conflit, refus) : changer de document la perdrait, on reste donc sur
+ * lui. Sans compte, toujours vrai.
  */
 export async function quitterLeBrouillon(): Promise<boolean> {
   if (!store.get().ui.compte || !estDuCompte(storage)) return true;
-  if (await enregistrerMaintenant()) return true;
-  toast(messageEnAttente(), 'error', 9000);
-  return false;
+  if (!(await enregistrerMaintenant())) {
+    toast(messageEnAttente(), 'error', 9000);
+    return false;
+  }
+  await storage.envoisTermines();
+  return true;
+}
+
+/** Au-delà, on renonce à rattraper une saisie qui ne cesse de changer pendant les envois. */
+const ESSAIS_DE_BASCULE = 10;
+
+/**
+ * Bascule vers un autre document sans rien perdre de la saisie : on enregistre, puis `basculer`
+ * vérifie et change de document d'un seul tenant, sans rien attendre — aucune frappe ne peut
+ * s'intercaler entre la vérification et l'éditeur. Si l'on a tapé pendant l'envoi, la
+ * vérification échoue (`basculer` rend faux, ou lève `EN_ATTENTE`/`EN_COURS`) et l'on recommence.
+ * Faux, avec un message, si la saisie ne peut pas partir. Sans compte, `basculer` seul.
+ */
+export async function changerDeDocument(
+  basculer: () => boolean | Promise<boolean>,
+): Promise<boolean> {
+  if (!store.get().ui.compte || !estDuCompte(storage)) return basculer();
+  for (let essai = 1; ; essai++) {
+    if (!(await quitterLeBrouillon())) return false;
+    try {
+      if (await basculer()) return true;
+    } catch (erreur) {
+      const raison = erreur instanceof ErreurConservation ? erreur.detail : undefined;
+      if (raison !== 'EN_COURS') throw erreur;
+    }
+    if (essai === ESSAIS_DE_BASCULE) {
+      toast(messageEnAttente('EN_COURS'), 'error', 9000);
+      return false;
+    }
+  }
 }
 
 /**
@@ -193,17 +228,22 @@ export async function quitterLeBrouillon(): Promise<boolean> {
  * ne change et le Studio dit pourquoi. Vrai si la facture a été remplacée. Sans compte, rien
  * n'attend : le remplacement est immédiat, comme toujours.
  */
-export async function startDraft(form: InvoiceForm, appearance?: Appearance): Promise<boolean> {
-  if (store.get().ui.compte && estDuCompte(storage)) {
-    if (!(await quitterLeBrouillon())) return false;
-    try {
-      await storage.nouveauBrouillon();
-    } catch (erreur) {
-      const raison = erreur instanceof ErreurConservation ? erreur.detail : undefined;
-      toast(messageEnAttente(raison), 'error', 9000);
+export function startDraft(form: InvoiceForm, appearance?: Appearance): Promise<boolean> {
+  return changerDeDocument(() => {
+    // Synchrone : on ne quitte le brouillon qu'au moment où l'éditeur change.
+    if (
+      estDuCompte(storage) &&
+      store.get().ui.compte &&
+      !storage.quitterBrouillon(brouillonAffiche())
+    )
       return false;
-    }
-  }
+    remplacer(form, appearance);
+    return true;
+  });
+}
+
+/** Remplace la facture affichée, tout de suite (sans rien enregistrer ni vérifier avant). */
+export function remplacer(form: InvoiceForm, appearance?: Appearance): void {
   store.set((s) => ({
     form,
     ...(appearance ? { appearance } : {}),
@@ -218,5 +258,4 @@ export async function startDraft(form: InvoiceForm, appearance?: Appearance): Pr
     },
   }));
   ui({ mobile: 'edit' });
-  return true;
 }

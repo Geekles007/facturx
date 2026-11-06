@@ -14,12 +14,13 @@ import {
   conserver,
   enregistrerMaintenant,
   type Loaded,
+  oublierLeBrouillonRefuse,
   setForm,
   startPersistence,
   store,
   ui,
 } from './store.js';
-import { startDraft } from './workflows.js';
+import { quitterLeBrouillon, startDraft } from './workflows.js';
 
 const COMPTE: CompteUi = {
   email: 'a@exemple.test',
@@ -32,9 +33,11 @@ const COMPTE: CompteUi = {
 /**
  * Une conservation qui note chaque écriture et répond ce que `refus` dit à ce moment : rien
  * (l'écriture passe), ou le code d'une `ErreurConservation`. Elle tient aussi, comme celle du
- * compte, un miroir (`gardes`), des brouillons (`nouveaux`) et une saisie en attente au
- * démarrage (`enAttente`). Une vue (facture émise, exemple) ne va pas au serveur : elle passe
- * toujours.
+ * compte, un miroir (`gardes`), des brouillons (`nouveaux` : les bascules acceptées) et une
+ * saisie en attente au démarrage (`enAttente`). Comme elle, elle ne laisse quitter un brouillon
+ * que si l'écran montre les objets mêmes dont le serveur a reçu le contenu. Une vue (facture
+ * émise, exemple) ne va pas au serveur : elle passe toujours. `serveur` : ce que `get` rend, et
+ * `injoignable` : `available()` répond faux.
  */
 function fausseConservation() {
   const ecrites: { cle: string; valeur: unknown }[] = [];
@@ -44,18 +47,23 @@ function fausseConservation() {
     detail?: string;
     nouveaux: number;
     enAttente?: unknown;
-  } = { refus: undefined, nouveaux: 0 };
+    confirme?: { form: unknown; appearance: unknown };
+    serveur: Record<string, unknown>;
+    injoignable?: boolean;
+  } = { refus: undefined, nouveaux: 0, serveur: {} };
   const echoue = (): void => {
     if (etat.refus instanceof Error) throw etat.refus;
     if (etat.refus) throw new ErreurConservation(etat.refus, etat.detail);
   };
   const p: Persistence & ConservationDuCompte = {
-    available: async () => true,
-    get: async () => undefined,
+    available: async () => !etat.injoignable,
+    get: async <T>(cle: string) => etat.serveur[cle] as T | undefined,
     async set(cle, valeur) {
       ecrites.push({ cle, valeur });
-      const vue = (valeur as { issued?: string; sample?: boolean }).issued !== undefined;
-      if (!vue) echoue();
+      const v = valeur as { form: unknown; appearance: unknown; issued?: string };
+      if (v.issued === undefined) echoue();
+      if (cle === 'draft' && v.issued === undefined)
+        etat.confirme = { form: v.form, appearance: v.appearance };
       return cle;
     },
     list: async () => [],
@@ -75,12 +83,18 @@ function fausseConservation() {
     async garderBrouillon(valeur) {
       gardes.push(valeur);
     },
-    async nouveauBrouillon() {
-      echoue();
+    envoisTermines: async () => undefined,
+    quitterBrouillon(affiche) {
+      const a = affiche as { form: unknown; appearance: unknown; issued?: string };
+      const identique =
+        a.form === etat.confirme?.form && a.appearance === etat.confirme?.appearance;
+      if (a.issued === undefined && !identique) return false;
       etat.nouveaux++;
+      return true;
     },
     saisieEnAttente: () => etat.enAttente,
     brouillonLocal: async () => undefined,
+    abandonnerSaisie: async () => undefined,
   };
   return { p, ecrites, gardes, etat };
 }
@@ -452,5 +466,154 @@ describe('conserver : les écritures des panneaux', () => {
     expect(await conserver('clients:c-1', () => p.put('clients', { uid: 'c-1' }))).toBe(false);
     expect(store.get().ui.storage).toBe('ok');
     expect(store.get().ui.toast).toBeUndefined();
+  });
+});
+
+describe('course : frappe pendant le changement de document', () => {
+  it('ce qui est tapé pendant l’aller-retour de « Dupliquer » arrive au serveur, sur l’ancien brouillon', async () => {
+    const vus: string[] = [];
+    const nom = (v: unknown) => (v as NonNullable<Loaded['draft']>).form.buyer.name;
+    let confirme: { form: unknown; appearance: unknown } | undefined;
+    const p: Persistence & ConservationDuCompte = {
+      available: async () => true,
+      get: async () => undefined,
+      // Réseau lent : 500 ms par écriture.
+      set: (cle, v) =>
+        new Promise((ok) =>
+          setTimeout(() => {
+            if (cle === 'draft') {
+              vus.push(`serveur:${nom(v)}`);
+              const b = v as { form: unknown; appearance: unknown };
+              confirme = { form: b.form, appearance: b.appearance };
+            }
+            ok(cle);
+          }, 500),
+        ),
+      list: async () => [],
+      put: async (_, v) => v.uid,
+      remove: async () => undefined,
+      getFile: async () => undefined,
+      setFile: async (c) => c,
+      dump: async () => ({}),
+      async garderBrouillon(v) {
+        vus.push(`miroir:${nom(v)}`);
+      },
+      envoisTermines: async () => undefined,
+      // Comme la conservation du compte : on ne quitte que ce que le serveur a reçu, à l'identique.
+      quitterBrouillon(affiche) {
+        const a = affiche as { form: unknown; appearance: unknown };
+        if (a.form !== confirme?.form || a.appearance !== confirme?.appearance) return false;
+        vus.push('bascule');
+        return true;
+      },
+      saisieEnAttente: () => undefined,
+      brouillonLocal: async () => undefined,
+      abandonnerSaisie: async () => undefined,
+    };
+    demarrer(p, { options: { delai: 1000 } });
+
+    setForm('buyer.name', 'Avant');
+    const copie = { ...blankForm('2026-11-04'), id: 'F-copie' };
+    const fini = startDraft(copie);
+    // L'utilisateur continue de taper pendant l'aller-retour (rien ne bloque l'éditeur).
+    await vi.advanceTimersByTimeAsync(100);
+    setForm('buyer.name', 'Tapé pendant');
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(await fini).toBe(true);
+    // La frappe est partie avant la bascule, puis l'éditeur a changé de document.
+    const bascule = vus.indexOf('bascule');
+    expect(vus.indexOf('serveur:Tapé pendant')).toBeGreaterThan(-1);
+    expect(vus.indexOf('serveur:Tapé pendant')).toBeLessThan(bascule);
+    expect(store.get().form).toBe(copie);
+  });
+});
+
+describe('brouillon refusé par le serveur', () => {
+  it('le Studio dit la cause, ne laisse pas partir ailleurs, puis libère après l’abandon', async () => {
+    const { p, etat } = fausseConservation();
+    etat.refus = 'REFUS';
+    etat.detail = 'unsupported Unicode escape sequence';
+    demarrer(p);
+    setForm('buyer.name', 'Avec\u0000nul');
+    await vi.waitFor(() =>
+      expect(store.get().ui.brouillonRefuse).toBe('unsupported Unicode escape sequence'),
+    );
+    expect(store.get().ui.toast).toBeUndefined();
+
+    expect(await quitterLeBrouillon()).toBe(false);
+    expect(store.get().ui.toast?.text).toBe(
+      t.compte.conservation.enAttente.refus('unsupported Unicode escape sequence'),
+    );
+
+    // « Abandonner cette saisie » : plus rien n'attend, le Studio ne signale plus rien.
+    oublierLeBrouillonRefuse();
+    expect(store.get().ui.brouillonRefuse).toBeUndefined();
+    expect(await quitterLeBrouillon()).toBe(true);
+  });
+});
+
+describe('serveur injoignable au démarrage', () => {
+  it('entreprise verrouillée, changement refusé, puis tout reprend au retour, sans recharger', async () => {
+    const { p, ecrites, etat } = fausseConservation();
+    etat.injoignable = true;
+    demarrer(p);
+    ui({ storage: 'injoignable' });
+
+    // L'entreprise affichée n'est pas celle du compte : elle ne se modifie pas.
+    const entreprise = store.get().company;
+    store.set((s) => ({
+      company: { ...s.company, defaults: { ...s.company.defaults, vat: 'S:10' } },
+    }));
+    expect(store.get().company).toBe(entreprise);
+    expect(store.get().ui.toast?.text).toBe(t.compte.conservation.injoignableVerrou);
+    expect(await startDraft({ ...blankForm('2026-11-04'), id: 'F-autre' })).toBe(false);
+    expect(store.get().ui.toast?.text).toBe(t.compte.conservation.enAttente.injoignable);
+
+    setForm('buyer.name', 'Tapé sans serveur');
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(ecrites).toEqual([]);
+
+    // Le serveur répond de nouveau : ce qu'il a est lu, la saisie part.
+    etat.injoignable = false;
+    etat.serveur = {
+      company: { ...defaultCompany(), seller: { ...defaultCompany().seller, name: 'Du serveur' } },
+    };
+    fenetre.dispatchEvent(new Event('online'));
+    await vi.waitFor(() => expect(store.get().ui.storage).toBe('ok'));
+    expect(store.get().company.seller.name).toBe('Du serveur');
+    await vi.waitFor(() => expect(brouillonsEcrits(ecrites)).toEqual(['Tapé sans serveur']));
+    expect(store.get().form.buyer.name).toBe('Tapé sans serveur');
+  });
+
+  it('sans évènement du réseau, un nouvel essai a lieu toutes les 30 secondes', async () => {
+    const { p, etat } = fausseConservation();
+    etat.injoignable = true;
+    demarrer(p);
+    ui({ storage: 'injoignable' });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(store.get().ui.storage).toBe('injoignable');
+    etat.injoignable = false;
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(store.get().ui.storage).toBe('ok');
+  });
+});
+
+describe('putFile', () => {
+  it('avec un compte : refusé → faux (non appliqué) ; hors ligne → gardé, il repartira', async () => {
+    const { putFile } = await import('./files.js');
+    const { p, etat } = fausseConservation();
+    demarrer(p);
+    etat.refus = 'FICHIER';
+    expect(await putFile('font-1', Uint8Array.of(1))).toBe(false);
+    etat.refus = 'RESEAU';
+    expect(await putFile('font-2', Uint8Array.of(1))).toBe(true);
+  });
+
+  it('sans compte, la copie en mémoire suffit, comme avant', async () => {
+    const { putFile } = await import('./files.js');
+    const { p, etat } = fausseConservation();
+    etat.refus = new Error('quota');
+    demarrer(p, { sansCompte: true });
+    expect(await putFile('logo-1', Uint8Array.of(1))).toBe(true);
   });
 });

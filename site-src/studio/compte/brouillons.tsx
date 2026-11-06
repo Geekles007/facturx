@@ -19,9 +19,23 @@ import {
 } from '../library.js';
 import { ErreurConservation } from '../persistence.js';
 import { storage } from '../storage.js';
-import { persistKeys, store, toast, ui, useStudio } from '../store.js';
+import {
+  brouillonAffiche,
+  oublierLeBrouillonRefuse,
+  persistKeys,
+  store,
+  toast,
+  ui,
+  useStudio,
+} from '../store.js';
 import { Button, Dialog, IconButton } from '../ui.js';
-import { messageEnAttente, quitterLeBrouillon, startDraft } from '../workflows.js';
+import {
+  changerDeDocument,
+  messageEnAttente,
+  quitterLeBrouillon,
+  remplacer,
+  startDraft,
+} from '../workflows.js';
 import {
   type Brouillon,
   estPersistenceCompte,
@@ -96,6 +110,28 @@ export async function rechargerBrouillon(): Promise<void> {
   }
 }
 
+/**
+ * La saisie que le serveur refuse, abandonnée après confirmation : le brouillon revient à sa
+ * dernière version enregistrée, ou laisse la place à une facture vierge s'il ne l'a jamais été.
+ * Le miroir et ce qui attendait s'en vont ; l'éditeur change dans le même temps.
+ */
+export async function abandonnerSaisie(): Promise<void> {
+  const phrases = t.compte.conservation;
+  if (!confirm(phrases.abandonnerConfirm)) return;
+  try {
+    const b = (await conservation().abandonnerSaisie()) as Brouillon | undefined;
+    oublierLeBrouillonRefuse();
+    if (b) afficher(b);
+    else {
+      const { company, numbering, appearance } = store.get();
+      remplacer(newInvoiceForm(company, numbering), appearance);
+    }
+    toast(phrases.abandonne);
+  } catch (erreur) {
+    toast(messageDEchec(erreur), 'error');
+  }
+}
+
 /** Le conflit tranché pour la saisie affichée : elle remplace la version du serveur, relue avant. */
 export async function garderMaVersion(): Promise<void> {
   const phrases = t.compte.conservation;
@@ -147,19 +183,32 @@ export function Brouillons({ open, onClose }: { open: boolean; onClose: () => vo
     }
   };
 
+  /**
+   * Ouvre `id` : la conservation bascule après sa lecture, sans attendre, et l'éditeur suit dans le
+   * même temps (aucune frappe ne s'intercale). Vrai si le brouillon est ouvert ; rien s'il n'existe
+   * plus.
+   */
+  const basculerVers = async (p: PersistenceCompte, id: string): Promise<boolean | undefined> => {
+    const ouvrirLe = async (): Promise<boolean> => {
+      const b = await p.ouvrirBrouillon(id, brouillonAffiche);
+      if (b) afficher(b);
+      return true;
+    };
+    // Le brouillon ouvert (sous une vue) se rouvre tel quel ; un autre attend que la saisie parte.
+    const dejaOuvert = id === p.brouillonCourant()?.id;
+    if (!(dejaOuvert ? await ouvrirLe() : await changerDeDocument(ouvrirLe))) return false;
+    return p.brouillonCourant()?.id === id ? true : undefined;
+  };
+
   const ouvrir = (id: string) =>
     agir(async (p) => {
-      // Le brouillon ouvert (sous une vue) se rouvre tel quel ; un autre attend que la saisie parte.
-      const dejaOuvert = id === p.brouillonCourant()?.id;
-      if (!dejaOuvert && !(await quitterLeBrouillon())) return;
-      const b = await p.ouvrirBrouillon(id);
-      if (!b) {
+      const ouvert = await basculerVers(p, id);
+      if (ouvert === undefined) {
         toast(phrases.introuvable, 'error');
         await charger();
         return;
       }
-      afficher(b);
-      onClose();
+      if (ouvert) onClose();
     });
 
   /** La saisie d'un brouillon jamais parvenu au serveur, cachée sous une vue : on la reprend. */
@@ -177,17 +226,14 @@ export function Brouillons({ open, onClose }: { open: boolean; onClose: () => vo
     agir(async (p) => {
       if (!confirm(phrases.supprimerConfirm(b.numero || t.app.untitled))) return;
       const ouvert = p.brouillonCourant()?.id === b.id;
-      // Supprimer un autre brouillon que l'ouvert ne doit rien lui faire perdre : sa saisie part.
-      if (!ouvert && !(await quitterLeBrouillon())) return;
       await p.supprimerBrouillon(b.id);
       const restants = await p.brouillons();
       setListe(restants);
       if (!ouvert) return;
       // L'éditeur ne garde pas le brouillon supprimé : il passe au plus récent des autres, ou à
-      // une facture vierge s'il n'en reste aucun.
-      const suivant = restants[0] && (await p.ouvrirBrouillon(restants[0].id));
-      if (suivant) afficher(suivant);
-      else await nouveau();
+      // une facture vierge s'il n'en reste aucun (ou si le suivant a disparu entre-temps).
+      const suivant = restants[0] ? await basculerVers(p, restants[0].id) : undefined;
+      if (suivant === undefined) await nouveau();
     });
 
   const p = open ? conservation() : undefined;

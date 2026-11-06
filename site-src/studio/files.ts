@@ -5,14 +5,22 @@
  */
 
 import { storage } from './storage.js';
-import { conserver, store } from './store.js';
+import { conserver, estEnAttente, store } from './store.js';
 
 const memory = new Map<string, Uint8Array>();
 
-export async function putFile(key: string, bytes: Uint8Array): Promise<void> {
+/**
+ * Garde le fichier pour la session et le conserve. Avec un compte, rend faux si le serveur le
+ * refuse (`conserver` a dit pourquoi) : l'appelant ne l'applique pas. Hors ligne ou session
+ * expirée, il attend et repartira : il compte comme gardé. Sans compte, la copie en mémoire suffit
+ * à la session, comme toujours.
+ */
+export async function putFile(key: string, bytes: Uint8Array): Promise<boolean> {
   memory.set(key, bytes);
-  if (store.get().ui.storage === 'ok')
-    await conserver(`files:${key}`, () => storage.setFile(key, bytes));
+  if (store.get().ui.storage !== 'ok') return true;
+  const cle = `files:${key}`;
+  if (await conserver(cle, () => storage.setFile(key, bytes))) return true;
+  return store.get().ui.compte === undefined || estEnAttente(cle);
 }
 
 export async function getFile(key: string): Promise<Uint8Array | undefined> {

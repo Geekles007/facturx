@@ -80,15 +80,26 @@ export interface ConservationDuCompte {
    * l'exemple affichés sont une vue, gardée à part : ils ne remplacent pas la saisie du brouillon.
    */
   garderBrouillon(valeur: unknown): Promise<void>;
+  /** Attend la fin des envois de brouillon en cours. */
+  envoisTermines(): Promise<void>;
   /**
-   * Le prochain `set('draft')` crée un brouillon au lieu de remplacer celui qui est ouvert, qui
-   * reste dans la liste. Lève `EN_ATTENTE` si la saisie du brouillon ouvert ne peut pas partir.
+   * Quitte le brouillon ouvert pour un nouveau, tout de suite et sans rien attendre, si ce que
+   * l'écran montre (`affiche`, le brouillon tel que le magasin l'enregistre, comparé par identité
+   * de son formulaire et de son apparence) est exactement ce que le serveur en a reçu — ou si ce
+   * brouillon a été supprimé. Sinon rien ne change, et la réponse est fausse : il faut d'abord
+   * l'enregistrer. Le prochain `set('draft')` crée un brouillon ; l'ancien reste dans la liste.
+   * Synchrone, pour que l'appelant change l'éditeur dans le même temps, sans frappe intercalée.
    */
-  nouveauBrouillon(): Promise<void>;
+  quitterBrouillon(affiche: unknown): boolean;
   /** La saisie du brouillon ouvert que le serveur n'a pas encore reçue, s'il y en a une. */
   saisieEnAttente(): unknown;
   /** Le brouillon gardé dans ce navigateur, sans rien demander au serveur (démarrage hors ligne). */
   brouillonLocal(): Promise<unknown>;
+  /**
+   * Renonce à la saisie du brouillon ouvert que le serveur refuse : le miroir et ce qui attendait
+   * s'en vont. Rend la dernière version enregistrée, ou rien si le brouillon ne l'a jamais été.
+   */
+  abandonnerSaisie(): Promise<unknown>;
 }
 
 export function estDuCompte(p: Persistence): p is Persistence & ConservationDuCompte {

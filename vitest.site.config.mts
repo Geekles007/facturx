@@ -7,6 +7,9 @@ export default defineConfig({
     __FACTURX_SUPABASE_URL__: '""',
     __FACTURX_SUPABASE_KEY__: '""',
   },
+  // Le Studio est en TSX avec Preact (tsconfig.site.json) : un test qui importe un module `.tsx`
+  // le compile de même, et non pour React.
+  oxc: { jsx: { runtime: 'automatic', importSource: 'preact' } },
   // Le Studio importe le profil sRGB comme des octets (`loader: binary` d'esbuild à la construction) ;
   // les tests le chargent de la même façon.
   plugins: [

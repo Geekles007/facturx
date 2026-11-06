@@ -716,6 +716,7 @@ function CompteBanners() {
   const expiree = useStudio((s) => s.ui.compte?.session === 'expiree');
   const horsLigne = useStudio((s) => s.ui.compte !== undefined && s.ui.reseau === 'hors-ligne');
   const conflit = useStudio((s) => s.ui.compte !== undefined && s.ui.conflit);
+  const refuse = useStudio((s) => (s.ui.compte ? s.ui.brouillonRefuse : undefined));
   const phrases = t.compte.conservation;
   return (
     <>
@@ -732,6 +733,19 @@ function CompteBanners() {
         <p class="banner warn" role="status">
           <Icon name="alert" /> {phrases.horsLigne}
         </p>
+      )}
+      {refuse !== undefined && (
+        <div class="banner warn actions">
+          <Icon name="alert" />
+          <span>{phrases.brouillonRefuse(refuse)}</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => void moduleBrouillons().then((m) => m?.abandonnerSaisie())}
+          >
+            {phrases.abandonner}
+          </Button>
+        </div>
       )}
       {conflit && (
         <div class="banner warn actions">

@@ -673,12 +673,24 @@ const fr = {
           "Session expirée : reconnectez-vous d'abord. La saisie du brouillon ouvert n'est pas encore sur le serveur, et changer de document la perdrait.",
         conflit:
           'Ce brouillon est en conflit : rechargez la version enregistrée ou gardez la vôtre avant de changer de document.',
-        refus:
-          "La saisie du brouillon ouvert n'a pas pu être enregistrée : changer de document la perdrait. Corrigez-la, puis réessayez.",
+        refus: (cause: string) =>
+          `Le serveur refuse ce brouillon${cause ? ` (${cause})` : ''} : changer de document perdrait votre saisie. Corrigez-la, ou abandonnez-la.`,
+        injoignable:
+          'Le serveur du compte ne répond pas : changer de document attend son retour, pour ne rien perdre de votre saisie.',
+        enCours:
+          "Votre saisie change encore pendant l'enregistrement : changez de document une fois la frappe arrêtée.",
       },
       injoignable:
-        "Le serveur du compte ne répond pas : vos factures, clients et réglages n'ont pas pu être lus. Votre saisie reste dans ce navigateur ; rechargez la page quand le réseau sera revenu.",
+        "Le serveur du compte ne répond pas : vos factures, clients et réglages n'ont pas pu être lus. Votre saisie reste dans ce navigateur, et tout reprendra dès qu'il répondra.",
+      injoignableVerrou:
+        "Le serveur du compte ne répond pas : l'entreprise et la numérotation affichées ne sont pas les vôtres, elles ne se modifient pas avant son retour.",
       rechargerPage: 'Recharger la page',
+      brouillonRefuse: (cause: string) =>
+        `Le serveur refuse ce brouillon (${cause}) : votre saisie n'est pas enregistrée, mais elle reste ici. Corrigez-la, ou abandonnez-la.`,
+      abandonner: 'Abandonner cette saisie',
+      abandonnerConfirm:
+        "Abandonner cette saisie ? Tout ce que le serveur a refusé sera perdu : le brouillon revient à sa dernière version enregistrée, ou disparaît s'il ne l'a jamais été.",
+      abandonne: 'Saisie abandonnée : le brouillon est revenu à sa dernière version enregistrée.',
     },
     brouillons: {
       titre: 'Brouillons',
@@ -1354,12 +1366,24 @@ const en: Strings = {
           'Session expired: sign in again first. What you typed in the open draft is not on the server yet, and switching documents would lose it.',
         conflit:
           'This draft is in conflict: reload the saved version or keep yours before switching documents.',
-        refus:
-          'What you typed in the open draft could not be saved: switching documents would lose it. Correct it, then try again.',
+        refus: (cause: string) =>
+          `The server refuses this draft${cause ? ` (${cause})` : ''}: switching documents would lose what you typed. Correct it, or discard it.`,
+        injoignable:
+          'The account server is not responding: switching documents waits for it, so that nothing you typed is lost.',
+        enCours:
+          'What you type keeps changing while it is being saved: switch documents once you stop typing.',
       },
       injoignable:
-        'The account server is not responding: your invoices, customers and settings could not be read. Your work stays in this browser; reload the page once the network is back.',
+        'The account server is not responding: your invoices, customers and settings could not be read. Your work stays in this browser, and everything resumes as soon as it responds.',
+      injoignableVerrou:
+        'The account server is not responding: the company and numbering shown are not yours, and they cannot be changed until it is back.',
       rechargerPage: 'Reload the page',
+      brouillonRefuse: (cause: string) =>
+        `The server refuses this draft (${cause}): what you typed is not saved, but it stays here. Correct it, or discard it.`,
+      abandonner: 'Discard this work',
+      abandonnerConfirm:
+        'Discard this work? Everything the server refused will be lost: the draft goes back to its last saved version, or disappears if it was never saved.',
+      abandonne: 'Work discarded: the draft is back to its last saved version.',
     },
     brouillons: {
       titre: 'Drafts',

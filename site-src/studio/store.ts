@@ -15,6 +15,8 @@ import {
   defaultAppearance,
   defaultCompany,
   defaultNumbering,
+  fill,
+  hydrateForm,
   type Numbering,
   type ProductRecord,
   type SavedInvoice,
@@ -80,6 +82,11 @@ export interface UiState {
    * serveur a refusé d'écrire sur une version périmée. Rien n'est rechargé sans l'utilisateur.
    */
   conflit: boolean;
+  /**
+   * Le serveur refuse le brouillon (4xx autre qu'un conflit) : la cause, telle qu'il la donne.
+   * Le Studio le dit et propose d'abandonner la saisie ; sans quoi on ne quitte pas ce brouillon.
+   */
+  brouillonRefuse: string | undefined;
   /** Volet du dialogue de connexion ouvert, ou rien. */
   connexion: VoletConnexion | undefined;
 }
@@ -157,6 +164,7 @@ const initialUi = (): UiState => ({
   compte: undefined,
   reseau: 'ok',
   conflit: false,
+  brouillonRefuse: undefined,
   connexion: undefined,
 });
 
@@ -288,8 +296,15 @@ export const DELAI_COMPTE_MS = 1000;
 interface Suivi {
   conserver(cle: string, faire: () => Promise<unknown>): Promise<boolean>;
   enregistrerMaintenant(): Promise<boolean>;
+  oublierLeBrouillonRefuse(): void;
+  enAttente(cle: string): boolean;
 }
 let suivi: Suivi | undefined;
+
+/** Vrai si l'écriture de `cle` attend le réseau ou la reconnexion pour repartir. */
+export function estEnAttente(cle: string): boolean {
+  return suivi?.enAttente(cle) ?? false;
+}
 
 /**
  * Écrit sans attendre le délai ce qui a changé, renvoie ce qui attendait (réseau revenu,
@@ -326,6 +341,15 @@ function messageDeRefus(erreur: unknown): string {
   return phrases.refus;
 }
 
+/**
+ * Après « abandonner cette saisie » : le brouillon refusé par le serveur n'attend plus rien, et
+ * le Studio ne le signale plus.
+ */
+export function oublierLeBrouillonRefuse(): void {
+  suivi?.oublierLeBrouillonRefuse();
+  ui({ brouillonRefuse: undefined, conflit: false });
+}
+
 /** Le brouillon tel qu'il s'enregistre sous `draft`. */
 function brouillonDe(s: StudioState): NonNullable<Loaded['draft']> {
   const draft: NonNullable<Loaded['draft']> = { form: s.form, appearance: s.appearance };
@@ -334,6 +358,13 @@ function brouillonDe(s: StudioState): NonNullable<Loaded['draft']> {
   if (s.ui.sample) draft.sample = true;
   return draft;
 }
+
+/**
+ * Ce que l'écran montre, tel que le Studio l'enregistre (le formulaire et l'apparence sont les
+ * objets mêmes du magasin) : pour vérifier, au moment de changer de document, qu'il est sur le
+ * serveur.
+ */
+export const brouillonAffiche = (): NonNullable<Loaded['draft']> => brouillonDe(state);
 
 /** Une écriture, de quoi la refaire, et si elle s'adresse au serveur (ou à ce navigateur seul). */
 interface Ecriture {
@@ -395,6 +426,13 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
       if (!state.ui.conflit) ui({ conflit: true });
       return;
     }
+    if (cle === 'draft' && actuelle) {
+      // Le brouillon refusé reste à l'écran et dans le miroir : un bandeau dit pourquoi, et
+      // propose de l'abandonner (sinon on ne le quitte pas, pour ne pas le perdre).
+      const cause = erreur instanceof ErreurConservation ? (erreur.detail ?? code) : code;
+      if (state.ui.brouillonRefuse !== cause) ui({ brouillonRefuse: cause });
+      return;
+    }
     const texte = messageDeRefus(erreur);
     if (state.ui.toast?.text !== texte) toast(texte, 'error');
   };
@@ -405,6 +443,8 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
       if (derniere.get(cle) === e) {
         enAttente.delete(cle);
         enEchec.delete(cle);
+        if (cle === 'draft' && state.ui.brouillonRefuse !== undefined)
+          ui({ brouillonRefuse: undefined });
       }
       // Une écriture locale ne dit rien du réseau.
       if (!e.locale && state.ui.reseau === 'hors-ligne') ui({ reseau: 'ok' });
@@ -497,6 +537,17 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
       void rejouer();
     }
     if (s.ui.storage !== 'ok' && s.ui.storage !== 'injoignable') return;
+    if (
+      s.ui.storage === 'injoignable' &&
+      (s.company !== avant.company || s.numbering !== avant.numbering)
+    ) {
+      // Rien n'a été lu du serveur : l'entreprise et la numérotation affichées sont celles par
+      // défaut, et les enregistrer remplacerait les vraies. Elles ne changent pas avant son retour.
+      vu = avant;
+      store.set({ company: avant.company, numbering: avant.numbering });
+      toast(t.compte.conservation.injoignableVerrou, 'error');
+      return;
+    }
     const brouillon =
       s.form !== avant.form ||
       s.appearance !== avant.appearance ||
@@ -519,11 +570,62 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
     timer = setTimeout(() => void flush(), delai);
   });
 
+  /**
+   * Serveur injoignable au démarrage : dès qu'il répond (retour du réseau, ou toutes les 30 s), ce
+   * qui n'avait pas pu être lu l'est, sans recharger la page, et la saisie gardée part. Une vue
+   * (exemple, facture émise) laisse la place au brouillon du serveur ; une saisie reste à l'écran.
+   */
+  let reprise: Promise<void> | undefined;
+  const reprendre = (): Promise<void> => {
+    if (state.ui.storage !== 'injoignable') return Promise.resolve();
+    if (reprise) return reprise;
+    const essai = (async () => {
+      const lu = await loadPersisted().catch(() => undefined);
+      if (!lu || state.ui.storage !== 'injoignable') return;
+      const montre = brouillonDe(state);
+      const vue = montre.issued !== undefined || montre.sample === true;
+      const brouillonServeur = vue ? lu.draft : undefined;
+      store.set((s) => ({
+        company: fill(defaultCompany(), lu.company),
+        numbering: fill(defaultNumbering(), lu.numbering),
+        clients: lu.clients,
+        products: lu.products,
+        history: lu.history,
+        ...(brouillonServeur
+          ? {
+              form: hydrateForm(brouillonServeur.form),
+              appearance: fill(defaultAppearance(), brouillonServeur.appearance),
+            }
+          : {}),
+        ui: {
+          ...s.ui,
+          storage: 'ok',
+          ...(brouillonServeur
+            ? { issued: brouillonServeur.issued, sample: brouillonServeur.sample === true }
+            : {}),
+        },
+      }));
+      previous = state;
+      if (!vue) void soumettre(...ecritureDuBrouillon(state));
+      const aRejouer = miroir?.saisieEnAttente();
+      if (vue && aRejouer !== undefined)
+        void soumettre('draft', { faire: () => storage.set(KEYS.draft, aRejouer), locale: false });
+    })().finally(() => {
+      if (reprise === essai) reprise = undefined;
+    });
+    reprise = essai;
+    return essai;
+  };
+  const relance = miroir ? setInterval(() => void reprendre(), 30_000) : undefined;
+
   const auDepart = (): void => {
     if (timerMiroir !== undefined) void garder();
     if (state.ui.storage === 'ok') void flush();
   };
-  const auRetour = (): void => void rejouer();
+  const auRetour = (): void => {
+    void rejouer();
+    void reprendre();
+  };
   // Hors d'un navigateur (tests), pas d'évènements de fenêtre.
   globalThis.addEventListener?.('pagehide', auDepart);
   globalThis.addEventListener?.('online', auRetour);
@@ -548,6 +650,12 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
         await soumettre(cle, e);
       return !enEchec.has('draft');
     },
+    oublierLeBrouillonRefuse() {
+      derniere.delete('draft');
+      enAttente.delete('draft');
+      enEchec.delete('draft');
+    },
+    enAttente: (cle) => enAttente.has(cle),
   };
 
   // Une saisie que le serveur n'a pas reçue avant la fermeture : elle repart dès maintenant, et
@@ -561,6 +669,7 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
     desabonner();
     clearTimeout(timer);
     clearTimeout(timerMiroir);
+    clearInterval(relance);
     globalThis.removeEventListener?.('pagehide', auDepart);
     globalThis.removeEventListener?.('online', auRetour);
     suivi = undefined;
