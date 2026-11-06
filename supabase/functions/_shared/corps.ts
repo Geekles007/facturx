@@ -54,27 +54,52 @@ export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 /** Niveaux d'imbrication d'un corps JSON, au plus (voir `examinerJson`). */
 export const PROFONDEUR_MAX = 64;
 
-/** Virgules hors chaînes d'un corps JSON, au plus (voir `examinerJson`). */
-export const VIRGULES_MAX = 300_000;
+/** Tableaux et objets d'un corps JSON, au plus (voir `examinerJson`). */
+export const OUVRANTS_MAX = 100_000;
+
+/** Virgules hors chaînes d'un corps JSON, au plus : éléments et entrées (voir `examinerJson`). */
+export const VIRGULES_MAX = 150_000;
 
 /**
- * Examine le texte d'un corps JSON avant de le décoder, en une passe et en mémoire constante : la
- * profondeur d'imbrication (`[` et `{` ouverts à la fois) ne dépasse pas `PROFONDEUR_MAX`, et les
- * virgules, qui comptent les éléments et les entrées, `VIRGULES_MAX`. Les chaînes sont sautées, avec
- * leurs échappements : un guillemet précédé d'une barre oblique ne la ferme pas, et une barre
- * échappée par une autre ne protège pas le guillemet qui suit. Rend le motif du refus, ou
- * `undefined`. Le texte n'est pas vérifié pour autant : `JSON.parse` le fera.
+ * Examine le texte d'un corps JSON avant de le décoder, en une passe et en mémoire constante : trois
+ * plafonds, hors chaînes. Les chaînes sont sautées, avec leurs échappements : un guillemet précédé d'une
+ * barre oblique ne la ferme pas, et une barre échappée par une autre ne protège pas le guillemet qui
+ * suit. Rend le motif du refus, ou `undefined`. Le texte n'est pas vérifié pour autant : `JSON.parse`
+ * le fera.
+ *
+ * Ce que chaque plafond borne :
+ *   - `PROFONDEUR_MAX`, les `[` et `{` ouverts à la fois : la pile du décodage et des parcours
+ *     ultérieurs ;
+ *   - `OUVRANTS_MAX`, tous les `[` et `{` du corps : le nombre de tableaux et d'objets décodés, la
+ *     mémoire que `JSON.parse` leur donne (un tableau ou un objet vide coûte une centaine d'octets,
+ *     `{"$bytes":""}`, que le réviseur change en `Uint8Array`, six fois plus). Les virgules n'y
+ *     suffisent pas : le premier enfant d'un conteneur n'en a pas, et 300 000 chaînes de 16 tableaux
+ *     imbriqués (9,7 Mio, 299 999 virgules, 4,8 millions de tableaux) épuisent 256 Mo ;
+ *   - `VIRGULES_MAX`, les éléments et les entrées : le nombre de valeurs, de clés et de textes (une
+ *     entrée de clé et de chaîne coûte près de 500 octets, tout compris).
  *
  * Pourquoi : `JSON.parse` avec un réviseur (ce que fait `fromPortableJson`) coûte bien plus que le
  * texte. Mesuré sous `--max-old-space-size=256`, la limite des fonctions hébergées, sur un corps de
  * 10 Mio : `[{},…]` dépasse 512 Mo, `[[0],…]` et `[{"a":0},…]` 320 Mo, et 5,2 millions de `[` ouverts
- * font manquer de mémoire `JSON.parse` lui-même. Or un worker sert plusieurs requêtes : celui qui meurt
- * emporte les autres. Les plafonds dépassent toute facture réaliste : une ligne compte une
- * vingtaine de virgules (≈ 25 avec ses taxes et ses remises), soit 12 000 lignes pour 300 000 ; le
- * corps le plus profond (corps, facture, lignes, ligne, taxe, …) tient en une dizaine de niveaux.
+ * font manquer de mémoire `JSON.parse` lui-même. Un worker sert plusieurs requêtes : celui qui meurt
+ * emporte les autres.
+ *
+ * Les plafonds sont choisis par la mesure, non par la taille des corps. La pire forme qu'ils admettent
+ * (tests/decodage-large.ts : 99 997 `{"$bytes":"<16 caractères>"}` et 50 004 entrées de clé et de
+ * chaîne, soit les deux plafonds atteints) traverse le décodage, le contrôle des textes et la
+ * sérialisation avec un tas final de 64 Mio, 38 Mio après ramasse-miettes (160 Mio au plus, asserté),
+ * sous 256 Mo. Seules, les formes pèsent, à leur plafond : de 45 à 66 Mio pour 100 000 conteneurs
+ * `{"$bytes":…}`, 73 Mio pour 150 000 entrées de clé et de chaîne ; à 300 000, de 138 à 154 Mio et
+ * 145 Mio.
+ *
+ * La marge est large pour une facture réelle : une ligne de la facture d'essai compte 2 conteneurs et
+ * 8,5 virgules ; en comptant 5 conteneurs et 25 virgules par ligne, une facture tient jusqu'à 6 000
+ * lignes (150 000 virgules), 20 000 par les conteneurs. La profondeur utile (corps, facture, lignes,
+ * ligne, taxe, …) tient en une dizaine de niveaux.
  */
 function examinerJson(texte: string): string | undefined {
   let profondeur = 0;
+  let ouvrants = 0;
   let virgules = 0;
   let dansUneChaine = false;
   for (let i = 0; i < texte.length; i++) {
@@ -92,12 +117,15 @@ function examinerJson(texte: string): string | undefined {
       if (++profondeur > PROFONDEUR_MAX) {
         return `Le corps est imbriqué sur plus de ${PROFONDEUR_MAX} niveaux.`;
       }
+      if (++ouvrants > OUVRANTS_MAX) {
+        return `Le corps compte plus de ${OUVRANTS_MAX} tableaux et objets.`;
+      }
     } else if (c === 0x5d || c === 0x7d) {
       // Un fermant sans ouvrant n'est pas du JSON : `JSON.parse` le refusera ; il ne doit pas faire
       // gagner de la place à ce qui suit.
       if (profondeur > 0) profondeur--;
     } else if (c === 0x2c && ++virgules > VIRGULES_MAX) {
-      return 'Le corps compte plus de 300 000 éléments.';
+      return `Le corps compte plus de ${VIRGULES_MAX} éléments.`;
     }
   }
   return undefined;

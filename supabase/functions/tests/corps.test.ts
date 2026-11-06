@@ -9,7 +9,10 @@ import {
   exigerAdmissible,
   lireObjetPortable,
   lireTexte,
+  OUVRANTS_MAX,
+  PROFONDEUR_MAX,
   serialiser,
+  VIRGULES_MAX,
 } from '../_shared/corps.ts';
 import { toPortableJson } from '../_vendor/shared/portable.ts';
 
@@ -81,17 +84,21 @@ Deno.test('lireObjetPortable : ni du JSON ni un objet, 422 ANOMALIES sous le mes
 /** Un corps à `n` conteneurs ouverts à la fois : `{"a":{"a":…0…}}`. */
 const imbrique = (n: number): string => `${'{"a":'.repeat(n)}0${'}'.repeat(n)}`;
 
-/** Un corps `{"a":[0,0,…]}` qui compte exactement `virgules` virgules hors chaînes. */
+/** Un corps `{"a":[0,0,…]}` qui compte exactement `virgules` virgules hors chaînes (2 conteneurs). */
 const large = (virgules: number): string =>
   `{"a":[${Array(virgules + 1)
     .fill(0)
     .join(',')}]}`;
 
-Deno.test('lireObjetPortable : profondeur plafonnée à 64 niveaux, avant le décodage', async () => {
-  assertEquals(Object.keys(lireObjetPortable(imbrique(64), 'message')), ['a']);
-  const reponse = await refus(
-    Promise.resolve().then(() => lireObjetPortable(imbrique(65), 'message')),
-  );
+/** Un corps `{"a":[[],[],…]}` qui compte exactement `n` conteneurs (n - 3 virgules). */
+const conteneurs = (n: number): string =>
+  `{"a":[${Array(n - 2)
+    .fill('[]')
+    .join(',')}]}`;
+
+/** Refuse `texte` : 422 `ANOMALIES`, une `Issue` `CORPS` au chemin vide dont le message cite `plafond`. */
+async function refuseParLePlafond(texte: string, plafond: number): Promise<void> {
+  const reponse = await refus(Promise.resolve().then(() => lireObjetPortable(texte, 'message')));
   assertEquals(reponse.status, 422);
   const corps = await reponse.json();
   assertEquals(corps.code, 'ANOMALIES');
@@ -99,36 +106,48 @@ Deno.test('lireObjetPortable : profondeur plafonnée à 64 niveaux, avant le dé
   assertEquals(corps.details.length, 1);
   assertEquals(corps.details[0].code, 'CORPS');
   assertEquals(corps.details[0].path, '');
-  assert(corps.details[0].message.includes('64'), corps.details[0].message);
+  assert(corps.details[0].message.includes(String(plafond)), corps.details[0].message);
+}
+
+Deno.test('lireObjetPortable : profondeur plafonnée (PROFONDEUR_MAX), avant le décodage', async () => {
+  assertEquals(Object.keys(lireObjetPortable(imbrique(PROFONDEUR_MAX), 'message')), ['a']);
+  await refuseParLePlafond(imbrique(PROFONDEUR_MAX + 1), PROFONDEUR_MAX);
 });
 
-Deno.test('lireObjetPortable : largeur plafonnée à 300 000 virgules hors chaînes, avant le décodage', async () => {
-  assertEquals(Object.keys(lireObjetPortable(large(300_000), 'message')), ['a']);
-  const reponse = await refus(
-    Promise.resolve().then(() => lireObjetPortable(large(300_001), 'message')),
-  );
-  assertEquals(reponse.status, 422);
-  const corps = await reponse.json();
-  assertEquals(corps.details[0].code, 'CORPS');
-  assertEquals(corps.details[0].path, '');
-  assert(corps.details[0].message.includes('300 000'), corps.details[0].message);
+Deno.test('lireObjetPortable : virgules plafonnées (VIRGULES_MAX), avant le décodage', async () => {
+  assertEquals(Object.keys(lireObjetPortable(large(VIRGULES_MAX), 'message')), ['a']);
+  await refuseParLePlafond(large(VIRGULES_MAX + 1), VIRGULES_MAX);
+});
+
+Deno.test('lireObjetPortable : conteneurs plafonnés (OUVRANTS_MAX), avant le décodage', async () => {
+  assertEquals(Object.keys(lireObjetPortable(conteneurs(OUVRANTS_MAX), 'message')), ['a']);
+  await refuseParLePlafond(conteneurs(OUVRANTS_MAX + 1), OUVRANTS_MAX);
+});
+
+Deno.test('lireObjetPortable : 300 000 chaînes de 16 tableaux (peu de virgules, 4,8 millions de conteneurs) sont refusées', async () => {
+  // Le premier enfant d'un conteneur n'a pas de virgule : les virgules (299 999) comptent des
+  // voisins, non des conteneurs. Ce corps de 9,7 Mio passait le plafond des virgules et épuisait 256 Mo.
+  const seize = `${'['.repeat(16)}0${']'.repeat(16)}`;
+  const texte = `{"a":[${Array(300_000).fill(seize).join(',')}]}`;
+  await refuseParLePlafond(texte, OUVRANTS_MAX);
 });
 
 Deno.test('lireObjetPortable : les crochets, accolades et virgules d’une chaîne ne comptent pas', () => {
-  // 400 000 virgules et 100 ouvrants dans une chaîne : rien à compter.
-  const chaine = `${','.repeat(400_000)}${'['.repeat(100)}${'{'.repeat(100)}`;
+  // Plus de virgules, de crochets et d'accolades qu'aucun plafond n'en admet, dans une chaîne : rien à
+  // compter.
+  const chaine = `${','.repeat(VIRGULES_MAX + 1)}${'['.repeat(OUVRANTS_MAX + 1)}${'{'.repeat(PROFONDEUR_MAX + 1)}`;
   assertEquals(lireObjetPortable(JSON.stringify({ a: chaine, b: [1, 2] }), 'message').b, [1, 2]);
 });
 
 Deno.test('lireObjetPortable : les guillemets échappés et les barres obliques inverses ne trompent pas le pré-examen', async () => {
   const BARRE = '\\';
-  const ouvrants = '['.repeat(70);
-  // Barre puis guillemet : le guillemet est échappé, la chaîne continue, et les 70 `[` en font partie.
+  const ouvrants = '['.repeat(PROFONDEUR_MAX + 6);
+  // Barre puis guillemet : le guillemet est échappé, la chaîne continue, et les `[` en font partie.
   const dansLaChaine = `{"a":"x${BARRE}"${ouvrants}"}`;
   assertEquals(lireObjetPortable(dansLaChaine, 'message').a, `x"${ouvrants}`);
-  // Deux barres puis un guillemet : une barre échappée, le guillemet ferme la chaîne, et les 70 `[`
+  // Deux barres puis un guillemet : une barre échappée, le guillemet ferme la chaîne, et les `[`
   // qui suivent sont du JSON.
-  const horsDeLaChaine = `{"a":"x${BARRE}${BARRE}","b":${ouvrants}${']'.repeat(70)}}`;
+  const horsDeLaChaine = `{"a":"x${BARRE}${BARRE}","b":${ouvrants}${']'.repeat(PROFONDEUR_MAX + 6)}}`;
   const reponse = await refus(
     Promise.resolve().then(() => lireObjetPortable(horsDeLaChaine, 'message')),
   );
@@ -138,16 +157,18 @@ Deno.test('lireObjetPortable : les guillemets échappés et les barres obliques 
   assertEquals(lireObjetPortable(`{"a":"${BARRE.repeat(3)}""}`, 'message').a, `${BARRE}"`);
 });
 
-Deno.test('lireObjetPortable : des corps de 10 Mio qui dépasseraient 256 Mo au décodage sont refusés sans manque de mémoire', async () => {
+Deno.test('lireObjetPortable : sous 256 Mo, les corps de 10 Mio qui épuiseraient le tas sont refusés, et la pire forme admise traverse tout le chemin sous 160 Mio', async () => {
   // `JSON.parse` et son réviseur coûtent bien plus que le texte : un worker qui meurt de mémoire
-  // emporte les requêtes des autres. Un processus à part, au tas plafonné.
+  // emporte les requêtes des autres. Un processus à part, au tas plafonné. Les plafonds sont choisis
+  // par cette mesure : la pire forme qu'ils admettent (conteneurs `{"$bytes":""}` et entrées de clé
+  // et de chaîne, tous deux à leur plafond) doit finir sous 160 Mio, décodée, contrôlée et sérialisée.
   const chemin = (nom: string) => decodeURIComponent(new URL(nom, import.meta.url).pathname);
   const sortie = await new Deno.Command(Deno.execPath(), {
     args: [
       'run',
       '--config',
       chemin('../deno.json'),
-      '--v8-flags=--max-old-space-size=256',
+      '--v8-flags=--max-old-space-size=256,--expose-gc',
       chemin('./decodage-large.ts'),
     ],
     stdout: 'piped',
@@ -155,12 +176,19 @@ Deno.test('lireObjetPortable : des corps de 10 Mio qui dépasseraient 256 Mo au 
   }).output();
   const decoder = new TextDecoder();
   assertEquals(sortie.code, 0, decoder.decode(sortie.stderr).slice(0, 500));
-  assertEquals(JSON.parse(decoder.decode(sortie.stdout)), {
+  const resultat = JSON.parse(decoder.decode(sortie.stdout));
+  assertEquals(resultat.refusees, {
     objets_vides: 422,
     tableaux_de_un: 422,
     objets_de_un: 422,
+    chaines_de_seize: 422,
     ouvrants: 422,
   });
+  // La forme mesurée est bien la pire admise : elle atteint les deux plafonds.
+  assertEquals(resultat.pire.conteneurs, OUVRANTS_MAX);
+  assertEquals(resultat.pire.virgules, VIRGULES_MAX);
+  assert(resultat.pire.tas_Mio < 160, `tas final : ${resultat.pire.tas_Mio} Mio`);
+  assert(resultat.pire.vivant_Mio < 160, `tas vivant : ${resultat.pire.vivant_Mio} Mio`);
 });
 
 Deno.test('cheminInadmissible : un texte propre, des paires de substituts valides, des octets', () => {
