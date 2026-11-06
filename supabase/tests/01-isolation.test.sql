@@ -4,7 +4,7 @@
 -- psql n'interpole pas `:a` dans une chaîne `$$ … $$` : les requêtes qui portent un identifiant
 -- s'écrivent `format($$ … %L … $$, :'a')`.
 begin;
-select plan(55);
+select plan(82);
 
 -- Deux comptes, A et B, chacun avec son entreprise (créée par le déclencheur d'inscription).
 select tests.creer_utilisateur('a@test') as a \gset
@@ -13,16 +13,17 @@ select entreprise_id as entreprise_a from membres where user_id = :'a' \gset
 select entreprise_id as entreprise_b from membres where user_id = :'b' \gset
 
 -- Une ligne par table et par entreprise, posée par le propriétaire de la base, que la RLS ne
--- retient pas. Si la RLS était désactivée, A verrait celles de B.
+-- retient pas. Si la RLS était désactivée, A verrait celles de B. Les clients et les produits de A
+-- et de B portent le même `id` : la clé est `(entreprise_id, id)`.
 insert into clients (id, entreprise_id, party, nom) values
-  ('ca', :'entreprise_a', '{}', 'client A'),
-  ('cb', :'entreprise_b', '{}', 'client B');
+  ('c', :'entreprise_a', '{}', 'client A'),
+  ('c', :'entreprise_b', '{}', 'client B');
 insert into produits (id, entreprise_id, fiche, nom) values
-  ('pa', :'entreprise_a', '{}', 'produit A'),
-  ('pb', :'entreprise_b', '{}', 'produit B');
+  ('p', :'entreprise_a', '{}', 'produit A'),
+  ('p', :'entreprise_b', '{}', 'produit B');
 insert into brouillons (entreprise_id, form, appearance) values
-  (:'entreprise_a', '{}', '{}'),
-  (:'entreprise_b', '{}', '{}');
+  (:'entreprise_a', '{"de":"A"}', '{}'),
+  (:'entreprise_b', '{"de":"B"}', '{}');
 insert into factures (id, entreprise_id, numero, type_code, date_emission, client_nom, devise,
                       ht, ttc, net_a_payer, invoice, form, appearance, pdf_chemin, sdk_version,
                       origine, emise_par) values
@@ -61,6 +62,9 @@ select results_eq(
   'profil de départ : celui de defaultCompany()');
 select throws_ok($$ insert into auth.users (id, email, raw_user_meta_data) values (gen_random_uuid(), 'x@test', '{}') $$, 'P0001', 'CGU_ABSENTES');
 select throws_ok($$ insert into auth.users (id, email, raw_user_meta_data) values (gen_random_uuid(), 'x@test', '{"cgu":""}') $$, 'P0001', 'CGU_ABSENTES', 'CGU vides : inscription refusée');
+-- La version des CGU est la trace du consentement : une chaîne `AAAA-MM`, rien d'autre.
+select throws_ok($$ insert into auth.users (id, email, raw_user_meta_data) values (gen_random_uuid(), 'x@test', '{"cgu":1}') $$, 'P0001', 'CGU_ABSENTES', 'CGU : un nombre n''est pas une version');
+select throws_ok($$ insert into auth.users (id, email, raw_user_meta_data) values (gen_random_uuid(), 'x@test', '{"cgu":" "}') $$, 'P0001', 'CGU_ABSENTES', 'CGU : une espace n''est pas une version');
 
 -- ---------------------------------------------------------------------------------------------
 -- En tant que A
@@ -92,17 +96,36 @@ select throws_ok(format($$ insert into clients (id, entreprise_id, party, nom) v
 select throws_ok(format($$ insert into produits (id, entreprise_id, fiche, nom) values ('p1', %L, '{}', 'x') $$, :'entreprise_b'), '42501', null, 'produit chez B refusé');
 select throws_ok(format($$ insert into brouillons (entreprise_id, form) values (%L, '{}') $$, :'entreprise_b'), '42501', null, 'brouillon chez B refusé');
 select throws_ok(format($$ insert into membres (entreprise_id, user_id, cgu_version) values (%L, %L, '2026-11') $$, :'entreprise_b', :'a'), '42501', null, 'A ne se fait pas membre de B');
--- Ni erreur ni effet : la ligne de B n'est pas visible de A (vérifié en propriétaire, plus bas).
-select lives_ok($$ update clients set nom = 'pirate' where id = 'cb' $$, 'modifier un client de B : sans effet');
-select lives_ok($$ delete from clients where id = 'cb' $$, 'supprimer un client de B : sans effet');
-select throws_ok(format($$ update clients set entreprise_id = %L where id = 'ca' $$, :'entreprise_b'), '42501', null, 'passer un client de A chez B : refusé');
+-- Ni erreur ni effet : les lignes de B ne sont pas visibles de A (vérifié en tant que B, plus bas).
+select lives_ok(format($$ update clients set nom = 'pirate' where entreprise_id = %L $$, :'entreprise_b'), 'modifier un client de B : sans effet');
+select lives_ok(format($$ delete from clients where entreprise_id = %L $$, :'entreprise_b'), 'supprimer un client de B : sans effet');
+select lives_ok(format($$ update produits set nom = 'pirate' where entreprise_id = %L $$, :'entreprise_b'), 'modifier un produit de B : sans effet');
+select lives_ok(format($$ delete from produits where entreprise_id = %L $$, :'entreprise_b'), 'supprimer un produit de B : sans effet');
+select lives_ok(format($$ update brouillons set form = '{"pirate":true}' where entreprise_id = %L $$, :'entreprise_b'), 'modifier un brouillon de B : sans effet');
+select lives_ok(format($$ delete from brouillons where entreprise_id = %L $$, :'entreprise_b'), 'supprimer un brouillon de B : sans effet');
 
 -- Écrit chez A : permis, là où la fiche le permet.
-select lives_ok(format($$ insert into clients (id, entreprise_id, party, nom) values ('c2', %L, '{}', 'nouveau') $$, :'entreprise_a'), 'client de A : insert');
-select lives_ok($$ update clients set nom = 'client A modifié' where id = 'ca' $$, 'client de A : update');
-select lives_ok($$ delete from clients where id = 'c2' $$, 'client de A : delete');
-select lives_ok(format($$ insert into produits (id, entreprise_id, fiche, nom) values ('p2', %L, '{}', 'nouveau') $$, :'entreprise_a'), 'produit de A : insert');
-select lives_ok(format($$ insert into brouillons (entreprise_id, form) values (%L, '{}') $$, :'entreprise_a'), 'brouillon de A : insert');
+select lives_ok(format($$ insert into clients (id, entreprise_id, party, nom) values ('c2', %L, '{}', 'nouveau A') $$, :'entreprise_a'), 'client de A : insert');
+select lives_ok(format($$ insert into produits (id, entreprise_id, fiche, nom) values ('p2', %L, '{}', 'nouveau A') $$, :'entreprise_a'), 'produit de A : insert');
+select lives_ok(format($$ insert into brouillons (entreprise_id, form) values (%L, '{"de":"A2"}') $$, :'entreprise_a'), 'brouillon de A : insert');
+
+-- Passer une ligne de A chez B : refusé (`with check`), lignes dont l'`id` n'existe pas chez B.
+select throws_ok(format($$ update clients set entreprise_id = %L where id = 'c2' $$, :'entreprise_b'), '42501', null, 'passer un client de A chez B : refusé');
+select throws_ok(format($$ update produits set entreprise_id = %L where id = 'p2' $$, :'entreprise_b'), '42501', null, 'passer un produit de A chez B : refusé');
+select throws_ok(format($$ update brouillons set entreprise_id = %L $$, :'entreprise_b'), '42501', null, 'passer un brouillon de A chez B : refusé');
+
+-- Modifier et supprimer chez soi, y compris sous un `id` que B porte aussi (`c` et `p`).
+select lives_ok($$ update clients set nom = 'client A modifié' where id = 'c' $$, 'client de A : update');
+select lives_ok($$ update produits set nom = 'produit A modifié' where id = 'p' $$, 'produit de A : update');
+select lives_ok($$ update brouillons set form = '{"de":"A","modifie":true}' where form ->> 'de' = 'A' $$, 'brouillon de A : update');
+-- Sans `where`, la règle `select` ne départage plus rien : seule la règle d'écriture empêche de
+-- toucher aux lignes de B (relues en tant que B, plus bas).
+select lives_ok($$ update clients set nom = 'A, sans where' $$, 'clients : update sans where');
+select lives_ok($$ update produits set nom = 'A, sans where' $$, 'produits : update sans where');
+select lives_ok($$ update brouillons set form = '{"sans":"where"}' $$, 'brouillons : update sans where');
+select lives_ok($$ delete from clients where id = 'c' $$, 'client de A : delete');
+select lives_ok($$ delete from produits where id = 'p' $$, 'produit de A : delete');
+select lives_ok($$ delete from brouillons $$, 'brouillons de A : delete');
 
 -- entreprises : seules `profil` et `apparence_defaut` se modifient, et seulement chez soi.
 select throws_ok($$ update entreprises set suppression_demandee_le = now() $$, '42501');
@@ -111,8 +134,10 @@ select lives_ok($$ update entreprises set profil = profil, apparence_defaut = '{
 select throws_ok($$ delete from entreprises $$, '42501', null, 'entreprises : aucune suppression');
 select throws_ok($$ insert into entreprises (profil) values ('{}') $$, '42501', null, 'entreprises : aucune création');
 
--- numerotation : modifiable chez soi, sans création ni suppression.
+-- numerotation : gabarit, `annuelle` et `prochain` chez soi ; `annee` reste à l'émission ; ni
+-- création ni suppression.
 select lives_ok($$ update numerotation set gabarit = 'X-{NNNN}' $$, 'numérotation : modifiable');
+select throws_ok($$ update numerotation set annee = 2000 $$, '42501', null, 'numérotation : annee réservée à l''émission');
 select throws_ok($$ delete from numerotation $$, '42501', null, 'numérotation : aucune suppression');
 
 -- factures et relances : aucune écriture depuis le navigateur.
@@ -121,6 +146,26 @@ select throws_ok($$ update factures set client_nom = 'x' $$, '42501', null, 'fac
 select throws_ok($$ delete from factures $$, '42501', null, 'factures : aucune suppression');
 select throws_ok($$ insert into relances (entreprise_id, facture_id, niveau, destinataire, objet, corps, etat) values (gen_random_uuid(), gen_random_uuid(), 1, 'x', 'x', 'x', 'envoyee') $$, '42501', null, 'relances : aucune écriture');
 
+-- ---------------------------------------------------------------------------------------------
+-- En tant que B : mêmes identifiants que A, chacun chez soi
+-- ---------------------------------------------------------------------------------------------
+reset role;
+select tests.agir_comme(:'b');
+-- `c2` et `p2` existent chez A : l'insertion de B réussit quand même.
+select lives_ok(format($$ insert into clients (id, entreprise_id, party, nom) values ('c2', %L, '{}', 'nouveau B') $$, :'entreprise_b'), 'même id de client chez B : insert');
+select lives_ok(format($$ insert into produits (id, entreprise_id, fiche, nom) values ('p2', %L, '{}', 'nouveau B') $$, :'entreprise_b'), 'même id de produit chez B : insert');
+-- Rien de ce que A a modifié ou supprimé sous `c` et `p` n'a touché B, et B ne voit pas `c2` de A.
+select results_eq($$ select id, nom from clients order by id $$, $$ values ('c', 'client B'), ('c2', 'nouveau B') $$, 'B : ses clients, intacts, sans ceux de A');
+select results_eq($$ select id, nom from produits order by id $$, $$ values ('p', 'produit B'), ('p2', 'nouveau B') $$, 'B : ses produits, intacts, sans ceux de A');
+select results_eq($$ select form ->> 'de' from brouillons $$, $$ values ('B') $$, 'B : son brouillon, intact');
+-- Le même `id` existe bien chez les deux (relu en propriétaire, avant les suppressions de B).
+reset role;
+select is((select count(*) from clients where id = 'c2'), 2::bigint, 'le même id existe chez A et chez B');
+select tests.agir_comme(:'b');
+-- Sans `where` encore : le delete de B ne vise que les lignes de B (A les retrouve plus bas).
+select lives_ok($$ delete from clients $$, 'clients : delete sans where');
+select lives_ok($$ delete from produits $$, 'produits : delete sans where');
+
 -- Sans session (rôle anon), aucune table ne se lit.
 reset role;
 set local role anon;
@@ -128,10 +173,12 @@ select throws_ok($$ select 1 from clients $$, '42501', null, 'anon : clients ill
 select throws_ok($$ select 1 from factures $$, '42501', null, 'anon : factures illisibles');
 
 -- ---------------------------------------------------------------------------------------------
--- Retour en propriétaire : les écritures de A et B n'ont rien touché chez l'autre ; fonctions ; cascades
+-- Retour en propriétaire : les écritures de A n'ont rien touché chez B ; privilèges, fonctions, cascades
 -- ---------------------------------------------------------------------------------------------
 reset role;
-select is((select nom from clients where id = 'cb'), 'client B', 'le client de B est intact (ni modifié, ni supprimé)');
+select is_empty(format($$ select 1 from clients where entreprise_id = %L and id = 'c' $$, :'entreprise_a'), 'le client « c » de A est supprimé');
+select is((select count(*) from clients where entreprise_id = :'entreprise_a'), 1::bigint, 'les clients de A ont survécu au delete sans where de B');
+select is((select count(*) from produits where entreprise_id = :'entreprise_a'), 1::bigint, 'les produits de A ont survécu au delete sans where de B');
 select is((select apparence_defaut from entreprises where id = :'entreprise_a'), '{"modifie":true}'::jsonb, 'l''apparence par défaut de A a changé');
 select is((select apparence_defaut from entreprises where id = :'entreprise_b'), null, 'celle de B est intacte');
 select is((select gabarit from numerotation where entreprise_id = :'entreprise_a'), 'X-{NNNN}', 'le gabarit de A a changé');
@@ -143,6 +190,15 @@ select is(
         or has_table_privilege('authenticated', c.oid, 'truncate, references, trigger'))),
   0::bigint,
   'aucune table n''est ouverte à anon, ni à authenticated en TRUNCATE, REFERENCES et TRIGGER');
+-- Les écritures de `authenticated` : aucune sur membres, factures et relances, pas de delete sur
+-- paiements (la migration suivante lui donnera insert et update (annule_le) : pas testés ici).
+select is(
+  (select count(*) from (values ('membres'), ('factures'), ('relances')) t(n)
+    where has_any_column_privilege('authenticated', 'public.' || t.n, 'insert, update')
+       or has_table_privilege('authenticated', 'public.' || t.n, 'delete'))
+  + (case when has_table_privilege('authenticated', 'public.paiements', 'delete') then 1 else 0 end),
+  0::bigint,
+  'authenticated n''écrit ni dans membres, factures et relances, ni ne supprime de paiement');
 -- security definer (true), volatilité (s = stable), chemin de recherche.
 select is(
   (select p.prosecdef::text || ' ' || p.provolatile::text || ' ' || coalesce(p.proconfig[1], '-')

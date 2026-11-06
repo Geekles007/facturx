@@ -28,34 +28,38 @@ create table public.membres (
   entreprise_id uuid not null references public.entreprises on delete cascade,
   user_id uuid not null references auth.users on delete cascade,
   role text not null default 'titulaire' check (role = 'titulaire'),
-  cgu_version text not null check (cgu_version <> ''),
+  -- Trace du consentement : l'identifiant de la version des CGU (`AAAA-MM`).
+  cgu_version text not null check (cgu_version ~ '^[0-9]{4}-[0-9]{2}$'),
   cgu_acceptees_le timestamptz not null default now(),
   primary key (entreprise_id, user_id)
 );
 -- `mes_entreprises()` cherche par `user_id`, que la clé primaire ne couvre pas.
 create index membres_user_id_idx on public.membres (user_id);
 
--- Les `id` de `clients` et `produits` sont des `uid` du Studio, d'où le type `text`.
+-- Les `id` de `clients` et `produits` sont des `uid` du Studio, d'où le type `text`. Ils sont
+-- prévisibles (l'heure et un compteur) et reviennent tels quels à l'import des données locales : la
+-- clé est donc `(entreprise_id, id)`. Avec un `id` global, une entreprise verrait si un identifiant
+-- existe chez une autre (erreur d'unicité) et pourrait se voir refuser une écriture légitime.
 create table public.clients (
-  id text primary key,
+  id text not null,
   entreprise_id uuid not null references public.entreprises on delete cascade,
   -- `FormParty`.
   party jsonb not null,
   nom text not null,
   email text,
-  modifie_le timestamptz not null default now()
+  modifie_le timestamptz not null default now(),
+  primary key (entreprise_id, id)
 );
-create index clients_entreprise_id_idx on public.clients (entreprise_id);
 
 create table public.produits (
-  id text primary key,
+  id text not null,
   entreprise_id uuid not null references public.entreprises on delete cascade,
   -- `ProductRecord` sans `uid`.
   fiche jsonb not null,
   nom text not null,
-  modifie_le timestamptz not null default now()
+  modifie_le timestamptz not null default now(),
+  primary key (entreprise_id, id)
 );
-create index produits_entreprise_id_idx on public.produits (entreprise_id);
 
 create table public.brouillons (
   id uuid primary key default gen_random_uuid(),
@@ -173,8 +177,8 @@ grant execute on function public.mes_entreprises() to authenticated, service_rol
 
 -- Crée l'entreprise (profil vide, comme `defaultCompany()` du Studio), le membre titulaire et la
 -- numérotation. Sans l'acceptation des CGU dans les métadonnées de l'inscription
--- (`options.data.cgu`), l'inscription est refusée : l'insertion dans `auth.users` échoue, et l'API
--- d'authentification répond par une erreur de base de données.
+-- (`options.data.cgu`, une version de la forme `AAAA-MM`), l'inscription est refusée : l'insertion
+-- dans `auth.users` échoue, et l'API d'authentification répond par une erreur de base de données.
 --
 -- Ce que `defaultCompany()` produit de non constant, c'est l'`uid` du moyen de paiement (l'heure et un
 -- compteur) : il est figé à `u0`. Le Studio complète de toute façon le profil lu par ses valeurs par
@@ -185,10 +189,10 @@ security definer
 set search_path = ''
 as $corps$
 declare
-  v_cgu text := nullif(btrim(new.raw_user_meta_data ->> 'cgu'), '');
+  v_cgu text := new.raw_user_meta_data ->> 'cgu';
   v_entreprise uuid;
 begin
-  if v_cgu is null then
+  if v_cgu is null or v_cgu !~ '^[0-9]{4}-[0-9]{2}$' then
     raise exception 'CGU_ABSENTES';
   end if;
 
@@ -266,9 +270,10 @@ grant insert, update, delete on public.clients, public.produits, public.brouillo
 -- (Le `revoke all` ci-dessus a déjà retiré le `update` de la table entière.)
 grant update (profil, apparence_defaut) on public.entreprises to authenticated;
 
--- Le gabarit, `annuelle` et `prochain` se règlent depuis le Studio ; le déclencheur de la migration
--- suivante interdit de reculer `prochain` et de changer `annee`.
-grant update on public.numerotation to authenticated;
+-- Le gabarit, `annuelle` et `prochain` se règlent depuis le Studio. `annee` n'appartient qu'à
+-- l'émission (Edge Function) ; le déclencheur de la migration suivante interdit en outre de reculer
+-- `prochain`.
+grant update (gabarit, prochain, annuelle) on public.numerotation to authenticated;
 
 -- ---------------------------------------------------------------------------------------------
 -- RLS : refus par défaut, chaque règle passe par `mes_entreprises()`
