@@ -448,3 +448,28 @@ Avec un compte, les données sont sur un serveur : brouillons, clients, catalogu
 **`supabase/` passe en AGPL-3.0-or-later**, le reste du dépôt restant en MIT. Le service est ouvert : schéma, règles d'accès, fonctions d'émission et de relance sont dans ce dépôt public, et l'abonnement vendra l'hébergement et la plateforme agréée, pas le code. Sous une licence permissive, un concurrent pourrait héberger ce service sans rien publier de ses modifications. L'AGPL l'en empêche dès qu'il l'offre à des tiers par le réseau. Le SDK et le Studio, eux, restent libres d'usage. `supabase/LICENSE` porte le texte, et `LICENSE` à la racine dit quel dossier relève de quelle licence.
 
 **Le SDK est copié dans les fonctions, pas pris sur npm.** `pnpm compte:preparer` copie `packages/facturx/dist/` et les modules partagés du Studio dans `supabase/functions/_vendor/` (non versionné), avant les tests et le déploiement. La fonction emploie ainsi exactement le SDK du bundle du Studio, sans attendre une publication, et ne dépend pas de la façon dont le bundler des fonctions traite un import hors de leur dossier. Les dépendances de `supabase/functions/deno.json` suivent celles du SDK, à la version exacte, et un test le vérifie. Chaque facture garde la version du SDK qui l'a produite.
+
+### D74. Le rendu PDF dans une Edge Function : 280 ms au p95 pour 50 lignes, l'émission rend dans sa requête (provisoire)
+L'émission d'une facture (tâche 8) numérote, écrit en base et rend le PDF Factur-X dans la même requête : une facture émise a toujours son PDF. C'est possible si `renderInvoicePdf` + `embedFacturX` tiennent très en deçà du budget de CPU d'une Edge Function. Sinon, le rendu passe en différé (tâche 9). On a donc mesuré avant de construire.
+
+**Budget relevé.** La page des limites des Edge Functions (supabase.com/docs/guides/functions/limits, lue le 6 novembre 2026) donne 2 s de temps de CPU par requête, hors attentes d'entrées-sorties asynchrones, et 256 Mo de mémoire. Ces deux limites ne varient pas selon le plan. Le runtime local applique les mêmes : l'image 1.77.9 que lance le CLI 3.0.0 coupe à 2 000 ms de CPU (limite douce à 1 000 ms) et à 256 Mo.
+
+**Ce qui a été mesuré.** Une fonction jetable, servie par `supabase functions serve` (Docker sur un Mac, pile locale démarrée), puis supprimée sans être commitée. Elle construit la facture d'exemple de `scripts/example-invoice.mjs` (2 lignes) et la même à 50 lignes (la paire de lignes répétée 25 fois, totaux recalculés par `computeTotals`). Polices Geist (regular et semibold, passées en base64 dans le corps de la requête), options de rendu par défaut du Studio (modèle classic, A4, français), profil sRGB. Le chronomètre (`performance.now()`) entoure `renderInvoicePdf` + `embedFacturX` ; le décodage des polices (de 17 à 45 ms) est hors chronomètre.
+
+Vingt rendus de chaque facture ne tiennent pas dans une requête : un essai à 40 rendus a été coupé par le runtime (statut 546, `WORKER_LIMIT`), limite douce franchie 1,0 s après le début de la requête, limite dure à 3,0 s. La mesure se fait en dix requêtes de trois rendus par facture. Le runtime retire un worker qui franchit la limite douce, si bien qu'une requête sur deux environ démarre un worker neuf. Le premier rendu d'un worker neuf (le froid) est compté à part. Médiane et p95 portent sur les vingt premiers rendus à chaud, dans l'ordre des requêtes (le p95 est la 19e valeur triée sur 20).
+
+| Facture | PDF | Médiane | p95 | Max | Froid (1er rendu d'un worker neuf, 3 essais) |
+|---|---|---|---|---|---|
+| 2 lignes | 1 page, 140 049 octets | 136,7 ms | 170,2 ms | 212,0 ms | 314,5 ms (de 287,2 à 353,3) |
+| 50 lignes | 3 pages, 149 255 octets | 209,3 ms | 280,3 ms | 280,7 ms | 396,0 ms (de 395,0 à 400,2) |
+
+Vue du client, la première requête sur un worker neuf (un seul rendu) dure de 0,56 à 0,65 s pour 2 lignes et de 0,69 à 0,72 s pour 50 lignes. Le tout premier appel après la création du conteneur a pris 614 ms de rendu pour 50 lignes (1,6 s vu du client). Le tas reste entre 23 et 35 Mo, loin des 256 Mo.
+
+**Lecture.** Les deux tiers du temps d'une facture de 50 lignes sont déjà dépensés pour une facture de 2 lignes : le coût est surtout fixe, et 48 lignes de plus coûtent environ 70 ms. La cause (les polices embarquées entières, sans doute) n'a pas été profilée.
+
+**Décision.** Le seuil posé pour la mesure locale est un p95 de la facture de 50 lignes sous 500 ms, le quart du budget, pour la marge entre ce Mac et les machines de Supabase. Avec 280,3 ms (14 % du budget) il est tenu, et même le froid (396 ms, 20 %) reste dessous. **L'émission rend le PDF dans la même requête que la transaction : la tâche 8 s'applique telle quelle, la tâche 9 est sautée.**
+
+**Provisoire, à confirmer sur le projet déployé (tâche 23).** Rien n'a été mesuré en ligne : pas de projet distant à ce stade. À la tâche 23, la même fonction jetable sera déployée et appelée 3 fois, journaux lus. **Si le p95 déployé de la facture de 50 lignes dépasse la moitié du budget (1 s), ou si une erreur « CPU time exceeded » apparaît, la tâche 9 s'applique alors.** La confirmation mesurera aussi ce que cette mesure laisse de côté :
+- une police plus lourde que Geist (126 et 128 Ko) : Inter pèse 342 Ko, une police importée peut aller jusqu'à 2 Mo ; et un logo (1 Mo au plus) ;
+- le reste de la requête d'émission (lecture du corps, validation, appels à la base et au stockage), dont seules les parties calculées comptent dans le budget ;
+- le CPU lui-même : `performance.now()` donne du temps écoulé, et le runtime local a franchi sa limite douce de 1 s sur des requêtes de 0,9 s environ, signe que le démarrage du worker et le chargement des modules comptent aussi.
