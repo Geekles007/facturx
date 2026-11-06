@@ -23,6 +23,7 @@ import {
 } from './library.js';
 import { blankForm, type InvoiceForm } from './model.js';
 import { ErreurConservation, estDuCompte } from './persistence.js';
+import { sampleForm } from './sample.js';
 import { storage } from './storage.js';
 
 export type Tab = 'content' | 'appearance' | 'check' | 'code';
@@ -585,8 +586,10 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
 
   /**
    * Serveur injoignable au démarrage : dès qu'il répond (retour du réseau, ou toutes les 30 s), ce
-   * qui n'avait pas pu être lu l'est, sans recharger la page, et la saisie gardée part. Une vue
-   * (exemple, facture émise) laisse la place au brouillon du serveur ; une saisie reste à l'écran.
+   * qui n'avait pas pu être lu l'est, sans recharger la page. Rien tapé pendant son absence :
+   * l'écran prend le brouillon du serveur (ou la saisie que le miroir gardait), confirmé aussitôt.
+   * Tapé avant ou pendant la lecture : la saisie reste à l'écran, sur le document que `garder` lui a
+   * rattaché en mémoire, et part avec la vérification de version (conflit signalé, rien d'écrasé).
    */
   let reprise: Promise<void> | undefined;
   const reprendre = (): Promise<void> => {
@@ -595,7 +598,8 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
     const essai = (async () => {
       const vue = estUneVue(brouillonDe(state));
       // Tapé pendant l'absence du serveur ? La saisie rejoint d'abord son document (celui du
-      // miroir), avant toute lecture : son envoi passera par la vérification de version.
+      // miroir, tenu en mémoire), avant toute lecture : son envoi passera par la vérification de
+      // version, même si l'écriture du miroir échoue.
       const tapeAvant =
         !vue && (state.form !== previous.form || state.appearance !== previous.appearance);
       if (tapeAvant) await garder();
@@ -606,12 +610,21 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
         miroir.preparerBrouillon(),
       ]).catch(() => [undefined, undefined] as const);
       if (!lu || !lecture || state.ui.storage !== 'injoignable') return;
-      // Rien tapé : l'écran prend le brouillon du serveur (ou la saisie en attente du miroir).
-      // Tapé pendant la lecture : la saisie reste à l'écran, sur son document d'avant la lecture.
+      // Rien tapé : l'écran prend le brouillon lu (celui du serveur, ou la saisie en attente du
+      // miroir). Tapé avant ou pendant la lecture : la saisie reste à l'écran, et le document reste
+      // celui qu'elle a en mémoire — jamais celui que la lecture vient de trouver.
       const tapePendant = state.form !== avant.form || state.appearance !== avant.appearance;
       const ecranGarde = tapeAvant || tapePendant;
-      if (!tapePendant) lecture.appliquer();
-      const serveur = ecranGarde ? undefined : (lecture.brouillon as Loaded['draft']);
+      if (!ecranGarde) lecture.appliquer();
+      // Plus aucun brouillon sur le serveur (supprimé ou émis ailleurs) et rien tapé : l'exemple,
+      // comme au démarrage, plutôt qu'un contenu périmé qui renaîtrait en brouillon.
+      const serveur = ecranGarde
+        ? undefined
+        : ((lecture.brouillon as Loaded['draft']) ?? {
+            form: sampleForm(),
+            appearance: defaultAppearance(),
+            sample: true,
+          });
       store.set((s) => ({
         company: fill(defaultCompany(), lu.company),
         numbering: fill(defaultNumbering(), lu.numbering),
@@ -630,10 +643,15 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
           ...(serveur ? { issued: serveur.issued, sample: serveur.sample === true } : {}),
         },
       }));
+      // L'entreprise et la numérotation lues sont ce que le serveur a : rien à renvoyer.
       previous = state;
-      if (ecranGarde) void soumettre(...ecritureDuBrouillon(state));
+      // Le brouillon affiché part une fois : la saisie, avec la vérification de version ; le
+      // brouillon du serveur, sans aucune écriture (même contenu), ce qui le confirme — sinon le
+      // miroir le tiendrait pour une saisie non envoyée. Une vue : la saisie que le miroir gardait.
+      const [cle, e] = ecritureDuBrouillon(state);
       const aRejouer = miroir.saisieEnAttente();
-      if (!ecranGarde && aRejouer !== undefined)
+      if (cle === 'draft') void soumettre(cle, e);
+      else if (aRejouer !== undefined)
         void soumettre('draft', { faire: () => storage.set(KEYS.draft, aRejouer), locale: false });
     })().finally(() => {
       if (reprise === essai) reprise = undefined;

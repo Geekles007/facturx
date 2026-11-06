@@ -235,16 +235,21 @@ export function Brouillons({ open, onClose }: { open: boolean; onClose: () => vo
       // il passe au plus récent des autres, ou à une facture vierge s'il n'en reste aucun, si le
       // suivant a disparu entre-temps, ou si la liste ne se lit pas (réseau).
       let suivant: boolean | undefined;
+      let echoue = false;
       try {
         const restants = await p.brouillons();
         setListe(restants);
-        suivant = restants[0] ? await basculerVers(p, restants[0].id) : undefined;
+        if (restants[0]) {
+          suivant = await basculerVers(p, restants[0].id);
+          // Disparu entre la liste et son ouverture : c'est aussi un suivant qui n'a pas pu l'être.
+          echoue = suivant === undefined;
+        }
       } catch {
-        suivant = undefined;
+        echoue = true;
       }
       if (!suivant) {
-        const { company, numbering, appearance } = store.get();
-        await startDraft(newInvoiceForm(company, numbering), appearance);
+        // Une facture vierge, à l'apparence par défaut, comme « Nouveau brouillon ».
+        if ((await nouveau()) && echoue) toast(phrases.repli, 'info', 7000);
       }
     });
 

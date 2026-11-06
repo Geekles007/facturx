@@ -84,9 +84,9 @@ export interface ConservationDuCompte {
   envoisTermines(): Promise<void>;
   /**
    * Quitte le brouillon ouvert pour un nouveau, tout de suite et sans rien attendre, si ce que
-   * l'écran montre (`affiche`, le brouillon tel que le magasin l'enregistre, comparé par identité
-   * de son formulaire et de son apparence) est exactement ce que le serveur en a reçu — ou si ce
-   * brouillon a été supprimé. Sinon rien ne change, et la réponse est fausse : il faut d'abord
+   * l'écran montre (`affiche`, le brouillon tel que le magasin l'enregistre) est ce que le serveur
+   * en a reçu — les objets mêmes de son formulaire et de son apparence, ou, s'il en montre des
+   * copies, le même contenu — ou si ce brouillon a été supprimé. Sinon rien ne change, et la réponse est fausse : il faut d'abord
    * l'enregistrer. Le prochain `set('draft')` crée un brouillon ; l'ancien reste dans la liste.
    * Synchrone, pour que l'appelant change l'éditeur dans le même temps, sans frappe intercalée.
    */

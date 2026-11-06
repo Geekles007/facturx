@@ -711,6 +711,8 @@ const fr = {
         "L'opération n'a pas abouti : vérifiez votre connexion, puis réessayez dans un instant.",
       introuvable: "Ce brouillon n'existe plus : il a été émis ou supprimé ailleurs.",
       nonEnregistre: 'pas encore enregistré',
+      repli:
+        "Le brouillon suivant n'a pas pu être ouvert : une facture vierge s'ouvre à sa place. Les autres brouillons restent dans la liste.",
       reprendre: 'Reprendre',
     },
   },
@@ -1403,6 +1405,8 @@ const en: Strings = {
       echec: 'The operation did not go through: check your connection, then try again in a moment.',
       introuvable: 'This draft no longer exists: it was issued or deleted elsewhere.',
       nonEnregistre: 'not saved yet',
+      repli:
+        'The next draft could not be opened: a blank invoice opens instead. The other drafts remain in the list.',
       reprendre: 'Resume',
     },
   },
