@@ -10,8 +10,9 @@
  * numéro qu'il propose ; le serveur le remplace par celui qu'il attribue. `clientId`, l'uid du client
  * dans la bibliothèque du Studio, n'est retenu que s'il désigne un client de l'entreprise (Ruling 29).
  * Réponse 201 `{ id, numero }`, ou 200 avec le même corps pour un rejeu du même brouillon. Erreurs
- * (§ 13) : 401 `SESSION`, 403 `DROITS` ou `NON_CONFIRME`, 409 `BROUILLON_MODIFIE`, `DATE` ou
- * `DOUBLON`, 413 et 422 `ANOMALIES`, 429 `LIMITE`, 500 `INTERNE`.
+ * (§ 13) : 401 `SESSION`, 403 `DROITS`, `NON_CONFIRME` ou `SUPPRESSION` (pendant le délai de grâce de la
+ * suppression du compte, spec § 12), 409 `BROUILLON_MODIFIE`, `DATE` ou `DOUBLON`, 413 et 422
+ * `ANOMALIES`, 429 `LIMITE`, 500 `INTERNE`.
  *
  * Outre les bornes du § 7 (étape 5), une numérotation annuelle n'admet pas de date antérieure au
  * 1er janvier de son année (Ruling 30) : une facture de l'année précédente prendrait le rang 1 de la
@@ -24,7 +25,7 @@
  */
 import { type Invoice, isValidIsoDate, validateInvoice } from 'facturx-sdk';
 import type postgres from 'postgres';
-import { aujourdhui, contexte } from '../_shared/contexte.ts';
+import { aujourdhui, contexte, exigerCompteActif } from '../_shared/contexte.ts';
 import {
   estObjet,
   exigerAdmissible,
@@ -165,8 +166,10 @@ Deno.serve(
     // Tiré dès le début : il nomme le PDF, déposé avant que la facture soit enregistrée.
     const factureId = crypto.randomUUID();
 
-    // 1. Authentifier : l'entreprise vient du jeton, par `membres` ; l'adresse doit être confirmée.
+    // 1. Authentifier : l'entreprise vient du jeton, par `membres` ; l'adresse doit être confirmée, et
+    // la suppression du compte ne pas être demandée.
     const ctx = await contexte(req);
+    exigerCompteActif(ctx, SANS_NUMERO);
     if (!ctx.confirme) {
       throw erreur(
         403,

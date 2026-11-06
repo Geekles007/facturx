@@ -18,6 +18,8 @@ import {
   quantity,
   unitPrice,
 } from 'facturx-sdk';
+import { embedFacturX } from 'facturx-sdk/pdf';
+import { PDFDocument } from 'pdf-lib';
 import postgres from 'postgres';
 import { toPortableJson } from '../_vendor/shared/portable.ts';
 import { aujourdhuiParis } from '../emettre/regles.ts';
@@ -78,11 +80,12 @@ export async function base<T>(f: (sql: postgres.Sql) => Promise<T>): Promise<T> 
 
 /**
  * Un compte confirmé, qui a accepté les CGU (sans quoi l'inscription est refusée), et sa session.
- * Le déclencheur de l'inscription lui a créé son entreprise, son membre et sa numérotation.
+ * Le déclencheur de l'inscription lui a créé son entreprise, son membre et sa numérotation. Son mot de
+ * passe est rendu aussi : un test qui supprime le compte vérifie qu'on ne peut plus s'y connecter.
  */
 export async function creerCompte(
   email = `essai-${crypto.randomUUID()}@facturx.test`,
-): Promise<{ jwt: string; userId: string; entrepriseId: string }> {
+): Promise<{ jwt: string; userId: string; entrepriseId: string; email: string; password: string }> {
   const password = crypto.randomUUID();
   const cree = await admin().auth.admin.createUser({
     email,
@@ -109,6 +112,8 @@ export async function creerCompte(
     jwt: connexion.data.session.access_token,
     userId,
     entrepriseId: membre.data.entreprise_id,
+    email,
+    password,
   };
 }
 
@@ -225,6 +230,16 @@ export function factureDeTest(lignes = 1, issueDate = aujourdhuiParis(new Date()
     ],
   } as InvoiceDraft;
   return assertValidInvoice({ ...brouillon, ...computeTotals(brouillon) });
+}
+
+/**
+ * Le PDF d'une facture telle que le Studio l'importe : une page blanche qui porte le XML Factur-X de
+ * `facture`, ce que l'import lit seul.
+ */
+export async function pdfFactureX(facture: Invoice): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  document.addPage();
+  return await embedFacturX(await document.save(), { invoice: facture });
 }
 
 /** L'apparence par défaut du Studio (`defaultAppearance()`), Geist sans logo. */

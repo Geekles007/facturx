@@ -17,7 +17,7 @@ export interface Contexte {
   /** L'adresse du compte est confirmée (`email_confirmed_at`). */
   confirme: boolean;
   entrepriseId: string;
-  /** La suppression du compte a été demandée (spec § 12) : émettre et relancer sont refusés. */
+  /** La suppression du compte a été demandée (spec § 12) : émettre, importer et relancer sont refusés. */
   suppressionDemandee: boolean;
 }
 
@@ -53,6 +53,22 @@ export async function contexte(req: Request): Promise<Contexte> {
     entrepriseId: membre.entreprise_id,
     suppressionDemandee: membre.suppression,
   };
+}
+
+/**
+ * Lève 403 `SUPPRESSION` pendant le délai de grâce de la suppression du compte (spec § 12) : `emettre`,
+ * `importer` et `relancer` écrivent des données qui vont disparaître, et le Studio n'offre plus que
+ * l'export et l'annulation. `annuler` (fonction `supprimer-compte`) lève le refus. `sans` dit ce que le
+ * refus laisse intact, comme les autres refus de chaque fonction.
+ */
+export function exigerCompteActif(ctx: Contexte, sans: string): void {
+  if (ctx.suppressionDemandee) {
+    throw erreur(
+      403,
+      'SUPPRESSION',
+      `La suppression du compte est demandée : annulez-la pour reprendre. ${sans}.`,
+    );
+  }
 }
 
 /**

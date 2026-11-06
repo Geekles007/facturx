@@ -26,8 +26,9 @@
  *      ni pour le niveau, ni pour le plafond de 20 (elle compte pour le plafond lâche des refus).
  *
  * La facture est lue avec l'entreprise du compte pour seul filtre : une facture inconnue et celle
- * d'une autre entreprise donnent la même réponse (403 `DROITS`, même message), sans oracle. Le refus
- * pendant la suppression du compte (403 `SUPPRESSION`) viendra avec la tâche 12, comme pour `emettre`.
+ * d'une autre entreprise donnent la même réponse (403 `DROITS`, même message), sans oracle. Pendant le
+ * délai de grâce de la suppression du compte (spec § 12), la relance est refusée avant tout le reste
+ * (403 `SUPPRESSION`, comme pour `emettre`).
  *
  * Les limites sont exactes sous concurrence : la transaction prend un verrou consultatif par
  * entreprise, avant de compter, et le garde jusqu'à la consignation. L'envoi se fait donc sous le
@@ -44,7 +45,7 @@
  * Si la base tombe malgré tout entre l'envoi et la consignation, l'e-mail est parti sans trace : cas
  * rare, qu'on préfère à une relance consignée « envoyée » qui ne serait pas partie.
  */
-import { aujourdhui, contexte } from '../_shared/contexte.ts';
+import { aujourdhui, contexte, exigerCompteActif } from '../_shared/contexte.ts';
 import { exigerAdmissible, lireObjetPortable, lireTexte, UUID } from '../_shared/corps.ts';
 import { admin, sql } from '../_shared/db.ts';
 import { type Anomalie, anomalies, erreur, json, traiter } from '../_shared/erreurs.ts';
@@ -124,8 +125,10 @@ function lireCorps(texte: string): Corps {
 
 Deno.serve(
   traiter(async (req) => {
-    // 1. Authentifier : l'entreprise vient du jeton, par `membres`.
+    // 1. Authentifier : l'entreprise vient du jeton, par `membres` ; la suppression du compte ne doit
+    // pas être demandée.
     const ctx = await contexte(req);
+    exigerCompteActif(ctx, SANS_ENVOI);
     const { factureId, destinataire, objet, corps } = lireCorps(
       await lireTexte(req, PLAFOND_REQUETE),
     );
@@ -204,6 +207,19 @@ Deno.serve(
     // consignation, composition, envoi, consignation (voir l'en-tête).
     const relance = await sql.begin(async (tx) => {
       const niveau = await appliquerLimites(tx, e, factureId, req);
+
+      // Les lignes que la relance référence (clés étrangères) sont tenues jusqu'à la fin de la
+      // transaction : l'essai de consignation ci-dessous les prend aussi, mais sa défaite aussitôt les
+      // relâche, et la purge d'un compte (`purger`) pourrait supprimer l'entreprise pendant l'appel à
+      // Brevo, puis faire échouer la vraie consignation après l'envoi. Ainsi tenues, elles ne se
+      // suppriment qu'après la relance (la purge attend, puis reprend la nuit suivante). L'entreprise
+      // d'abord, comme la suppression en cascade de la purge : deux ordres inverses s'interbloqueraient.
+      // Supprimées depuis la lecture de la facture, elles ne sont pas trouvées, et l'essai de
+      // consignation échoue sur la clé étrangère, avant tout envoi.
+      await tx`select 1 from public.entreprises where id = ${e} for key share`;
+      await tx`
+        select 1 from public.factures where entreprise_id = ${e} and id = ${factureId}
+           for key share`;
 
       const consigner = (q: typeof tx, etat: 'envoyee' | 'refusee', messageId: string | null) =>
         q<{ id: string }[]>`

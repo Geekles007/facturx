@@ -10,13 +10,14 @@
  *      arrière-plan, avec les variables de supabase/functions/.env (ou de .env.example, sa copie
  *      versionnée, quand il n'existe pas : en CI), une requête de mise en route par fonction servie,
  *      et `deno test -A` sur supabase/functions/tests/ (avec l'import map de
- *      supabase/functions/deno.json), l'adresse de la pile et ses clés dans l'environnement.
+ *      supabase/functions/deno.json), l'adresse de la pile et ses clés dans l'environnement, avec
+ *      `PURGE_SECRET`, tiré du même fichier que celui des fonctions : les tests de `purger` l'envoient.
  *
  * Le code de sortie est celui de `deno test`. Un dossier de tests absent ou vide est sauté, et sans
  * aucun test le script sort proprement sans toucher à la pile.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deposerPolices } from './compte-polices.mjs';
@@ -78,6 +79,14 @@ async function mettreEnRoute(apiUrl) {
 function aDesTests(dossier, extension) {
   if (!existsSync(dossier)) return false;
   return readdirSync(dossier, { recursive: true }).some((nom) => nom.endsWith(extension));
+}
+
+/** La valeur de `nom` dans un fichier `.env` (une ligne `NOM=valeur`), ou `undefined`. */
+function lireVariable(chemin, nom) {
+  const ligne = readFileSync(chemin, 'utf8')
+    .split('\n')
+    .find((l) => l.startsWith(`${nom}=`));
+  return ligne?.slice(nom.length + 1).trim();
 }
 
 /** Lit `KEY="valeur"` ligne à ligne, tel que `supabase status -o env` l'écrit. */
@@ -188,6 +197,7 @@ async function main() {
   const polices = await deposerPolices({ url: stack.API_URL, cle: stack.SERVICE_ROLE_KEY });
   console.log(`compte:test — polices TTF déposées dans le bucket « polices » : ${polices}.`);
 
+  const purgeSecret = envFonctions ? lireVariable(envFonctions, 'PURGE_SECRET') : undefined;
   const { serveur, pret } = demarrerServeur();
   try {
     await attendre(pret);
@@ -205,6 +215,8 @@ async function main() {
           SUPABASE_ANON_KEY: stack.ANON_KEY,
           SUPABASE_SERVICE_ROLE_KEY: stack.SERVICE_ROLE_KEY,
           SUPABASE_DB_URL: stack.DB_URL,
+          // Le secret que les fonctions servies reçoivent : celui du fichier, pas de l'environnement.
+          ...(purgeSecret === undefined ? {} : { PURGE_SECRET: purgeSecret }),
         },
       },
     );

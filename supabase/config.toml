@@ -418,6 +418,18 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/deno.json"
 
+[functions.supprimer-compte]
+enabled = true
+verify_jwt = false
+import_map = "./functions/deno.json"
+
+# `purger` n'a pas de session : la tâche de nuit de la base l'appelle avec l'en-tête x-purge-secret
+# (PURGE_SECRET), que la fonction vérifie elle-même.
+[functions.purger]
+enabled = true
+verify_jwt = false
+import_map = "./functions/deno.json"
+
 [analytics]
 enabled = true
 port = 55427

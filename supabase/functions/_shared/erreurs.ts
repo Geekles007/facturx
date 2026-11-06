@@ -87,7 +87,7 @@ function autoriser(req: Request, reponse: Response): Response {
  * Postgres), son message et sa pile. Ni les en-têtes de la requête (le jeton), ni son corps (la
  * facture), ni le détail d'une erreur Postgres, qui peut citer des valeurs.
  */
-function resumer(e: unknown): Record<string, unknown> {
+export function resumer(e: unknown): Record<string, unknown> {
   if (!(e instanceof Error)) return { type: typeof e };
   return { nom: e.name, code: (e as { code?: unknown }).code, message: e.message, pile: e.stack };
 }

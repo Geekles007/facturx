@@ -9,9 +9,9 @@
  * `form` et `appearance` sont ceux du `SavedInvoice` du Studio : la fonction les stocke sans les lire
  * (elle n'exige que des objets), comme le PDF, déposé tel quel. La facture, son numéro, sa date et ses
  * montants viennent du seul PDF (`extractInvoice`) : ce que le formulaire en dit ne compte pas.
- * Réponse 201 `{ id, numero }`. Erreurs (§ 13) : 401 `SESSION`, 403 `DROITS` ou `NON_CONFIRME`,
- * 409 `DOUBLON`, 413, 422 `ANOMALIES`, 429 `LIMITE` et 500 `INTERNE`. Le refus pendant le délai de
- * suppression du compte (403 `SUPPRESSION`) viendra avec la tâche 12, comme pour `emettre`.
+ * Réponse 201 `{ id, numero }`. Erreurs (§ 13) : 401 `SESSION`, 403 `DROITS`, `NON_CONFIRME` ou
+ * `SUPPRESSION` (pendant le délai de grâce de la suppression du compte, spec § 12, comme pour `emettre`),
+ * 409 `DOUBLON`, 413, 422 `ANOMALIES`, 429 `LIMITE` et 500 `INTERNE`.
  *
  * Le numéro n'a pas été attribué par le serveur : il est celui de la numérotation locale. L'import est
  * donc idempotent par numéro, dans l'entreprise du compte et dans elle seule : un numéro déjà là donne
@@ -35,7 +35,7 @@
  */
 import { FacturXParseError, type Invoice, isValidIsoDate } from 'facturx-sdk';
 import { extractInvoice, FacturXPdfError } from 'facturx-sdk/pdf';
-import { contexte } from '../_shared/contexte.ts';
+import { contexte, exigerCompteActif } from '../_shared/contexte.ts';
 import {
   estObjet,
   exigerAdmissible,
@@ -155,9 +155,10 @@ Deno.serve(
     // Tiré dès le début : il nomme le PDF, déposé avant que la facture soit enregistrée.
     const factureId = crypto.randomUUID();
 
-    // 1. Authentifier : l'entreprise vient du jeton, par `membres` ; l'adresse doit être confirmée,
-    // comme pour émettre.
+    // 1. Authentifier : l'entreprise vient du jeton, par `membres` ; l'adresse doit être confirmée, et
+    // la suppression du compte ne pas être demandée, comme pour émettre.
     const ctx = await contexte(req);
+    exigerCompteActif(ctx, SANS_IMPORT);
     if (!ctx.confirme) {
       throw erreur(
         403,
