@@ -360,6 +360,21 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
   let doc: Document = documentNeuf();
   /** Le document de chaque saisie reçue : rejouée plus tard, elle n'en change pas. */
   const documents = new WeakMap<Brouillon, Document>();
+  /**
+   * L'ordre d'arrivée des saisies (à la frappe, ou au moment où l'on impose une version) : une
+   * opération qui attendait la file ne remet jamais une saisie plus ancienne à la place d'une plus
+   * récente.
+   */
+  const rangs = new WeakMap<Brouillon, number>();
+  let dernierRang = 0;
+  const ranger = (b: Brouillon): number => {
+    let rang = rangs.get(b);
+    if (rang === undefined) {
+      rang = ++dernierRang;
+      rangs.set(b, rang);
+    }
+    return rang;
+  };
   /** La numérotation telle que le serveur l'a rendue en dernier. */
   let numerotation: Numbering | undefined;
 
@@ -463,6 +478,7 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
     const d = doc;
     // Le brouillon ouvert a été supprimé : ce que l'éditeur en montre encore ne se garde plus.
     if (d.supprime) return;
+    ranger(b);
     d.derniere = b;
     documents.set(b, d);
     // Par identité, sans rien recalculer : ce qui a changé depuis la dernière confirmation repart.
@@ -1155,11 +1171,19 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
         return l ? adopter(l) : undefined;
       }),
 
-    imposerBrouillon: (b) =>
-      enFile(async () => {
+    imposerBrouillon: (b) => {
+      // Rangée à l'appel, dans le même temps que la capture de l'écran : ce qui sera tapé ensuite
+      // passe après elle.
+      const rang = ranger(b);
+      return enFile(async () => {
         const d = doc;
-        d.derniere = b;
+        // Une saisie tapée pendant que l'opération attendait la file est plus récente : c'est elle
+        // qu'on impose, jamais `b` à sa place (elle disparaîtrait du serveur et du miroir).
+        const derniere = d.derniere;
+        const imposee = derniere !== undefined && (rangs.get(derniere) ?? 0) > rang ? derniere : b;
+        d.derniere = imposee;
         documents.set(b, d);
+        documents.set(imposee, d);
         d.envoye = false;
         await ecrireMiroir();
         if (d.id !== undefined) {
@@ -1169,8 +1193,9 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
           else
             Object.assign(d, { idPrevu: crypto.randomUUID(), id: undefined, version: undefined });
         }
-        await envoyer(b, d);
-      }),
+        await envoyer(imposee, d);
+      });
+    },
 
     brouillonAEmettre(affiche) {
       const b = affiche as Brouillon;

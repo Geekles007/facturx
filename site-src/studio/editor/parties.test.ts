@@ -17,6 +17,39 @@ describe('le carnet de clients', () => {
     expect(avec('sc-123.456')).toBe('SC123456');
     expect(avec('SC123456')).not.toBe(avec('NI123456'));
     expect(avec('', '  Atelier Lilas ')).toBe('atelier lilas');
+    expect(avec('N/A', '  Atelier Lilas ')).toBe('atelier lilas');
+  });
+
+  it('un identifiant sans chiffre (« N/A », « néant »…) ne confond pas deux clients : le nom décide', () => {
+    for (const [a, b] of [
+      ['N/A', 'n/a'],
+      ['NA', 'na'],
+      ['néant', 'Néant'],
+      ['/', '/'],
+      ['?', '?'],
+      ['—', '—'],
+    ]) {
+      store.set({ clients: [] });
+      saveClient({ ...blankParty(), name: 'Client A', siren: a as string });
+      saveClient({ ...blankParty(), name: 'Client B', siren: b as string });
+      expect(store.get().clients.map((c) => c.party.name)).toEqual(['Client A', 'Client B']);
+    }
+  });
+
+  it.each([
+    ['732/829/320'],
+    ['732_829_320'],
+    ['732–829–320'], // tiret demi-cadratin
+    ['732‑829‑320'], // trait d'union insécable
+    ['SIREN 732 829 320'],
+    ['732,829,320'],
+    ['732 829 320'],
+    ['732 829 320'],
+  ])('« %s » puis « 732829320 » : le même client, mis à jour', (saisi) => {
+    store.set({ clients: [] });
+    saveClient({ ...blankParty(), name: 'Avant', siren: saisi });
+    saveClient({ ...blankParty(), name: 'Après', siren: '732829320' });
+    expect(store.get().clients.map((c) => c.party.name)).toEqual(['Après']);
   });
 
   it('deux identifiants qui ne diffèrent que par les lettres : deux clients, aucun écrasé', () => {

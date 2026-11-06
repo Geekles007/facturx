@@ -767,8 +767,25 @@ const fr = {
       emise: (numero: string) => `Facture ${numero} émise.`,
       exemple:
         "L'exemple n'est pas un brouillon de votre compte : modifiez-le, ou partez d'une facture vierge, pour l'émettre.",
-      nonEnregistre:
-        "Le brouillon n'est pas encore enregistré sur le serveur (voyez le bandeau) : la facture n'est pas émise.",
+      /** Pourquoi le brouillon n'a pas pu être enregistré avant l'émission. */
+      nonEnregistre: {
+        injoignable:
+          "Le serveur du compte ne répond pas : le brouillon n'est pas enregistré, et la facture n'est pas émise.",
+        session:
+          "Votre session a expiré : reconnectez-vous. Le brouillon n'est pas enregistré, et la facture n'est pas émise.",
+        reseau:
+          "Hors ligne : le brouillon n'est pas enregistré, et la facture n'est pas émise. Émettez-la au retour du réseau.",
+        conflit:
+          'Ce brouillon a été modifié ailleurs : rechargez la version enregistrée ou gardez la vôtre, puis émettez.',
+        supprime:
+          'Ce brouillon a été supprimé ailleurs : recréez-le avec votre saisie, puis émettez.',
+        refus: (cause: string) =>
+          `Le serveur refuse ce brouillon (${cause}) : corrigez-le, puis émettez.`,
+        delai:
+          "Le serveur n'a pas confirmé l'enregistrement du brouillon à temps : la facture n'est pas émise. Réessayez dans un instant.",
+        autre:
+          "Le brouillon n'a pas pu être enregistré sur le serveur : la facture n'est pas émise. Réessayez dans un instant.",
+      },
       enCours:
         "Votre saisie change encore pendant l'enregistrement : émettez une fois la frappe arrêtée.",
       tropGros:
@@ -1547,8 +1564,22 @@ const en: Strings = {
       emise: (numero: string) => `Invoice ${numero} issued.`,
       exemple:
         'The sample is not a draft of your account: edit it, or start from a blank invoice, to issue it.',
-      nonEnregistre:
-        'The draft is not saved on the server yet (see the banner): the invoice is not issued.',
+      nonEnregistre: {
+        injoignable:
+          'The account server is not responding: the draft is not saved, and the invoice is not issued.',
+        session:
+          'Your session has expired: sign in again. The draft is not saved, and the invoice is not issued.',
+        reseau:
+          'Offline: the draft is not saved, and the invoice is not issued. Issue it once the network is back.',
+        conflit:
+          'This draft was changed elsewhere: reload the saved version or keep yours, then issue.',
+        supprime: 'This draft was deleted elsewhere: recreate it with your input, then issue.',
+        refus: (cause: string) => `The server refuses this draft (${cause}): fix it, then issue.`,
+        delai:
+          'The server did not confirm saving the draft in time: the invoice is not issued. Try again in a moment.',
+        autre:
+          'The draft could not be saved on the server: the invoice is not issued. Try again in a moment.',
+      },
       enCours: 'Your input keeps changing while saving: issue once you stop typing.',
       tropGros:
         'The invoice and its attachments exceed 10 MB, the most the server accepts: shrink or remove attachments, then issue again.',

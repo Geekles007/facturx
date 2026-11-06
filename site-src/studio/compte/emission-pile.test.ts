@@ -380,6 +380,31 @@ describe.skipIf(!process.env.SUPABASE_URL)('émettre : la conservation du compte
     expect(p.brouillonCourant()).toBeUndefined();
   }, 30_000);
 
+  test('imposerBrouillon ne recule pas : une saisie tapée pendant qu’il attend la file l’emporte', async () => {
+    const { sb, entrepriseId } = await compteDeTest();
+    const p = supabasePersistence(sb, entrepriseId);
+    await p.set('draft', brouillon('Version 1'));
+    let liberer: () => void = () => undefined;
+    const porte = new Promise<void>((r) => {
+      liberer = r;
+    });
+    // Des envois attendent encore dans la file (ici, une opération qui ne rend pas la main).
+    const occupee = p.dansLaFile(() => porte);
+    // « Garder la mienne » (ou la recréation) capte la saisie affichée, puis on tape encore.
+    const imposition = p.imposerBrouillon(brouillon('Imposée'));
+    const frappe = p.set('draft', brouillon('Tapée après'));
+    liberer();
+    await occupee;
+    await imposition;
+    await frappe;
+    await p.envoisTermines();
+    expect((await lignes(entrepriseId)).map((l) => l.form.buyer.name)).toEqual(['Tapée après']);
+    const miroir = (await gardeLocale(`draft-compte-${entrepriseId}`)) as
+      | { form: { buyer: { name: string } }; envoye: boolean }
+      | undefined;
+    expect([miroir?.form.buyer.name, miroir?.envoye]).toEqual(['Tapée après', true]);
+  });
+
   test('factureDuBrouillon : la facture émise depuis ce brouillon, ou rien', async () => {
     const { sb, entrepriseId } = await compteDeTest();
     const p = supabasePersistence(sb, entrepriseId);

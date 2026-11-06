@@ -69,6 +69,22 @@ export const DELAI_EMISSION_MS = 60_000;
 /** Le plus long que dure la recherche de la facture d'une réponse perdue. */
 const DELAI_RECHERCHE_MS = 15_000;
 
+/** Le plus long que dure la relecture de l'historique après l'émission (sinon : `reconstituer`). */
+const DELAI_RELECTURE_MS = 15_000;
+
+/**
+ * Le plus long que l'éditeur reste figé, toutes étapes comprises. Au-delà, l'émission est abandonnée
+ * (`Etape.abandonnee`) : ce qui en reviendrait ensuite ne quitte ni n'ouvre plus rien, l'issue est
+ * dite incertaine, et l'éditeur reprend.
+ */
+export const DELAI_GEL_MS = 120_000;
+
+/** Où en est l'émission : partie au serveur, ou abandonnée au bout du délai. */
+interface Etape {
+  envoye: boolean;
+  abandonnee: boolean;
+}
+
 /** `promesse`, ou `repli` au bout de `ms` : l'émission ne fige jamais l'éditeur sans fin. */
 function borne<T>(promesse: Promise<T>, ms: number, repli: T): Promise<T> {
   let minuterie: ReturnType<typeof setTimeout> | undefined;
@@ -112,13 +128,23 @@ export async function emettreSurServeur(): Promise<boolean> {
     await enCours;
     return false;
   }
-  // Une exception du Studio avant l'envoi n'a rien consommé ; après, l'issue est incertaine.
-  const etape = { envoye: false };
+  const phrases = t.compte.emission;
+  const etape: Etape = { envoye: false, abandonnee: false };
   ui({ emissionEnCours: true });
-  const emission = emettre(etape)
-    .catch(() => {
-      if (!etape.envoye) return refus(t.compte.emission.erreurLocale);
-      toast(t.compte.emission.incertain, 'error', 12_000);
+  // Une exception du Studio avant l'envoi n'a rien consommé ; après, l'issue est incertaine.
+  const issue = emettre(etape).catch(() => {
+    if (etape.abandonnee) return false;
+    if (!etape.envoye) return refus(phrases.erreurLocale);
+    toast(phrases.incertain, 'error', 12_000);
+    return false;
+  });
+  const emission = borne<boolean | undefined>(issue, DELAI_GEL_MS, undefined)
+    .then((reponse) => {
+      if (reponse !== undefined) return reponse;
+      // Trop long : l'éditeur reprend, et ce qui reviendrait de cette émission n'y touche plus.
+      etape.abandonnee = true;
+      if (etape.envoye) toast(phrases.incertain, 'error', 12_000);
+      else refus(phrases.nonEnregistre.delai);
       return false;
     })
     .finally(() => ui({ emissionEnCours: false }));
@@ -173,6 +199,23 @@ function refus(texte: string): false {
 }
 
 /**
+ * Pourquoi le brouillon n'a pas pu être enregistré avant l'émission, d'après ce que le magasin en
+ * sait (réseau, session, conflit, refus, serveur injoignable), ou parce que l'enregistrement n'a pas
+ * répondu à temps (`delaiDepasse`). Sans rien supposer d'un bandeau.
+ */
+function pourquoiNonEnregistre(delaiDepasse: boolean): string {
+  const s = store.get().ui;
+  const phrases = t.compte.emission.nonEnregistre;
+  if (s.storage === 'injoignable') return phrases.injoignable;
+  if (s.compte?.session === 'expiree') return phrases.session;
+  if (s.reseau === 'hors-ligne') return phrases.reseau;
+  if (s.conflit === 'supprime') return phrases.supprime;
+  if (s.conflit) return phrases.conflit;
+  if (s.brouillonRefuse !== undefined) return phrases.refus(s.brouillonRefuse);
+  return delaiDepasse ? phrases.delai : phrases.autre;
+}
+
+/**
  * La saisie part, puis l'écran doit être ce que le serveur a : sinon on recommence (frappe pendant
  * l'enregistrement), ou l'on s'arrête, en le disant (le brouillon ne part pas). Quand l'écran est
  * bien la version enregistrée, l'échange prend sa place dans la file des envois dans le même temps
@@ -180,17 +223,25 @@ function refus(texte: string): false {
  */
 async function enregistrerPuisEnvoyer(
   p: PersistenceCompte,
-  etape: { envoye: boolean },
+  etape: Etape,
 ): Promise<{ envoi: Envoi; resultat: Promise<Resultat> } | false> {
   const phrases = t.compte.emission;
+  // Abandonnée entre-temps (gel trop long) : plus rien ne part, et le message est déjà dit.
+  const arret = (texte: string): false => (etape.abandonnee ? false : refus(texte));
   for (let essai = 1; ; essai++) {
     const avant = store.get();
     // Un enregistrement qui ne répond pas ne fige pas l'éditeur : il continue sans l'émission.
-    if (!(await borne(enregistrerMaintenant(), DELAI_EMISSION_MS, false))) {
-      return refus(phrases.nonEnregistre);
-    }
+    const enregistre = await borne(
+      enregistrerMaintenant().then((ok) => (ok ? 'ok' : 'echec')),
+      DELAI_EMISSION_MS,
+      'delai',
+    );
+    if (enregistre !== 'ok') return arret(pourquoiNonEnregistre(enregistre === 'delai'));
     const termines = p.envoisTermines().then(() => true);
-    if (!(await borne(termines, DELAI_EMISSION_MS, false))) return refus(phrases.nonEnregistre);
+    if (!(await borne(termines, DELAI_EMISSION_MS, false))) {
+      return arret(pourquoiNonEnregistre(true));
+    }
+    if (etape.abandonnee) return false;
     const envoi = preparer(p);
     if (envoi) {
       // Au-delà du plafond du serveur, rien ne part : le message dit quoi réduire.
@@ -199,13 +250,13 @@ async function enregistrerPuisEnvoyer(
     }
     const apres = store.get();
     if (apres.form === avant.form && apres.appearance === avant.appearance) {
-      return refus(phrases.nonEnregistre);
+      return arret(pourquoiNonEnregistre(false));
     }
-    if (essai === ESSAIS) return refus(phrases.enCours);
+    if (essai === ESSAIS) return arret(phrases.enCours);
   }
 }
 
-async function emettre(etape: { envoye: boolean }): Promise<boolean> {
+async function emettre(etape: Etape): Promise<boolean> {
   const phrases = t.compte.emission;
   const p = storage;
   if (!estPersistenceCompte(p)) {
@@ -226,6 +277,8 @@ async function emettre(etape: { envoye: boolean }): Promise<boolean> {
   if (!lancee) return false;
   const { envoi } = lancee;
   const resultat = await lancee.resultat;
+  // Abandonnée au bout du délai : l'issue a été dite, l'utilisateur a repris la main.
+  if (etape.abandonnee) return false;
   switch (resultat.kind) {
     case 'emise':
       await ouvrirLaFactureEmise(p, resultat.emise, {
@@ -246,23 +299,25 @@ async function emettre(etape: { envoye: boolean }): Promise<boolean> {
  * L'échange avec le serveur, dans la file des envois : l'appel, l'issue, et, si la facture est
  * émise, le brouillon quitté avant que la file ne reprenne (`brouillonEmis`).
  */
-async function echanger(
-  p: PersistenceCompte,
-  envoi: Envoi,
-  etape: { envoye: boolean },
-): Promise<Resultat> {
+async function echanger(p: PersistenceCompte, envoi: Envoi, etape: Etape): Promise<Resultat> {
+  // Abandonnée pendant l'attente de la file : rien ne part.
+  if (etape.abandonnee) return { kind: 'incertaine' };
   etape.envoye = true;
   // Sans réponse au bout du délai, l'issue est incertaine ; la réponse tardive, s'il en vient une,
   // est ignorée (rien n'est quitté pour elle) : la recherche ci-dessous, ou plus tard la reprise
   // d'un brouillon émis (`imposer`), dit ce qu'il en est.
   let resultat = await borne(interroger(envoi), DELAI_EMISSION_MS, { kind: 'incertaine' });
-  if (resultat.kind === 'incertaine') {
+  if (resultat.kind === 'incertaine' && !etape.abandonnee) {
     // La réponse n'est pas arrivée, ou ne se lit pas : la facture est-elle émise ?
     const recherche = p.factureDuBrouillon(envoi.brouillonId).catch(() => undefined);
     const emise = await borne(recherche, DELAI_RECHERCHE_MS, undefined);
     if (emise) resultat = { kind: 'emise', emise };
   }
-  if (resultat.kind !== 'emise') return resultat;
+  // Abandonnée : la facture a peut-être été émise, mais l'éditeur a repris la main ; le brouillon
+  // n'est pas quitté (sa reprise, `imposer`, le découvrira et gardera la saisie).
+  if (resultat.kind !== 'emise' || etape.abandonnee) {
+    return resultat.kind === 'emise' ? { kind: 'incertaine' } : resultat;
+  }
   return { ...resultat, ouvert: await p.brouillonEmis(envoi.brouillonId) };
 }
 
@@ -386,7 +441,9 @@ export async function ouvrirLaFactureEmise(
   options: { brouillonOuvert: boolean; secours?: Envoi },
 ): Promise<boolean> {
   if (options.brouillonOuvert) oublierLeBrouillonRefuse();
-  let history = (await relireHistorique(p)) ?? store.get().history;
+  // Bornée : l'éditeur est encore figé ; à défaut, la facture est reconstituée (`secours`).
+  const relue = await borne(relireHistorique(p), DELAI_RELECTURE_MS, undefined);
+  let history = relue ?? store.get().history;
   let saved = history.find((h) => h.uid === emise.id);
   if (!saved && options.secours) {
     saved = reconstituer(emise, options.secours);
