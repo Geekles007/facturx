@@ -715,7 +715,9 @@ const moduleBrouillons = () =>
 function CompteBanners() {
   const expiree = useStudio((s) => s.ui.compte?.session === 'expiree');
   const horsLigne = useStudio((s) => s.ui.compte !== undefined && s.ui.reseau === 'hors-ligne');
-  const conflit = useStudio((s) => s.ui.compte !== undefined && s.ui.conflit);
+  const conflit = useStudio((s) => (s.ui.compte !== undefined ? s.ui.conflit : false));
+  // Une vue (facture émise, exemple) recouvre le brouillon en conflit : on l'ouvre d'abord.
+  const sousUneVue = useStudio((s) => s.ui.issued !== undefined || s.ui.sample);
   const refuse = useStudio((s) => (s.ui.compte ? s.ui.brouillonRefuse : undefined));
   const phrases = t.compte.conservation;
   return (
@@ -747,7 +749,31 @@ function CompteBanners() {
           </Button>
         </div>
       )}
-      {conflit && (
+      {conflit && sousUneVue && (
+        <div class="banner warn actions">
+          <Icon name="alert" />
+          <span>{phrases.conflitSousVue}</span>
+          <Button
+            size="sm"
+            onClick={() => void moduleBrouillons().then((m) => m?.ouvrirLeBrouillonEnConflit())}
+          >
+            {phrases.ouvrirConflit}
+          </Button>
+        </div>
+      )}
+      {conflit === 'supprime' && !sousUneVue && (
+        <div class="banner warn actions">
+          <Icon name="alert" />
+          <span>{phrases.supprime}</span>
+          <Button
+            size="sm"
+            onClick={() => void moduleBrouillons().then((m) => m?.recreerBrouillon())}
+          >
+            {phrases.recreer}
+          </Button>
+        </div>
+      )}
+      {conflit === true && !sousUneVue && (
         <div class="banner warn actions">
           <Icon name="alert" />
           <span>{phrases.conflit}</span>

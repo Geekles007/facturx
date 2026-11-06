@@ -184,6 +184,8 @@ describe.skipIf(!process.env.SUPABASE_URL)(
         globalThis.fetch = fetchOrigine;
 
         expect(store.get().form.buyer.name).toBe('');
+        // La liste du dialogue ne montre plus le brouillon supprimé, même sans avoir pu la relire.
+        expect((h.liste as ResumeBrouillon[]).some((b) => b.id === courant)).toBe(false);
         expect(store.get().ui.toast?.kind).toBe('info');
         expect(store.get().ui.toast?.text).toBe(t.compte.brouillons.repli);
         setForm('buyer.name', 'Après la suppression');

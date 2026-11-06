@@ -7,6 +7,7 @@ import {
   defaultNumbering,
   fill,
   hydrateForm,
+  type SavedInvoice,
 } from '../library.js';
 import { blankForm, blankParty } from '../model.js';
 import { sampleForm } from '../sample.js';
@@ -19,8 +20,14 @@ import {
   startPersistence,
   store,
 } from '../store.js';
-import { duplicateForm, quitterLeBrouillon, startDraft } from '../workflows.js';
-import { abandonnerSaisie } from './brouillons.js';
+import { duplicateForm, openIssued, quitterLeBrouillon, startDraft } from '../workflows.js';
+import {
+  abandonnerSaisie,
+  garderMaVersion,
+  ouvrirLeBrouillonEnConflit,
+  rechargerBrouillon,
+  recreerBrouillon,
+} from './brouillons.js';
 import { type Miroir, supabasePersistence } from './persistence.js';
 import { adminDeTest, compteDeTest, perimerJeton } from './test-aide.js';
 
@@ -100,7 +107,7 @@ async function demarrerCommeMain(p: ReturnType<typeof supabasePersistence>, entr
     appearance: draft ? fill(defaultAppearance(), draft.appearance) : defaultAppearance(),
     company: fill(defaultCompany(), loaded.company),
     numbering: fill(defaultNumbering(), loaded.numbering),
-    ui: { ...s.ui, storage: 'ok', sample: false, issued: undefined },
+    ui: { ...s.ui, storage: 'ok', sample: draft?.sample === true, issued: draft?.issued },
   }));
   arreter = startPersistence({ delai: 1000 });
 }
@@ -537,3 +544,175 @@ describe.skipIf(!process.env.SUPABASE_URL)('comparaison par contenu, renvoi uniq
     expect(l.find((x) => x.form.buyer.name === 'Ancien format')?.version).toBe(2);
   }, 20_000);
 });
+
+/** Une facture émise de l'historique, telle que `openIssued` l'ouvre. */
+function emise(client: string): SavedInvoice {
+  const b = brouillon(client);
+  return {
+    uid: `emise-${client}`,
+    status: 'issued',
+    form: b.form,
+    appearance: b.appearance,
+  } as SavedInvoice;
+}
+
+const attendre = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const modifierAilleurs = (id: string, nom: string) =>
+  adminDeTest()
+    .from('brouillons')
+    .update({ form: { ...blankForm('2026-11-04'), buyer: { ...blankParty(), name: nom } } })
+    .eq('id', id);
+
+describe.skipIf(!process.env.SUPABASE_URL)(
+  'une vue à l’écran : la saisie ne s’attache à aucun autre brouillon',
+  () => {
+    test('exemple ouvert, démarrage injoignable, frappe sur l’exemple : X intact, un nouveau brouillon', async () => {
+      const { sb, entrepriseId } = await compteDeTest();
+      const avant = supabasePersistence(sb, entrepriseId);
+      const x = brouillon('X — travail réel');
+      await avant.set('draft', x);
+      const idX = avant.brouillonCourant()?.id;
+      // « Nouvel exemple » : le brouillon X quitté, puis l'exemple (une vue). Le miroir tient X, envoyé.
+      expect(avant.quitterBrouillon(x)).toBe(true);
+      await avant.set('draft', {
+        form: sampleForm(),
+        appearance: defaultAppearance(),
+        sample: true,
+      });
+      await attendre(200);
+      const p = supabasePersistence(sb, entrepriseId);
+      await demarrerInjoignable(p, entrepriseId);
+      expect(store.get().ui.sample).toBe(true);
+      setForm('buyer.name', 'Tapé sur l’exemple');
+      await attendre(600);
+      fenetre.dispatchEvent(new Event('online'));
+      await vi.waitFor(() => expect(store.get().ui.storage).toBe('ok'), { timeout: 5000 });
+      await vi.waitFor(async () => expect(await lignes(entrepriseId)).toHaveLength(2), {
+        timeout: 5000,
+      });
+      const l = await lignes(entrepriseId);
+      expect(l.find((r) => r.id === idX)?.form.buyer.name).toBe('X — travail réel');
+      expect(l.find((r) => r.id === idX)?.version).toBe(1);
+      expect(l.find((r) => r.id !== idX)?.form.buyer.name).toBe('Tapé sur l’exemple');
+      expect(store.get().ui.conflit).toBe(false);
+    }, 20_000);
+
+    test('exemple affiché sur le brouillon courant X (en ligne), frappe : X intact, un nouveau brouillon', async () => {
+      const { sb, entrepriseId } = await compteDeTest();
+      const avant = supabasePersistence(sb, entrepriseId);
+      await avant.set('draft', brouillon('X — travail réel'));
+      const idX = avant.brouillonCourant()?.id;
+      await avant.set('draft', {
+        form: sampleForm(),
+        appearance: defaultAppearance(),
+        sample: true,
+      });
+      await demarrerCommeMain(supabasePersistence(sb, entrepriseId), entrepriseId);
+      expect(store.get().ui.sample).toBe(true);
+      setForm('buyer.name', 'Tapé sur l’exemple');
+      await vi.waitFor(async () => expect(await lignes(entrepriseId)).toHaveLength(2), {
+        timeout: 5000,
+      });
+      const l = await lignes(entrepriseId);
+      expect(l.find((r) => r.id === idX)?.form.buyer.name).toBe('X — travail réel');
+      expect(l.find((r) => r.id !== idX)?.form.buyer.name).toBe('Tapé sur l’exemple');
+    }, 20_000);
+
+    test('saisie en attente sous l’exemple, modifiée ailleurs : l’exemple ne la cache pas, « Garder » la garde', async () => {
+      const { sb, entrepriseId } = await compteDeTest();
+      const avant = supabasePersistence(sb, entrepriseId);
+      await avant.set('draft', brouillon('Appareil 1'));
+      const id = avant.brouillonCourant()?.id as string;
+      await avant.garderBrouillon(brouillon('Tapé, jamais parvenu'));
+      await avant.set('draft', {
+        form: sampleForm(),
+        appearance: defaultAppearance(),
+        sample: true,
+      });
+      await modifierAilleurs(id, 'Appareil 2');
+      const p = supabasePersistence(sb, entrepriseId);
+      await demarrerInjoignable(p, entrepriseId);
+      expect(store.get().ui.sample).toBe(false);
+      expect(store.get().form.buyer.name).toBe('Tapé, jamais parvenu');
+      fenetre.dispatchEvent(new Event('online'));
+      await vi.waitFor(() => expect(store.get().ui.conflit).toBe(true), { timeout: 5000 });
+      vi.stubGlobal('confirm', () => true);
+      await garderMaVersion();
+      expect((await lignes(entrepriseId)).map((l) => [l.form.buyer.name, l.version])).toEqual([
+        ['Tapé, jamais parvenu', 3],
+      ]);
+      const m = await indexedDbPersistence.get<Miroir>(`draft-compte-${entrepriseId}`);
+      expect([m?.form.buyer.name, m?.envoye]).toEqual(['Tapé, jamais parvenu', true]);
+    }, 20_000);
+
+    /** Un brouillon tapé, en conflit (modifié ou supprimé ailleurs), puis une facture émise ouverte. */
+    async function conflitSousUneFactureEmise(ailleurs: 'modifie' | 'supprime') {
+      const { sb, entrepriseId } = await compteDeTest();
+      await supabasePersistence(sb, entrepriseId).set('draft', brouillon('Version 1'));
+      const p = supabasePersistence(sb, entrepriseId);
+      await demarrerCommeMain(p, entrepriseId);
+      const id = p.brouillonCourant()?.id as string;
+      if (ailleurs === 'modifie') await modifierAilleurs(id, 'Ailleurs');
+      else await adminDeTest().from('brouillons').delete().eq('id', id);
+      setForm('buyer.name', 'Ma saisie');
+      await vi.waitFor(() => expect(store.get().ui.conflit).not.toBe(false), { timeout: 5000 });
+      openIssued(emise('Facture émise'));
+      await attendre(1500);
+      expect(store.get().ui.issued).toBe('emise-Facture émise');
+      return { p, entrepriseId };
+    }
+
+    test('conflit sous une facture émise : « Garder ma version » envoie la saisie, pas la facture', async () => {
+      const { entrepriseId } = await conflitSousUneFactureEmise('modifie');
+      vi.stubGlobal('confirm', () => true);
+      await garderMaVersion();
+      expect((await lignes(entrepriseId)).map((l) => [l.form.buyer.name, l.version])).toEqual([
+        ['Ma saisie', 3],
+      ]);
+      expect(store.get().ui.issued).toBe('emise-Facture émise');
+      expect(store.get().ui.conflit).toBe(false);
+    }, 20_000);
+
+    test('conflit sous une facture émise : le brouillon en conflit s’ouvre, puis se recharge', async () => {
+      const { entrepriseId } = await conflitSousUneFactureEmise('modifie');
+      ouvrirLeBrouillonEnConflit();
+      expect(store.get().ui.issued).toBeUndefined();
+      expect(store.get().form.buyer.name).toBe('Ma saisie');
+      expect(store.get().ui.conflit).toBe(true);
+      await attendre(1500);
+      expect(store.get().ui.conflit).toBe(true);
+      expect((await lignes(entrepriseId)).map((l) => l.form.buyer.name)).toEqual(['Ailleurs']);
+      await rechargerBrouillon();
+      expect(store.get().form.buyer.name).toBe('Ailleurs');
+      expect(store.get().ui.conflit).toBe(false);
+    }, 20_000);
+
+    test('supprimé ailleurs, sous une facture émise : « Recharger » recrée la saisie, pas la facture', async () => {
+      const { entrepriseId } = await conflitSousUneFactureEmise('supprime');
+      expect(store.get().ui.conflit).toBe('supprime');
+      await rechargerBrouillon();
+      expect((await lignes(entrepriseId)).map((l) => l.form.buyer.name)).toEqual(['Ma saisie']);
+      expect(store.get().ui.issued).toBe('emise-Facture émise');
+    }, 20_000);
+
+    test('tapé pendant l’absence, supprimé ailleurs : « supprimé ailleurs », puis recréé avec la saisie', async () => {
+      const { sb, entrepriseId } = await compteDeTest();
+      const avant = supabasePersistence(sb, entrepriseId);
+      await avant.set('draft', brouillon('Appareil 1'));
+      await adminDeTest().from('brouillons').delete().eq('entreprise_id', entrepriseId);
+      const p = supabasePersistence(sb, entrepriseId);
+      await demarrerInjoignable(p, entrepriseId);
+      setForm('buyer.name', 'Tapé hors serveur');
+      await attendre(600);
+      fenetre.dispatchEvent(new Event('online'));
+      await vi.waitFor(() => expect(store.get().ui.conflit).toBe('supprime'), { timeout: 5000 });
+      expect(await lignes(entrepriseId)).toEqual([]);
+      await recreerBrouillon();
+      expect((await lignes(entrepriseId)).map((l) => l.form.buyer.name)).toEqual([
+        'Tapé hors serveur',
+      ]);
+      expect(store.get().ui.conflit).toBe(false);
+      expect(store.get().form.buyer.name).toBe('Tapé hors serveur');
+    }, 20_000);
+  },
+);

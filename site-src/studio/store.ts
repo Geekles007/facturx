@@ -80,9 +80,10 @@ export interface UiState {
   reseau: 'ok' | 'hors-ligne';
   /**
    * Le brouillon a été enregistré ailleurs (autre onglet, autre appareil) depuis sa lecture : le
-   * serveur a refusé d'écrire sur une version périmée. Rien n'est rechargé sans l'utilisateur.
+   * serveur a refusé d'écrire sur une version périmée (`true`), ou il n'existe plus, supprimé
+   * ailleurs (`'supprime'`). Rien n'est rechargé ni recréé sans l'utilisateur.
    */
-  conflit: boolean;
+  conflit: boolean | 'supprime';
   /**
    * Le serveur refuse le brouillon (4xx autre qu'un conflit) : la cause, telle qu'il la donne.
    * Le Studio le dit et propose d'abandonner la saisie ; sans quoi on ne quitte pas ce brouillon.
@@ -221,12 +222,23 @@ export function useStudio<T>(select: (s: StudioState) => T): T {
 export const ui = (patch: Partial<UiState>): void =>
   store.set((s) => ({ ui: { ...s.ui, ...patch } }));
 
-export const setForm = (path: string, value: unknown): void =>
+/**
+ * Taper sur l'exemple en fait une saisie : en mode compte, elle commence un nouveau brouillon,
+ * jamais celui que l'exemple recouvrait.
+ */
+function avantDeTaper(): void {
+  if (state.ui.sample && !state.ui.issued && estDuCompte(storage)) storage.saisieSurLExemple();
+}
+
+export const setForm = (path: string, value: unknown): void => {
+  avantDeTaper();
   store.set((s) =>
     s.ui.issued ? {} : { form: setIn(s.form, path, value), ui: { ...s.ui, sample: false } },
   );
+};
 
 export function updateForm<V>(path: string, fn: (current: V) => V): void {
+  avantDeTaper();
   store.set((s) =>
     s.ui.issued ? {} : { form: updateIn(s.form, path, fn), ui: { ...s.ui, sample: false } },
   );
@@ -434,7 +446,9 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
     }
     if (actuelle) enAttente.delete(cle);
     if (code === 'BROUILLON_MODIFIE') {
-      if (!state.ui.conflit) ui({ conflit: true });
+      const supprime = erreur instanceof ErreurConservation && erreur.detail === 'SUPPRIME';
+      const valeur = supprime ? 'supprime' : true;
+      if (state.ui.conflit !== valeur) ui({ conflit: valeur });
       return;
     }
     if (cle === 'draft' && actuelle) {
@@ -645,9 +659,10 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
       }));
       // L'entreprise et la numérotation lues sont ce que le serveur a : rien à renvoyer.
       previous = state;
-      // Le brouillon affiché part une fois : la saisie, avec la vérification de version ; le
-      // brouillon du serveur, sans aucune écriture (même contenu), ce qui le confirme — sinon le
-      // miroir le tiendrait pour une saisie non envoyée. Une vue : la saisie que le miroir gardait.
+      // Le brouillon affiché part une fois, ce qui le confirme (sinon le miroir le tiendrait pour
+      // une saisie non envoyée) : la saisie, avec la vérification de version ; le brouillon du
+      // serveur, sans écriture s'il est identique, par une écriture contrôlée par version si
+      // l'écran l'a complété (ancien format). Une vue : la saisie que le miroir gardait.
       const [cle, e] = ecritureDuBrouillon(state);
       const aRejouer = miroir.saisieEnAttente();
       if (cle === 'draft') void soumettre(cle, e);

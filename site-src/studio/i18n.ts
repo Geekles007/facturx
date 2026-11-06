@@ -652,6 +652,12 @@ const fr = {
         'Votre session a expiré. Reconnectez-vous : votre saisie est gardée, et elle sera enregistrée aussitôt.',
       conflit:
         "Ce brouillon a été modifié ailleurs (un autre onglet ou un autre appareil) : votre saisie n'est pas enregistrée.",
+      conflitSousVue:
+        "Le brouillon ouvert est en conflit avec une autre version (modifié ou supprimé ailleurs), et ce n'est pas lui qui s'affiche : ouvrez-le pour décider de votre saisie.",
+      ouvrirConflit: 'Ouvrir ce brouillon',
+      supprime:
+        "Ce brouillon a été supprimé ailleurs (un autre onglet ou un autre appareil) : votre saisie n'est pas enregistrée, mais elle reste ici.",
+      recreer: 'Le recréer avec ma saisie',
       recharger: 'Recharger la version enregistrée',
       garder: 'Garder la mienne',
       garderConfirm:
@@ -673,6 +679,8 @@ const fr = {
           "Session expirée : reconnectez-vous d'abord. La saisie du brouillon ouvert n'est pas encore sur le serveur, et changer de document la perdrait.",
         conflit:
           'Ce brouillon est en conflit : rechargez la version enregistrée ou gardez la vôtre avant de changer de document.',
+        supprime:
+          'Ce brouillon a été supprimé ailleurs : recréez-le avec votre saisie avant de changer de document.',
         refus: (cause: string) =>
           `Le serveur refuse ce brouillon${cause ? ` (${cause})` : ''} : changer de document perdrait votre saisie. Corrigez-la, ou abandonnez-la.`,
         injoignable:
@@ -712,7 +720,7 @@ const fr = {
       introuvable: "Ce brouillon n'existe plus : il a été émis ou supprimé ailleurs.",
       nonEnregistre: 'pas encore enregistré',
       repli:
-        "Le brouillon suivant n'a pas pu être ouvert : une facture vierge s'ouvre à sa place. Les autres brouillons restent dans la liste.",
+        "Le brouillon suivant n'a pas pu être ouvert : une facture vierge s'ouvre à sa place. Vos autres brouillons ne sont pas touchés.",
       reprendre: 'Reprendre',
     },
   },
@@ -1352,6 +1360,12 @@ const en: Strings = {
         'Your session has expired. Sign in again: your work is kept, and it will be saved right away.',
       conflit:
         'This draft was changed elsewhere (another tab or another device): your work is not saved.',
+      conflitSousVue:
+        'The open draft conflicts with another version (changed or deleted elsewhere), and it is not the one shown: open it to decide what happens to your work.',
+      ouvrirConflit: 'Open this draft',
+      supprime:
+        'This draft was deleted elsewhere (another tab or another device): your work is not saved, but it stays here.',
+      recreer: 'Recreate it with my work',
       recharger: 'Reload the saved version',
       garder: 'Keep mine',
       garderConfirm:
@@ -1370,6 +1384,8 @@ const en: Strings = {
           'Session expired: sign in again first. What you typed in the open draft is not on the server yet, and switching documents would lose it.',
         conflit:
           'This draft is in conflict: reload the saved version or keep yours before switching documents.',
+        supprime:
+          'This draft was deleted elsewhere: recreate it with your work before switching documents.',
         refus: (cause: string) =>
           `The server refuses this draft${cause ? ` (${cause})` : ''}: switching documents would lose what you typed. Correct it, or discard it.`,
         injoignable:
@@ -1406,7 +1422,7 @@ const en: Strings = {
       introuvable: 'This draft no longer exists: it was issued or deleted elsewhere.',
       nonEnregistre: 'not saved yet',
       repli:
-        'The next draft could not be opened: a blank invoice opens instead. The other drafts remain in the list.',
+        'The next draft could not be opened: a blank invoice opens instead. Your other drafts are untouched.',
       reprendre: 'Resume',
     },
   },

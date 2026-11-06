@@ -170,6 +170,7 @@ export function messageEnAttente(raison?: string): string {
   const phrases = t.compte.conservation.enAttente;
   if (s.storage === 'injoignable') return phrases.injoignable;
   if (s.compte?.session === 'expiree' || raison === 'SESSION') return phrases.session;
+  if (s.conflit === 'supprime') return phrases.supprime;
   if (s.conflit || raison === 'BROUILLON_MODIFIE') return phrases.conflit;
   if (s.brouillonRefuse !== undefined) return phrases.refus(s.brouillonRefuse);
   if (s.reseau === 'hors-ligne' || raison === 'RESEAU') return phrases.reseau;

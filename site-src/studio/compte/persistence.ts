@@ -480,8 +480,15 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
         .select('version');
       if (r.error) throw echec(r);
       const [ligne] = r.data as { version: number }[];
-      // Aucune ligne touchée : la version a changé (ou le brouillon n'existe plus). Rien d'écrasé.
-      if (!ligne) throw new ErreurConservation('BROUILLON_MODIFIE');
+      if (!ligne) {
+        // Aucune ligne touchée : la version a changé, ou le brouillon n'existe plus (supprimé
+        // ailleurs, `SUPPRIME`). Rien d'écrasé ; l'utilisateur choisit.
+        const existe = await lireLigne(d.id as string).then(
+          (l) => l !== undefined,
+          () => true,
+        );
+        throw new ErreurConservation('BROUILLON_MODIFIE', existe ? undefined : 'SUPPRIME');
+      }
       d.version = ligne.version;
       d.surLeServeur = texte;
     }
@@ -581,8 +588,8 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
    * (l'appelant peut ainsi renoncer, si l'éditeur a changé pendant la lecture, ou si une lecture a
    * échoué : rien n'est ouvert à moitié). Une saisie que le serveur n'a pas reçue désigne le document
    * ouvert, quoi que dise `brouillon-courant` : le magasin la renvoie aussitôt (`saisieEnAttente`).
-   * Une vue gardée (facture émise, exemple) s'affiche de nouveau ; sinon le brouillon courant, ou le
-   * plus récent du serveur.
+   * Une vue gardée (facture émise, exemple) s'affiche de nouveau — l'exemple, jamais par-dessus une
+   * telle saisie ; sinon le brouillon courant, ou le plus récent du serveur.
    */
   async function preparerBrouillon(): Promise<{
     brouillon: Brouillon | undefined;
@@ -596,7 +603,8 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
     if (miroir && !miroir.envoye) {
       const d = documentDu(miroir);
       await verifier(d);
-      return { brouillon: vue ?? d.derniere, appliquer: () => ouvrir(d, false) };
+      const montre = montrer(vue, miroir);
+      return { brouillon: montre ?? d.derniere, appliquer: () => ouvrir(d, montre === undefined) };
     }
     if (vue) {
       // Le brouillon courant reste celui de la liste ; sa version se lira à sa réouverture.
@@ -612,6 +620,15 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
     if (!l) return { brouillon: undefined, appliquer: () => ouvrir(documentNeuf(), false) };
     const d = documentDeLigne(l);
     return { brouillon: d.derniere, appliquer: () => ouvrir(d, true) };
+  }
+
+  /**
+   * La vue gardée à afficher au démarrage. L'exemple ne recouvre jamais une saisie que le serveur
+   * n'a pas reçue : on y taperait sans la voir. Une facture émise, si : on n'y tape pas, et la
+   * liste des brouillons propose de reprendre la saisie cachée.
+   */
+  function montrer(vue: Brouillon | undefined, miroir: Miroir | undefined): Brouillon | undefined {
+    return vue?.sample === true && miroir !== undefined && !miroir.envoye ? undefined : vue;
   }
 
   /** Le brouillon courant tel que le serveur l'a, sans rien changer : pour la sauvegarde. */
@@ -977,12 +994,17 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
     saisieEnAttente: () => (doc.envoye || doc.supprime ? undefined : doc.derniere),
 
     async brouillonLocal(): Promise<Brouillon | undefined> {
-      const [miroir, vue] = await Promise.all([
+      const [id, miroir, gardee] = await Promise.all([
+        local.get<string>(cleCourant).catch(() => undefined),
         local.get<Miroir>(cleMiroir).catch(() => undefined),
         local.get<Brouillon>(cleVue).catch(() => undefined),
       ]);
-      // Le document ouvert est celui du miroir, ou aucun : jamais un brouillon lu à moitié.
-      doc = miroir ? documentDu(miroir) : documentNeuf();
+      const vue = montrer(gardee, miroir);
+      // Le document ouvert : celui du miroir quand sa saisie s'affiche ou attend le serveur ; sous
+      // une vue, le brouillon courant — jamais celui d'un miroir déjà envoyé, qui peut être un
+      // brouillon quitté depuis (« Nouvel exemple »). Jamais un brouillon lu à moitié.
+      if (miroir && (!miroir.envoye || !vue)) doc = documentDu(miroir);
+      else doc = vue && id ? { idPrevu: crypto.randomUUID(), id, envoye: true } : documentNeuf();
       if (doc.derniere) documents.set(doc.derniere, doc);
       return vue ?? (miroir ? saisieDu(miroir) : undefined);
     },
@@ -1001,6 +1023,13 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
       doc = documentNeuf();
       void suivreCourant(doc);
       return true;
+    },
+
+    saisieSurLExemple() {
+      // Encore vierge (« Nouvel exemple » vient de l'ouvrir) : c'est déjà un nouveau document.
+      if (doc.id === undefined && doc.derniere === undefined && !doc.supprime) return;
+      doc = documentNeuf();
+      void suivreCourant(doc);
     },
 
     async brouillons(): Promise<ResumeBrouillon[]> {

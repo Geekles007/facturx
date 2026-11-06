@@ -1,6 +1,7 @@
 /**
- * Les brouillons du compte : la liste (ouvrir, supprimer, nouveau), et les deux réponses à un
- * conflit — recharger la version du serveur, ou garder la sienne.
+ * Les brouillons du compte : la liste (ouvrir, supprimer, nouveau), et les réponses à un conflit —
+ * recharger la version du serveur, garder la sienne (ou la recréer, s'il a été supprimé ailleurs),
+ * ou d'abord ouvrir le brouillon en conflit quand une vue le recouvre.
  *
  * Chargé par `import()` depuis app.tsx, avec le reste du compte. La conservation est celle du
  * serveur, que `demarrer` a mise derrière `storage` ; elle tient le brouillon ouvert. On ne quitte
@@ -23,6 +24,7 @@ import {
   brouillonAffiche,
   oublierLeBrouillonRefuse,
   persistKeys,
+  type StudioState,
   store,
   toast,
   ui,
@@ -49,8 +51,11 @@ function conservation(): PersistenceCompte {
   return storage;
 }
 
-/** Met `b` dans l'éditeur, complété comme au démarrage : ni facture émise, ni exemple, ni conflit. */
-function afficher(b: Brouillon): void {
+/**
+ * Met `b` dans l'éditeur, complété comme au démarrage : ni facture émise, ni exemple, ni conflit
+ * (sauf `conflit` donné : le brouillon affiché est celui qui est en conflit).
+ */
+function afficher(b: Brouillon, conflit: StudioState['ui']['conflit'] = false): void {
   store.set((s) => ({
     form: hydrateForm(b.form),
     appearance: fill(defaultAppearance(), b.appearance),
@@ -58,7 +63,7 @@ function afficher(b: Brouillon): void {
       ...s.ui,
       issued: undefined,
       sample: false,
-      conflit: false,
+      conflit,
       library: undefined,
       tab: 'content',
       focus: undefined,
@@ -90,7 +95,41 @@ async function nouveau(): Promise<boolean> {
 
 // ---------- conflit ----------
 
-/** Le conflit tranché pour la version du serveur : elle remplace la saisie affichée. */
+/** Une facture émise ou l'exemple à l'écran : le brouillon ouvert est dessous, pas affiché. */
+const vueAffichee = (): boolean => {
+  const { issued, sample } = store.get().ui;
+  return issued !== undefined || sample;
+};
+
+/**
+ * Le contenu du brouillon en conflit : ce que l'éditeur montre, ou, si c'est une vue, la saisie du
+ * brouillon qu'elle recouvre — jamais la vue elle-même. Rien si cette saisie n'attend plus rien.
+ */
+function contenuEnConflit(p: PersistenceCompte): Brouillon | undefined {
+  return vueAffichee() ? (p.saisieEnAttente() as Brouillon | undefined) : affiche();
+}
+
+/** Le contenu du brouillon en conflit remplace la version du serveur (ou la recrée), et le dit. */
+async function imposer(p: PersistenceCompte, message: string, genre: 'ok' | 'info'): Promise<void> {
+  const b = contenuEnConflit(p);
+  // Sous une vue, plus aucune saisie n'attend : il n'y a plus rien à trancher.
+  if (b) await p.imposerBrouillon(b);
+  ui({ conflit: false });
+  if (b) toast(message, genre, genre === 'info' ? 7000 : undefined);
+}
+
+/**
+ * Le conflit sous une vue : le brouillon en conflit revient à l'éditeur, avec sa saisie, et le
+ * conflit reste à trancher sur lui (recharger, ou garder la sienne).
+ */
+export function ouvrirLeBrouillonEnConflit(): void {
+  const b = conservation().saisieEnAttente() as Brouillon | undefined;
+  if (b) afficher(b, store.get().ui.conflit);
+  // Plus rien n'attend : il n'y a plus de conflit à trancher.
+  else ui({ conflit: false });
+}
+
+/** Le conflit tranché pour la version du serveur : elle remplace la saisie du brouillon. */
 export async function rechargerBrouillon(): Promise<void> {
   const phrases = t.compte.conservation;
   try {
@@ -102,9 +141,16 @@ export async function rechargerBrouillon(): Promise<void> {
       return;
     }
     // Émis ou supprimé ailleurs : il n'y a rien à recharger, la saisie devient un nouveau brouillon.
-    await p.imposerBrouillon(affiche());
-    ui({ conflit: false });
-    toast(phrases.supprimeAilleurs, 'info', 7000);
+    await imposer(p, phrases.supprimeAilleurs, 'info');
+  } catch (erreur) {
+    toast(messageDEchec(erreur), 'error');
+  }
+}
+
+/** Le brouillon supprimé ailleurs, recréé avec la saisie : un nouveau brouillon. */
+export async function recreerBrouillon(): Promise<void> {
+  try {
+    await imposer(conservation(), t.compte.conservation.supprimeAilleurs, 'info');
   } catch (erreur) {
     toast(messageDEchec(erreur), 'error');
   }
@@ -132,14 +178,15 @@ export async function abandonnerSaisie(): Promise<void> {
   }
 }
 
-/** Le conflit tranché pour la saisie affichée : elle remplace la version du serveur, relue avant. */
+/**
+ * Le conflit tranché pour la saisie du brouillon (celle de l'éditeur, ou celle qu'une vue recouvre) :
+ * elle remplace la version du serveur, relue avant.
+ */
 export async function garderMaVersion(): Promise<void> {
   const phrases = t.compte.conservation;
   if (!confirm(phrases.garderConfirm)) return;
   try {
-    await conservation().imposerBrouillon(affiche());
-    ui({ conflit: false });
-    toast(phrases.garde);
+    await imposer(conservation(), phrases.garde, 'ok');
   } catch (erreur) {
     toast(messageDEchec(erreur), 'error');
   }
@@ -236,8 +283,9 @@ export function Brouillons({ open, onClose }: { open: boolean; onClose: () => vo
       // suivant a disparu entre-temps, ou si la liste ne se lit pas (réseau).
       let suivant: boolean | undefined;
       let echoue = false;
+      let restants: ResumeBrouillon[] | undefined;
       try {
-        const restants = await p.brouillons();
+        restants = await p.brouillons();
         setListe(restants);
         if (restants[0]) {
           suivant = await basculerVers(p, restants[0].id);
@@ -246,6 +294,8 @@ export function Brouillons({ open, onClose }: { open: boolean; onClose: () => vo
         }
       } catch {
         echoue = true;
+        // La liste n'a pas pu être relue : elle perd au moins le brouillon supprimé.
+        if (!restants) setListe(liste?.filter((r) => r.id !== b.id));
       }
       if (!suivant) {
         // Une facture vierge, à l'apparence par défaut, comme « Nouveau brouillon ».

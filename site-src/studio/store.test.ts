@@ -93,6 +93,7 @@ function fausseConservation() {
       return true;
     },
     saisieEnAttente: () => etat.enAttente,
+    saisieSurLExemple: () => undefined,
     brouillonLocal: async () => undefined,
     preparerBrouillon: async () => ({ brouillon: etat.serveur.draft, appliquer: () => undefined }),
     abandonnerSaisie: async () => undefined,
@@ -508,6 +509,7 @@ describe('course : frappe pendant le changement de document', () => {
         return true;
       },
       saisieEnAttente: () => undefined,
+      saisieSurLExemple: () => undefined,
       brouillonLocal: async () => undefined,
       preparerBrouillon: async () => ({ brouillon: undefined, appliquer: () => undefined }),
       abandonnerSaisie: async () => undefined,
