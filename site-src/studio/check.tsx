@@ -5,11 +5,75 @@
  * appliquée au XML que le Studio produit, avant qu'il ne parte.
  */
 
-import { sectionOf } from './anchors.js';
+import { anchorOf, sectionOf } from './anchors.js';
 import { useDerived } from './context.js';
 import { t } from './i18n.js';
-import { focusField } from './store.js';
+import { estUnChamp, focusField, type RefusServeur, useStudio } from './store.js';
 import { Button, Icon } from './ui.js';
+
+/**
+ * Les anomalies que le serveur a relevées à l'émission (mode compte), tant que l'écran montre la
+ * facture envoyée (les objets mêmes) ; au-delà, elles ne disent plus rien de ce qui est affiché.
+ */
+function useRefusServeur(): RefusServeur['issues'] | undefined {
+  const refus = useStudio((s) => s.ui.refusServeur);
+  const form = useStudio((s) => s.form);
+  const appearance = useStudio((s) => s.appearance);
+  return refus && refus.form === form && refus.appearance === appearance ? refus.issues : undefined;
+}
+
+/**
+ * Ce que le serveur a refusé. Chaque anomalie porte son chemin (`data-path`) :
+ * `focusField(chemin, 'check')` y mène. « Corriger » conduit au champ : celui du formulaire, ou le
+ * réglage de l'onglet Apparence pour un chemin `appearance.*` ; un chemin qui ne désigne aucun champ
+ * (`brouillonId`, vide) n'en a pas.
+ */
+function ServerIssues({ issues }: { issues: RefusServeur['issues'] }) {
+  const { built } = useDerived();
+  const cible = (path: string): string | undefined => {
+    if (path === 'appearance' || path.startsWith('appearance.')) return path;
+    const ancre = anchorOf(built.toFormPath(path));
+    return estUnChamp(ancre) ? ancre : undefined;
+  };
+  return (
+    <section class="panel-section">
+      <h3>{t.check.serveur}</h3>
+      <p class="field-hint">{t.check.serveurDetail}</p>
+      <ul class="issues">
+        {issues.map((issue) => {
+          const champ = cible(issue.path);
+          const lieu =
+            champ === undefined
+              ? undefined
+              : champ.startsWith('appearance')
+                ? t.app.tabs.appearance
+                : t.sections[sectionOf(champ)];
+          return (
+            <li
+              key={`${issue.code}|${issue.path}|${issue.message}`}
+              class="issue sdk"
+              data-path={issue.path}
+            >
+              <div class="issue-head">
+                <code>{issue.code}</code>
+                {lieu && <span class="issue-section">{lieu}</span>}
+              </div>
+              <p>{issue.message}</p>
+              <div class="issue-foot">
+                <code class="path">{issue.path}</code>
+                {champ !== undefined && (
+                  <Button size="sm" variant="subtle" icon="edit" onClick={() => focusField(champ)}>
+                    {t.check.fix}
+                  </Button>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
 
 function IssueList() {
   const { issues } = useDerived();
@@ -125,14 +189,23 @@ function Mentions() {
 
 export function CheckPanel() {
   const { issues, official, layout } = useDerived();
-  const ok = issues.length === 0;
+  const refusees = useRefusServeur();
+  // Conforme ici, mais refusée par le serveur : le verdict ne dit pas « prête à être émise ».
+  const ok = issues.length === 0 && !refusees;
   const officialOk = official.status === 'done' && official.judges.every((j) => j.status === 'ok');
   return (
     <div class="panel check">
+      {refusees && <ServerIssues issues={refusees} />}
       <section class={`verdict-ui ${ok ? 'ok' : 'ko'}`}>
         <Icon name={ok ? 'shield' : 'alert'} size={22} />
         <div>
-          <h3>{ok ? t.check.verdictOk : t.check.verdictIssues(issues.length)}</h3>
+          <h3>
+            {ok
+              ? t.check.verdictOk
+              : issues.length > 0
+                ? t.check.verdictIssues(issues.length)
+                : t.check.verdictServeur}
+          </h3>
           {ok && officialOk && <p>{t.status.officialOk}</p>}
         </div>
       </section>

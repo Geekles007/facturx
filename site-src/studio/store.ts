@@ -91,6 +91,18 @@ export interface UiState {
   brouillonRefuse: string | undefined;
   /** Volet du dialogue de connexion ouvert, ou rien. */
   connexion: VoletConnexion | undefined;
+  /**
+   * Les anomalies que le serveur a relevées à l'émission (422), avec le formulaire et l'apparence
+   * envoyés : l'onglet Contrôle les montre tant que l'écran montre ces objets-là, pas au-delà.
+   */
+  refusServeur: RefusServeur | undefined;
+}
+
+/** Ce que le serveur a refusé d'émettre, et pourquoi (des `Issue` du SDK, et les siennes). */
+export interface RefusServeur {
+  form: InvoiceForm;
+  appearance: Appearance;
+  issues: { code: string; path: string; message: string }[];
 }
 
 export interface StudioState {
@@ -168,6 +180,7 @@ const initialUi = (): UiState => ({
   conflit: false,
   brouillonRefuse: undefined,
   connexion: undefined,
+  refusServeur: undefined,
 });
 
 let state: StudioState = {
@@ -247,10 +260,45 @@ export function updateForm<V>(path: string, fn: (current: V) => V): void {
 export const setAppearance = (patch: Partial<Appearance>): void =>
   store.set((s) => ({ appearance: { ...s.appearance, ...patch } }));
 
+/**
+ * Les réglages de l'onglet Apparence qu'atteint un chemin `appearance.*` des anomalies du serveur :
+ * le `data-field` de leur section. Un autre réglage ouvre l'onglet sans rien viser.
+ */
+const REGLAGES: Record<string, string> = {
+  logo: 'logo',
+  font: 'font',
+  customFont: 'font',
+  footer: 'footer',
+};
+
+/** Vrai si `path` désigne un champ du formulaire (sa racine en est une clé). */
+export function estUnChamp(path: string): boolean {
+  const racine = path.split(/[.[]/)[0] ?? '';
+  return racine !== '' && Object.hasOwn(state.form, racine);
+}
+
 let focusNonce = 0;
-/** Conduit l'éditeur jusqu'à un champ (depuis l'aperçu, une anomalie, un raccourci). */
+/**
+ * Conduit l'éditeur jusqu'à un champ (depuis l'aperçu, une anomalie, un raccourci). Un chemin de
+ * l'apparence (`appearance.font`, comme le serveur les nomme) mène à l'onglet Apparence ; un chemin
+ * vide, ou qui ne désigne aucun champ du formulaire (`brouillonId`, `invoice`), à l'onglet Contrôle,
+ * sans rien viser. Vers l'onglet Contrôle, `path` désigne l'anomalie de ce chemin.
+ */
 export function focusField(path: string, tab: Tab = 'content'): void {
-  ui({ focus: { path, nonce: ++focusNonce }, tab, mobile: 'edit' });
+  const apparence = /^appearance(?:\.([^.[]+))?/.exec(path);
+  const [onglet, cible]: [Tab, string | undefined] =
+    tab === 'check' || path === ''
+      ? ['check', path || undefined]
+      : apparence
+        ? ['appearance', REGLAGES[apparence[1] ?? '']]
+        : tab === 'content' && !estUnChamp(path)
+          ? ['check', undefined]
+          : [tab, path];
+  ui({
+    focus: cible ? { path: cible, nonce: ++focusNonce } : undefined,
+    tab: onglet,
+    mobile: 'edit',
+  });
 }
 
 let toastId = 0;

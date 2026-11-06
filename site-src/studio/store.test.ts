@@ -13,6 +13,7 @@ import {
   type CompteUi,
   conserver,
   enregistrerMaintenant,
+  focusField,
   type Loaded,
   oublierLeBrouillonRefuse,
   setForm,
@@ -662,5 +663,47 @@ describe('après un rechargement', () => {
     // Le brouillon affiché est reparti une fois : la conservation reconnaît désormais ces objets.
     expect(brouillonsEcrits(ecrites)).toHaveLength(1);
     expect(etat.nouveaux).toBe(1);
+  });
+});
+
+describe('focusField', () => {
+  const vers = (path: string, tab?: Parameters<typeof focusField>[1]) => {
+    store.set((s) => ({
+      form: blankForm('2026-11-04'),
+      ui: { ...s.ui, tab: 'content', focus: undefined },
+    }));
+    focusField(path, tab);
+    const { tab: onglet, focus } = store.get().ui;
+    return [onglet, focus?.path];
+  };
+
+  it('un champ du formulaire : l’onglet Contenu, sur ce champ, comme avant', () => {
+    expect(vers('lines[0].name')).toEqual(['content', 'lines[0].name']);
+    expect(vers('exemptions')).toEqual(['content', 'exemptions']);
+    expect(vers('logo', 'appearance')).toEqual(['appearance', 'logo']);
+  });
+
+  it('un chemin de l’apparence : l’onglet Apparence, sur le réglage quand il en a un', () => {
+    expect(vers('appearance.font')).toEqual(['appearance', 'font']);
+    expect(vers('appearance.customFont.boldKey')).toEqual(['appearance', 'font']);
+    expect(vers('appearance.logo.type')).toEqual(['appearance', 'logo']);
+    expect(vers('appearance.footer')).toEqual(['appearance', 'footer']);
+    expect(vers('appearance.template')).toEqual(['appearance', undefined]);
+    expect(vers('appearance')).toEqual(['appearance', undefined]);
+  });
+
+  it('un chemin vide ou inconnu : l’onglet Contrôle, sans rien viser', () => {
+    expect(vers('')).toEqual(['check', undefined]);
+    expect(vers('brouillonId')).toEqual(['check', undefined]);
+    expect(vers('invoice')).toEqual(['check', undefined]);
+  });
+
+  it('vers l’onglet Contrôle : l’anomalie de ce chemin', () => {
+    expect(vers('references.precedingInvoices[0].id', 'check')).toEqual([
+      'check',
+      'references.precedingInvoices[0].id',
+    ]);
+    expect(vers('appearance.font', 'check')).toEqual(['check', 'appearance.font']);
+    expect(vers('', 'check')).toEqual(['check', undefined]);
   });
 });

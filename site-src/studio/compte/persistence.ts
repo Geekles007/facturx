@@ -100,6 +100,37 @@ export interface PersistenceCompte extends Persistence, ConservationDuCompte {
   rechargerBrouillon(): Promise<Brouillon | undefined>;
   /** Après un conflit : `b` remplace la version du serveur, relue juste avant. */
   imposerBrouillon(b: Brouillon): Promise<void>;
+  /**
+   * Le brouillon ouvert, prêt à émettre, si l'écran (`affiche`, tel que le magasin l'enregistre)
+   * montre exactement ce que le serveur en a — les objets mêmes qu'il a confirmés, ou le même
+   * contenu : son identifiant et la version sur laquelle émettre. Sinon rien : une saisie attend,
+   * l'écran montre une vue, ou le brouillon n'existe pas (encore, ou plus). Synchrone, comme
+   * `quitterBrouillon` : l'appelant construit dans le même temps ce qu'il envoie.
+   */
+  brouillonAEmettre(affiche: unknown): { id: string; version: number } | undefined;
+  /**
+   * Le brouillon `id` vient d'être émis : le serveur l'a supprimé avec l'émission. S'il est ouvert,
+   * il devient un document supprimé, tout de suite et sans requête — ce que l'éditeur en montre
+   * encore (frappe, minuterie, écriture en route) ne part plus nulle part et ne signale aucun
+   * conflit —, et ni son identifiant ni son miroir ne restent dans ce navigateur. Rien ne le fait
+   * revenir ; le prochain document en est un nouveau.
+   */
+  brouillonEmis(id: string): Promise<void>;
+  /** La facture émise depuis le brouillon `id`, s'il y en a une : une réponse d'émission perdue. */
+  factureDuBrouillon(id: string): Promise<{ id: string; numero: string } | undefined>;
+}
+
+/**
+ * Le formulaire d'une facture émise, sous le numéro que le serveur lui a attribué : le brouillon
+ * gardé avec elle porte celui que le Studio proposait. La référence de paiement qui le rappelait
+ * suit, comme sur la facture (`emettre`).
+ */
+export function formulaireNumerote(form: InvoiceForm, numero: string): InvoiceForm {
+  // Le formulaire d'une facture importée est celui du navigateur d'origine, que rien n'a vérifié.
+  const { id, remittanceInformation: reference } = form as Partial<InvoiceForm>;
+  const rappel =
+    typeof id === 'string' && typeof reference === 'string' && reference.trim() === id.trim();
+  return { ...form, id: numero, ...(rappel ? { remittanceInformation: numero } : {}) };
 }
 
 export function estPersistenceCompte(p: Persistence): p is PersistenceCompte {
@@ -481,6 +512,8 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
       if (r.error) throw echec(r);
       const [ligne] = r.data as { version: number }[];
       if (!ligne) {
+        // Supprimé ici pendant l'envoi (par l'utilisateur, ou émis) : il n'y a rien à trancher.
+        if (d.supprime) return;
         // Aucune ligne touchée : la version a changé, ou le brouillon n'existe plus (supprimé
         // ailleurs, `SUPPRIME`). Rien d'écrasé ; l'utilisateur choisit.
         const existe = await lireLigne(d.id as string).then(
@@ -678,6 +711,10 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
   }
 
   async function ecrireNumerotation(n: Numbering): Promise<void> {
+    // Ce que le serveur a déjà (la numérotation relue après une émission) ne repart pas : récrire
+    // le gabarit lu pourrait défaire un changement fait ailleurs entre-temps.
+    const m = numerotation;
+    if (m && n.pattern === m.pattern && n.yearly === m.yearly && n.next === m.next) return;
     const colonnes: Partial<LigneNumerotation> = { gabarit: n.pattern, annuelle: n.yearly };
     if (!numerotation || n.next !== numerotation.next) colonnes.prochain = n.next;
     const r = await sb
@@ -844,7 +881,7 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
         (l): SavedInvoice => ({
           uid: l.id,
           status: 'issued',
-          form: depuisPortable(l.form),
+          form: formulaireNumerote(depuisPortable<InvoiceForm>(l.form), l.numero),
           appearance: depuisPortable(l.appearance),
           summary: {
             id: l.numero,
@@ -1124,6 +1161,37 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
         }
         await envoyer(b, d);
       }),
+
+    brouillonAEmettre(affiche) {
+      const b = affiche as Brouillon;
+      const d = doc;
+      if (estUneVue(b) || d.supprime || d.id === undefined || d.version === undefined)
+        return undefined;
+      // Pour un brouillon (ni vue, ni supprimé), `quittable` dit exactement ceci : l'écran montre ce
+      // que le serveur a reçu, à la version `d.version`.
+      return quittable(b) ? { id: d.id, version: d.version } : undefined;
+    },
+
+    async brouillonEmis(id) {
+      const d = doc;
+      // Le brouillon émis n'est plus l'ouvert (on en a changé pendant l'émission) : rien à quitter.
+      if (d.id !== id) return;
+      // Tout de suite : une écriture qui suivrait ne part plus (`enregistrer`, `envoyer`).
+      d.supprime = true;
+      await auMieux(local.remove('kv', cleCourant));
+      await auMieux(local.remove('kv', cleMiroir));
+    },
+
+    async factureDuBrouillon(id) {
+      const r = await sb
+        .from('factures')
+        .select('id, numero')
+        .eq('entreprise_id', E)
+        .eq('brouillon_id', id)
+        .maybeSingle<{ id: string; numero: string }>();
+      if (r.error) throw echec(r);
+      return r.data ?? undefined;
+    },
   };
   return persistance;
 }

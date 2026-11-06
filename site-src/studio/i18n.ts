@@ -91,6 +91,11 @@ const fr = {
     issued: (id: string) => `Facture ${id} émise et téléchargée.`,
     blocked: 'Corrigez les points signalés : seule une facture conforme se télécharge.',
     failed: (message: string) => `Le PDF n'a pas pu être produit : ${message}`,
+    compte: {
+      title: 'Émettre cette facture ?',
+      body: "Le serveur lui attribue le numéro suivant de votre numérotation, la contrôle et produit son PDF Factur-X ; elle rejoint l'historique. Une facture émise ne se modifie plus : pour la corriger, vous émettrez un avoir.",
+      confirm: 'Émettre',
+    },
   },
   sections: {
     document: 'Document',
@@ -109,6 +114,8 @@ const fr = {
     type: 'Type de document',
     number: 'Numéro',
     numberHint: 'Unique, dans une séquence chronologique et continue.',
+    numberAssigned:
+      "Attribué à l'émission : le serveur donne le numéro suivant de votre numérotation.",
     nextNumber: 'Numéro suivant',
     issueDate: "Date d'émission",
     nature: "Nature de l'opération",
@@ -447,8 +454,12 @@ const fr = {
   check: {
     verdictOk: 'Conforme : prête à être émise',
     verdictIssues: (n: number) => `${n} point${n > 1 ? 's' : ''} à corriger avant d'émettre`,
+    verdictServeur: "Refusée par le serveur : à corriger avant d'émettre",
     sdk: 'Contrôle du SDK',
     sdkDetail: 'Modèle EN 16931, arithmétique au centime, règles françaises BR-FR.',
+    serveur: 'Refusée par le serveur',
+    serveurDetail:
+      "À l'émission, le serveur a relevé ces anomalies sur la facture affichée : corrigez-les, puis émettez de nouveau.",
     noIssues: 'Aucune anomalie.',
     fix: 'Corriger',
     official: 'Validateurs officiels',
@@ -723,6 +734,61 @@ const fr = {
         "Le brouillon suivant n'a pas pu être ouvert : une facture vierge s'ouvre à sa place. Vos autres brouillons ne sont pas touchés.",
       reprendre: 'Reprendre',
     },
+    /** Les refus des Edge Functions (spec § 13), quelle que soit l'opération. */
+    erreurs: {
+      nonConfirme:
+        "Confirmez d'abord l'adresse e-mail du compte : ouvrez le lien de l'e-mail de confirmation, puis réessayez.",
+      suppression:
+        'La suppression de votre compte est demandée : annulez-la pour reprendre. Vous pouvez toujours exporter vos données.',
+      droits:
+        "Ce compte n'a accès à aucune entreprise : reconnectez-vous ; si cela persiste, écrivez-nous.",
+      brouillonModifie:
+        'Ce brouillon a changé ailleurs depuis son ouverture (un autre onglet ou un autre appareil) : rechargez la version enregistrée, ou gardez la vôtre, puis recommencez.',
+      date: "La date d'émission sort des dates admises.",
+      doublon: (numero: string) =>
+        `Le numéro ${numero || 'attribué'} existe déjà : relevez le prochain numéro de votre numérotation, puis recommencez.`,
+      pdfDejaDepose: 'Le PDF de cette facture est déjà déposé.',
+      limite: (heure: string | undefined) =>
+        heure
+          ? `Trop de demandes en peu de temps : réessayez après ${heure}.`
+          : 'Trop de demandes en peu de temps : réessayez dans quelques minutes.',
+      envoi: "Le service d'envoi a refusé l'e-mail : il n'est pas parti. Réessayez dans un moment.",
+      interne: (requete: string | undefined) =>
+        requete
+          ? `Erreur du serveur : réessayez dans un instant ; si elle persiste, citez l'identifiant ${requete}.`
+          : 'Erreur du serveur : réessayez dans un instant.',
+      tropGros:
+        'La demande dépasse 10 Mo, le plus que le serveur accepte : allégez ou retirez des pièces jointes, puis recommencez.',
+      inconnue: 'Le serveur a refusé la demande : réessayez dans un instant.',
+    },
+    /** Émettre en mode compte : la facture part au serveur, qui la numérote. */
+    emission: {
+      aucunNumero: "Aucun numéro n'a été consommé.",
+      emise: (numero: string) => `Facture ${numero} émise.`,
+      exemple:
+        "L'exemple n'est pas un brouillon de votre compte : modifiez-le, ou partez d'une facture vierge, pour l'émettre.",
+      nonEnregistre:
+        "Le brouillon n'est pas encore enregistré sur le serveur (voyez le bandeau) : la facture n'est pas émise.",
+      enCours:
+        "Votre saisie change encore pendant l'enregistrement : émettez une fois la frappe arrêtée.",
+      tropGros:
+        'La facture et ses pièces jointes dépassent 10 Mo, le plus que le serveur accepte : allégez ou retirez des pièces jointes, puis émettez de nouveau.',
+      incertain:
+        "La réponse du serveur n'est pas arrivée : la facture est peut-être émise. Réessayez : si elle l'a été, le nouvel essai la retrouve, sans émettre de seconde facture ni consommer d'autre numéro.",
+      session: 'Votre session a expiré : reconnectez-vous, puis émettez de nouveau.',
+      saisieChangee:
+        "Votre saisie a changé pendant l'émission : vérifiez le brouillon, puis émettez de nouveau.",
+      refus: (n: number) =>
+        n > 1
+          ? `Le serveur refuse cette facture (${n} anomalies) : voyez l'onglet Contrôle.`
+          : "Le serveur refuse cette facture : voyez l'onglet Contrôle.",
+      date: (min: string | undefined, max: string) =>
+        min
+          ? `La date d'émission doit être comprise entre le ${min} et le ${max} : la numérotation reste chronologique.`
+          : `La date d'émission ne peut pas dépasser le ${max}.`,
+      chargement:
+        "Le module du compte n'a pas pu être chargé : vérifiez votre connexion. La facture n'est pas émise.",
+    },
   },
 };
 
@@ -808,6 +874,11 @@ const en: Strings = {
     issued: (id: string) => `Invoice ${id} issued and downloaded.`,
     blocked: 'Fix the reported issues: only a compliant invoice can be downloaded.',
     failed: (message: string) => `The PDF could not be produced: ${message}`,
+    compte: {
+      title: 'Issue this invoice?',
+      body: 'The server gives it the next number in your sequence, checks it and produces its Factur-X PDF; it joins your history. An issued invoice can no longer be changed: to correct it, you will issue a credit note.',
+      confirm: 'Issue',
+    },
   },
   sections: {
     document: 'Document',
@@ -826,6 +897,7 @@ const en: Strings = {
     type: 'Document type',
     number: 'Number',
     numberHint: 'Unique, in a chronological and continuous sequence.',
+    numberAssigned: 'Assigned on issue: the server gives the next number in your sequence.',
     nextNumber: 'Next number',
     issueDate: 'Issue date',
     nature: 'Nature of the transaction',
@@ -1162,8 +1234,12 @@ const en: Strings = {
   check: {
     verdictOk: 'Compliant: ready to issue',
     verdictIssues: (n: number) => `${n} issue${n > 1 ? 's' : ''} to fix before issuing`,
+    verdictServeur: 'Refused by the server: fix it before issuing',
     sdk: 'SDK check',
     sdkDetail: 'EN 16931 model, cent-exact arithmetic, French BR-FR rules.',
+    serveur: 'Refused by the server',
+    serveurDetail:
+      'When issuing, the server found these issues in the invoice shown: fix them, then issue again.',
     noIssues: 'No issues.',
     fix: 'Fix',
     official: 'Official validators',
@@ -1424,6 +1500,57 @@ const en: Strings = {
       repli:
         'The next draft could not be opened: a blank invoice opens instead. Your other drafts are untouched.',
       reprendre: 'Resume',
+    },
+    erreurs: {
+      nonConfirme:
+        'First confirm the email address of your account: open the link in the confirmation email, then try again.',
+      suppression:
+        'Deletion of your account has been requested: cancel it to resume. You can still export your data.',
+      droits:
+        'This account has no access to any company: sign in again; if this persists, write to us.',
+      brouillonModifie:
+        'This draft was changed elsewhere since it was opened (another tab or another device): reload the saved version, or keep yours, then start again.',
+      date: 'The issue date is outside the allowed dates.',
+      doublon: (numero: string) =>
+        `Number ${numero || 'assigned'} already exists: raise the next number of your sequence, then start again.`,
+      pdfDejaDepose: 'The PDF of this invoice has already been uploaded.',
+      limite: (heure: string | undefined) =>
+        heure
+          ? `Too many requests in a short time: try again after ${heure}.`
+          : 'Too many requests in a short time: try again in a few minutes.',
+      envoi: 'The sending service refused the email: it was not sent. Try again in a while.',
+      interne: (requete: string | undefined) =>
+        requete
+          ? `Server error: try again in a moment; if it persists, quote the identifier ${requete}.`
+          : 'Server error: try again in a moment.',
+      tropGros:
+        'The request exceeds 10 MB, the most the server accepts: shrink or remove attachments, then start again.',
+      inconnue: 'The server refused the request: try again in a moment.',
+    },
+    emission: {
+      aucunNumero: 'No number was used.',
+      emise: (numero: string) => `Invoice ${numero} issued.`,
+      exemple:
+        'The sample is not a draft of your account: edit it, or start from a blank invoice, to issue it.',
+      nonEnregistre:
+        'The draft is not saved on the server yet (see the banner): the invoice is not issued.',
+      enCours: 'Your input keeps changing while saving: issue once you stop typing.',
+      tropGros:
+        'The invoice and its attachments exceed 10 MB, the most the server accepts: shrink or remove attachments, then issue again.',
+      incertain:
+        'The server’s answer did not arrive: the invoice may have been issued. Try again: if it was, the new attempt finds it, without issuing a second invoice or using another number.',
+      session: 'Your session has expired: sign in again, then issue again.',
+      saisieChangee: 'Your input changed while issuing: check the draft, then issue again.',
+      refus: (n: number) =>
+        n > 1
+          ? `The server refuses this invoice (${n} issues): see the Check tab.`
+          : 'The server refuses this invoice: see the Check tab.',
+      date: (min: string | undefined, max: string) =>
+        min
+          ? `The issue date must be between ${min} and ${max}: numbering stays chronological.`
+          : `The issue date cannot be later than ${max}.`,
+      chargement:
+        'The account module could not be loaded: check your connection. The invoice is not issued.',
     },
   },
 };

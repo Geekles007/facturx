@@ -792,7 +792,8 @@ describe.skipIf(!process.env.SUPABASE_URL)('Persistance du compte, contre la pil
         {
           uid: id,
           status: 'issued',
-          form: emise.form,
+          // Le formulaire porte le numéro attribué par le serveur, pas celui que le brouillon proposait.
+          form: { ...emise.form, id: 'F-2026-0007' },
           appearance: emise.appearance,
           summary: {
             id: 'F-2026-0007',

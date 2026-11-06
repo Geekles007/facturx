@@ -589,7 +589,9 @@ body {
 }
 .card-ui.flash,
 .field.flash,
-.toggle-row.flash {
+.toggle-row.flash,
+.panel-section.flash,
+.issue.flash {
   animation: flash 1.4s var(--ease);
 }
 @keyframes flash {

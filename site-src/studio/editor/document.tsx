@@ -20,6 +20,8 @@ export function DocumentSection() {
   const numbering = useStudio((s) => s.numbering);
   const history = useStudio((s) => s.history);
   const issued = useStudio((s) => s.ui.issued);
+  // En mode compte, le serveur attribue le numéro à l'émission : le Studio ne fait que le proposer.
+  const compte = useStudio((s) => s.ui.compte !== undefined);
   const type = DOCUMENT_TYPES.find((d) => d.value === form.typeCode);
   const next = formatNumber(
     numbering.pattern,
@@ -28,7 +30,9 @@ export function DocumentSection() {
   );
   const problems = numberProblems(form.id.trim());
   const duplicate =
-    !issued && history.some((h) => h.form.id.trim() === form.id.trim() && form.id.trim() !== '');
+    !issued &&
+    !compte &&
+    history.some((h) => h.form.id.trim() === form.id.trim() && form.id.trim() !== '');
   const warning = duplicate
     ? t.document.numberDuplicate
     : problems.includes('length')
@@ -86,7 +90,7 @@ export function DocumentSection() {
           path="id"
           span={3}
           warning={warning}
-          hint={t.document.numberHint}
+          hint={compte && !issued ? t.document.numberAssigned : t.document.numberHint}
           action={
             next !== form.id && !issued ? (
               <button
@@ -106,6 +110,7 @@ export function DocumentSection() {
               path="id"
               value={form.id}
               onValue={setNumber}
+              readOnly={compte}
               aria-invalid={invalid || undefined}
               spellcheck={false}
             />

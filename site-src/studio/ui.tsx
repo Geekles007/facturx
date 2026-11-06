@@ -186,6 +186,8 @@ interface InputProps {
   class?: string;
   placeholder?: string | undefined;
   disabled?: boolean;
+  /** Affiché et sélectionnable, mais pas modifiable (le numéro d'une facture en mode compte). */
+  readOnly?: boolean;
   autoComplete?: string;
   inputMode?: 'text' | 'numeric' | 'decimal' | 'email' | 'tel' | 'url';
   spellcheck?: boolean;
@@ -213,6 +215,7 @@ export function Input({
       data-path={path}
       placeholder={rest.placeholder}
       disabled={rest.disabled}
+      readOnly={rest.readOnly}
       maxLength={rest.maxLength}
       aria-label={rest['aria-label']}
       aria-invalid={rest['aria-invalid']}

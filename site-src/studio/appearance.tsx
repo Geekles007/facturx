@@ -534,7 +534,7 @@ export function AppearancePanel() {
         <h3>{t.appearance.logo}</h3>
         <LogoPicker />
       </section>
-      <section class="panel-section">
+      <section class="panel-section" data-field="font">
         <h3>{t.appearance.font}</h3>
         <FontPicker />
       </section>

@@ -646,24 +646,26 @@ function IssueDialog({
 }) {
   const form = useStudio((s) => s.form);
   const history = useStudio((s) => s.history);
+  // En mode compte, le serveur attribue le numéro : un numéro déjà émis n'empêche rien.
+  const compte = useStudio((s) => s.ui.compte !== undefined);
   const [busy, setBusy] = useState(false);
-  const duplicate = history.some((h) => h.form.id.trim() === form.id.trim());
+  const duplicate = !compte && history.some((h) => h.form.id.trim() === form.id.trim());
   const invoice = derived.built.invoice;
   const confirmIssue = async () => {
     if (!derived.assets) return;
     setBusy(true);
     const done = await issueInvoice(derived.assets, { record: true });
     setBusy(false);
-    if (done) {
-      countIssued();
-      onClose();
-    }
+    if (done) countIssued();
+    // En mode compte, un refus mène hors du dialogue (onglet Contrôle, date, bandeau, connexion).
+    if (done || compte) onClose();
   };
+  const phrases = compte ? t.issueDialog.compte : undefined;
   return (
     <Dialog
       open={open}
       onClose={onClose}
-      title={t.issueDialog.title(form.id)}
+      title={phrases ? phrases.title : t.issueDialog.title(form.id)}
       actions={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -675,7 +677,7 @@ function IssueDialog({
             disabled={busy || duplicate}
             onClick={confirmIssue}
           >
-            {t.issueDialog.confirm}
+            {phrases ? phrases.confirm : t.issueDialog.confirm}
           </Button>
         </>
       }
@@ -694,7 +696,7 @@ function IssueDialog({
           <dd>{formatMoney(invoice.totals.taxInclusiveAmount, invoice.currency)}</dd>
         </div>
       </dl>
-      <p>{t.issueDialog.body}</p>
+      <p>{phrases ? phrases.body : t.issueDialog.body}</p>
       {duplicate && <p class="field-issue">{t.issueDialog.duplicateNumber}</p>}
     </Dialog>
   );

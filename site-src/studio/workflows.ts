@@ -101,8 +101,20 @@ export function balanceForm(deposits: SavedInvoice[], today = isoToday()): Invoi
 /**
  * Émet la facture courante : PDF Factur-X produit, conservé et téléchargé, facture ajoutée à
  * l'historique, numérotation avancée. Refuse un numéro déjà émis.
+ *
+ * En mode compte, c'est le serveur qui émet (`compte/emission.ts`, chargé à la demande) : il
+ * attribue le numéro, valide la facture et produit son PDF. Le PDF « sans émettre » (`record`
+ * faux), qui n'enregistre rien, reste produit ici.
  */
 export async function issueInvoice(assets: Assets, options: { record: boolean }): Promise<boolean> {
+  if (options.record && store.get().ui.compte) {
+    const emission = await import('./compte/emission.js').catch(() => undefined);
+    if (!emission) {
+      toast(t.compte.emission.chargement, 'error', 9000);
+      return false;
+    }
+    return emission.emettreSurServeur();
+  }
   const { form, appearance, history, numbering } = store.get();
   const { invoice } = buildInvoice(form);
   if (options.record && history.some((h) => h.form.id.trim() === form.id.trim())) {
