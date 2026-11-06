@@ -382,11 +382,18 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
    * brouillon dans le même temps, sans frappe intercalée.
    */
   function adopter(l: LigneBrouillon): Brouillon {
+    const d = documentDeLigne(l);
+    ouvrir(d, true);
+    return d.derniere as Brouillon;
+  }
+
+  /** Le document d'une ligne lue, sans rien ouvrir. */
+  function documentDeLigne(l: LigneBrouillon): Document {
     const b: Brouillon = {
       form: depuisPortable<InvoiceForm>(l.form),
       appearance: depuisPortable<Appearance>(l.appearance),
     };
-    doc = {
+    return {
       idPrevu: l.id,
       id: l.id,
       version: l.version,
@@ -395,11 +402,18 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
       derniere: b,
       envoye: true,
     };
-    documents.set(b, doc);
-    void suivreCourant(doc);
+  }
+
+  /**
+   * `d` devient le document ouvert, tout de suite ; ses recopies locales (identifiant, miroir, vue
+   * retirée si l'éditeur montre un brouillon) partent dans l'ordre, sans être attendues.
+   */
+  function ouvrir(d: Document, retirerLaVue: boolean): void {
+    doc = d;
+    if (d.derniere) documents.set(d.derniere, d);
+    void suivreCourant(d);
     void ecrireMiroir();
-    void auMieux(local.remove('kv', cleVue));
-    return b;
+    if (retirerLaVue) void auMieux(local.remove('kv', cleVue));
   }
 
   /** Recopie `b` sans l'envoyer : la vue à part, la saisie d'un brouillon dans son miroir. */
@@ -510,7 +524,11 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
     const d = doc;
     if (d.supprime) return true;
     if (estUneVue(affiche)) return d.envoye || !d.derniere;
-    return memesObjets(d.confirme, affiche);
+    if (memesObjets(d.confirme, affiche)) return true;
+    // L'écran montre souvent des copies de ce qui a été lu (le démarrage complète le formulaire,
+    // `hydrateForm`) : même contenu que le serveur, rien à perdre. Calculé seulement ici, au moment
+    // de quitter, jamais à chaque frappe.
+    return d.surLeServeur !== undefined && canonique(corps(affiche)) === d.surLeServeur;
   }
 
   /**
@@ -545,8 +563,8 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
     }
   }
 
-  /** Rien d'ouvert dans ce navigateur : le brouillon modifié le plus récemment, s'il y en a un. */
-  async function plusRecent(): Promise<Brouillon | undefined> {
+  /** Le brouillon modifié le plus récemment, lu sans rien ouvrir. */
+  async function lirePlusRecent(): Promise<LigneBrouillon | undefined> {
     const r = await sb
       .from('brouillons')
       .select('id, form, appearance, version')
@@ -555,42 +573,45 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
       .limit(1)
       .maybeSingle<LigneBrouillon>();
     if (r.error) throw echec(r);
-    if (r.data) return adopter(r.data);
-    doc = documentNeuf();
-    await suivreCourant(doc);
-    return undefined;
+    return r.data ?? undefined;
   }
 
   /**
-   * Ce qui s'affiche au démarrage. Une saisie que le serveur n'a pas reçue désigne le document
+   * Ce qui s'affiche au démarrage, lu sans rien changer ; `appliquer` l'ouvre ensuite, sans attendre
+   * (l'appelant peut ainsi renoncer, si l'éditeur a changé pendant la lecture, ou si une lecture a
+   * échoué : rien n'est ouvert à moitié). Une saisie que le serveur n'a pas reçue désigne le document
    * ouvert, quoi que dise `brouillon-courant` : le magasin la renvoie aussitôt (`saisieEnAttente`).
    * Une vue gardée (facture émise, exemple) s'affiche de nouveau ; sinon le brouillon courant, ou le
    * plus récent du serveur.
    */
-  async function lireBrouillon(): Promise<Brouillon | undefined> {
+  async function preparerBrouillon(): Promise<{
+    brouillon: Brouillon | undefined;
+    appliquer: () => void;
+  }> {
     const [id, miroir, vue] = await Promise.all([
       local.get<string>(cleCourant).catch(() => undefined),
       local.get<Miroir>(cleMiroir).catch(() => undefined),
       local.get<Brouillon>(cleVue).catch(() => undefined),
     ]);
     if (miroir && !miroir.envoye) {
-      doc = documentDu(miroir);
-      if (doc.derniere) documents.set(doc.derniere, doc);
-      await verifier(doc);
-      await suivreCourant(doc);
-      await ecrireMiroir();
-      return vue ?? doc.derniere;
+      const d = documentDu(miroir);
+      await verifier(d);
+      return { brouillon: vue ?? d.derniere, appliquer: () => ouvrir(d, false) };
     }
     if (vue) {
       // Le brouillon courant reste celui de la liste ; sa version se lira à sa réouverture.
-      doc = id ? { idPrevu: crypto.randomUUID(), id, envoye: true } : documentNeuf();
-      return vue;
+      const d = id ? { idPrevu: crypto.randomUUID(), id, envoye: true } : documentNeuf();
+      return {
+        brouillon: vue,
+        appliquer: () => {
+          doc = d;
+        },
+      };
     }
-    if (id) {
-      const l = await lireLigne(id);
-      if (l) return adopter(l);
-    }
-    return plusRecent();
+    const l = (id ? await lireLigne(id) : undefined) ?? (await lirePlusRecent());
+    if (!l) return { brouillon: undefined, appliquer: () => ouvrir(documentNeuf(), false) };
+    const d = documentDeLigne(l);
+    return { brouillon: d.derniere, appliquer: () => ouvrir(d, true) };
   }
 
   /** Le brouillon courant tel que le serveur l'a, sans rien changer : pour la sauvegarde. */
@@ -730,7 +751,11 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
         case 'numbering':
           return (await lireNumerotation()) as T;
         case 'draft':
-          return (await enFile(lireBrouillon)) as T | undefined;
+          return (await enFile(async () => {
+            const lecture = await preparerBrouillon();
+            lecture.appliquer();
+            return lecture.brouillon;
+          })) as T | undefined;
         default:
           return (await lireLocal())[key] as T | undefined;
       }
@@ -956,9 +981,13 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
         local.get<Miroir>(cleMiroir).catch(() => undefined),
         local.get<Brouillon>(cleVue).catch(() => undefined),
       ]);
-      if (miroir) doc = documentDu(miroir);
+      // Le document ouvert est celui du miroir, ou aucun : jamais un brouillon lu à moitié.
+      doc = miroir ? documentDu(miroir) : documentNeuf();
+      if (doc.derniere) documents.set(doc.derniere, doc);
       return vue ?? (miroir ? saisieDu(miroir) : undefined);
     },
+
+    preparerBrouillon: () => enFile(preparerBrouillon),
 
     brouillonCourant: () =>
       doc.id !== undefined && doc.version !== undefined && !doc.supprime
@@ -1030,12 +1059,11 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
     abandonnerSaisie: () =>
       enFile(async () => {
         const d = doc;
-        // La saisie abandonnée ne repart plus, même rejouée.
+        // La lecture d'abord : si elle échoue, rien n'a changé (la saisie reste, avec son bandeau).
+        const l = d.id !== undefined ? await lireLigne(d.id) : undefined;
+        // Puis, sans rien attendre : la saisie abandonnée ne repart plus, même rejouée.
         d.supprime = true;
-        if (d.id !== undefined) {
-          const l = await lireLigne(d.id);
-          if (l) return adopter(l);
-        }
+        if (l) return adopter(l);
         // Jamais enregistré (ou disparu) : plus rien d'ouvert. Les recopies locales ne sont pas
         // attendues : l'appelant change l'éditeur dans le même temps.
         doc = documentNeuf();

@@ -684,6 +684,8 @@ const fr = {
         "Le serveur du compte ne répond pas : vos factures, clients et réglages n'ont pas pu être lus. Votre saisie reste dans ce navigateur, et tout reprendra dès qu'il répondra.",
       injoignableVerrou:
         "Le serveur du compte ne répond pas : l'entreprise et la numérotation affichées ne sont pas les vôtres, elles ne se modifient pas avant son retour.",
+      injoignableFichier:
+        "Le serveur du compte ne répond pas : ce fichier ne peut pas y être déposé maintenant. Réessayez dès qu'il répondra.",
       rechargerPage: 'Recharger la page',
       brouillonRefuse: (cause: string) =>
         `Le serveur refuse ce brouillon (${cause}) : votre saisie n'est pas enregistrée, mais elle reste ici. Corrigez-la, ou abandonnez-la.`,
@@ -1377,6 +1379,8 @@ const en: Strings = {
         'The account server is not responding: your invoices, customers and settings could not be read. Your work stays in this browser, and everything resumes as soon as it responds.',
       injoignableVerrou:
         'The account server is not responding: the company and numbering shown are not yours, and they cannot be changed until it is back.',
+      injoignableFichier:
+        'The account server is not responding: this file cannot be uploaded now. Try again as soon as it responds.',
       rechargerPage: 'Reload the page',
       brouillonRefuse: (cause: string) =>
         `The server refuses this draft (${cause}): what you typed is not saved, but it stays here. Correct it, or discard it.`,

@@ -4,20 +4,27 @@
  * compte (un échec s'y voit et l'écriture repart, comme le reste : `conserver`).
  */
 
+import { t } from './i18n.js';
 import { storage } from './storage.js';
-import { conserver, estEnAttente, store } from './store.js';
+import { conserver, estEnAttente, store, toast } from './store.js';
 
 const memory = new Map<string, Uint8Array>();
 
 /**
  * Garde le fichier pour la session et le conserve. Avec un compte, rend faux si le serveur le
- * refuse (`conserver` a dit pourquoi) : l'appelant ne l'applique pas. Hors ligne ou session
- * expirée, il attend et repartira : il compte comme gardé. Sans compte, la copie en mémoire suffit
- * à la session, comme toujours.
+ * refuse (`conserver` a dit pourquoi), ou s'il n'a pas répondu au démarrage (`injoignable` :
+ * rien n'y part avant son retour) : l'appelant ne l'applique pas. Hors ligne ou session expirée, le
+ * dépôt attend et repart au retour du réseau ou après la reconnexion : il compte comme gardé. Sans
+ * compte, la copie en mémoire suffit à la session, comme toujours.
  */
 export async function putFile(key: string, bytes: Uint8Array): Promise<boolean> {
   memory.set(key, bytes);
-  if (store.get().ui.storage !== 'ok') return true;
+  const { storage: etat, compte } = store.get().ui;
+  if (compte && etat === 'injoignable') {
+    toast(t.compte.conservation.injoignableFichier, 'error');
+    return false;
+  }
+  if (etat !== 'ok') return true;
   const cle = `files:${key}`;
   if (await conserver(cle, () => storage.setFile(key, bytes))) return true;
   return store.get().ui.compte === undefined || estEnAttente(cle);

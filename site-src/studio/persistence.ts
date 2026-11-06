@@ -93,8 +93,16 @@ export interface ConservationDuCompte {
   quitterBrouillon(affiche: unknown): boolean;
   /** La saisie du brouillon ouvert que le serveur n'a pas encore reçue, s'il y en a une. */
   saisieEnAttente(): unknown;
-  /** Le brouillon gardé dans ce navigateur, sans rien demander au serveur (démarrage hors ligne). */
+  /**
+   * Le brouillon gardé dans ce navigateur, sans rien demander au serveur (démarrage hors ligne) ;
+   * le document ouvert devient le sien, ou aucun.
+   */
   brouillonLocal(): Promise<unknown>;
+  /**
+   * Ce que `get('draft')` rendrait, lu sans rien changer ; `appliquer()` ouvre ce document, tout de
+   * suite. Pour qui doit pouvoir renoncer après la lecture (l'éditeur a changé entre-temps).
+   */
+  preparerBrouillon(): Promise<{ brouillon: unknown; appliquer: () => void }>;
   /**
    * Renonce à la saisie du brouillon ouvert que le serveur refuse : le miroir et ce qui attendait
    * s'en vont. Rend la dernière version enregistrée, ou rien si le brouillon ne l'a jamais été.

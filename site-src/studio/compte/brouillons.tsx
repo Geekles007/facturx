@@ -227,13 +227,25 @@ export function Brouillons({ open, onClose }: { open: boolean; onClose: () => vo
       if (!confirm(phrases.supprimerConfirm(b.numero || t.app.untitled))) return;
       const ouvert = p.brouillonCourant()?.id === b.id;
       await p.supprimerBrouillon(b.id);
-      const restants = await p.brouillons();
-      setListe(restants);
-      if (!ouvert) return;
-      // L'éditeur ne garde pas le brouillon supprimé : il passe au plus récent des autres, ou à
-      // une facture vierge s'il n'en reste aucun (ou si le suivant a disparu entre-temps).
-      const suivant = restants[0] ? await basculerVers(p, restants[0].id) : undefined;
-      if (suivant === undefined) await nouveau();
+      if (!ouvert) {
+        setListe(await p.brouillons());
+        return;
+      }
+      // L'éditeur ne garde pas le brouillon supprimé (ce qu'on y taperait ne partirait nulle part) :
+      // il passe au plus récent des autres, ou à une facture vierge s'il n'en reste aucun, si le
+      // suivant a disparu entre-temps, ou si la liste ne se lit pas (réseau).
+      let suivant: boolean | undefined;
+      try {
+        const restants = await p.brouillons();
+        setListe(restants);
+        suivant = restants[0] ? await basculerVers(p, restants[0].id) : undefined;
+      } catch {
+        suivant = undefined;
+      }
+      if (!suivant) {
+        const { company, numbering, appearance } = store.get();
+        await startDraft(newInvoiceForm(company, numbering), appearance);
+      }
     });
 
   const p = open ? conservation() : undefined;

@@ -212,7 +212,12 @@ function FontPicker() {
       };
       if (boldBytes) {
         customFont.boldKey = `font-${uid()}`;
-        if (!(await putFile(customFont.boldKey, boldBytes))) return;
+        if (!(await putFile(customFont.boldKey, boldBytes))) {
+          // La face normale, déposée pour rien, ne reste pas sur le serveur (même clé : si son
+          // dépôt attend encore le réseau, c'est sa suppression qui repartira à sa place).
+          void conserver(`files:${regularKey}`, () => storage.remove('files', regularKey));
+          return;
+        }
       }
       setAppearance({ font: 'custom', customFont });
       setRegular(undefined);

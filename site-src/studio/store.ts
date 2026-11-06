@@ -271,10 +271,16 @@ export interface Loaded {
   history: SavedInvoice[];
 }
 
-export async function loadPersisted(): Promise<Loaded | undefined> {
+/**
+ * Relit ce qui est conservé. `{ brouillon: false }` laisse le brouillon de côté (la reprise après un
+ * serveur injoignable le lit à part, pour pouvoir renoncer à l'ouvrir).
+ */
+export async function loadPersisted(
+  options: { brouillon?: boolean } = {},
+): Promise<Loaded | undefined> {
   if (!(await storage.available())) return undefined;
   const [draft, company, numbering, clients, products, history] = await Promise.all([
-    storage.get<Loaded['draft']>(KEYS.draft),
+    options.brouillon === false ? undefined : storage.get<Loaded['draft']>(KEYS.draft),
     storage.get<CompanyProfile>(KEYS.company),
     storage.get<Numbering>(KEYS.numbering),
     storage.list<ClientRecord>('clients'),
@@ -349,6 +355,10 @@ export function oublierLeBrouillonRefuse(): void {
   suivi?.oublierLeBrouillonRefuse();
   ui({ brouillonRefuse: undefined, conflit: false });
 }
+
+/** Une facture émise ou l'exemple affichés : une vue, pas un brouillon. */
+const estUneVue = (draft: NonNullable<Loaded['draft']>): boolean =>
+  draft.issued !== undefined || draft.sample === true;
 
 /** Le brouillon tel qu'il s'enregistre sous `draft`. */
 function brouillonDe(s: StudioState): NonNullable<Loaded['draft']> {
@@ -543,8 +553,11 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
     ) {
       // Rien n'a été lu du serveur : l'entreprise et la numérotation affichées sont celles par
       // défaut, et les enregistrer remplacerait les vraies. Elles ne changent pas avant son retour.
-      vu = avant;
-      store.set({ company: avant.company, numbering: avant.numbering });
+      // De nouveaux objets, pour que les onglets ouverts se redessinent et effacent la frappe.
+      const company = { ...avant.company };
+      const numbering = { ...avant.numbering };
+      vu = { ...avant, company, numbering };
+      store.set({ company, numbering });
       toast(t.compte.conservation.injoignableVerrou, 'error');
       return;
     }
@@ -577,38 +590,50 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
    */
   let reprise: Promise<void> | undefined;
   const reprendre = (): Promise<void> => {
-    if (state.ui.storage !== 'injoignable') return Promise.resolve();
+    if (state.ui.storage !== 'injoignable' || !miroir) return Promise.resolve();
     if (reprise) return reprise;
     const essai = (async () => {
-      const lu = await loadPersisted().catch(() => undefined);
-      if (!lu || state.ui.storage !== 'injoignable') return;
-      const montre = brouillonDe(state);
-      const vue = montre.issued !== undefined || montre.sample === true;
-      const brouillonServeur = vue ? lu.draft : undefined;
+      const vue = estUneVue(brouillonDe(state));
+      // Tapé pendant l'absence du serveur ? La saisie rejoint d'abord son document (celui du
+      // miroir), avant toute lecture : son envoi passera par la vérification de version.
+      const tapeAvant =
+        !vue && (state.form !== previous.form || state.appearance !== previous.appearance);
+      if (tapeAvant) await garder();
+      const avant = { form: state.form, appearance: state.appearance };
+      // Le brouillon est lu sans être ouvert : si une lecture échoue, rien ne change.
+      const [lu, lecture] = await Promise.all([
+        loadPersisted({ brouillon: false }),
+        miroir.preparerBrouillon(),
+      ]).catch(() => [undefined, undefined] as const);
+      if (!lu || !lecture || state.ui.storage !== 'injoignable') return;
+      // Rien tapé : l'écran prend le brouillon du serveur (ou la saisie en attente du miroir).
+      // Tapé pendant la lecture : la saisie reste à l'écran, sur son document d'avant la lecture.
+      const tapePendant = state.form !== avant.form || state.appearance !== avant.appearance;
+      const ecranGarde = tapeAvant || tapePendant;
+      if (!tapePendant) lecture.appliquer();
+      const serveur = ecranGarde ? undefined : (lecture.brouillon as Loaded['draft']);
       store.set((s) => ({
         company: fill(defaultCompany(), lu.company),
         numbering: fill(defaultNumbering(), lu.numbering),
         clients: lu.clients,
         products: lu.products,
         history: lu.history,
-        ...(brouillonServeur
+        ...(serveur
           ? {
-              form: hydrateForm(brouillonServeur.form),
-              appearance: fill(defaultAppearance(), brouillonServeur.appearance),
+              form: hydrateForm(serveur.form),
+              appearance: fill(defaultAppearance(), serveur.appearance),
             }
           : {}),
         ui: {
           ...s.ui,
           storage: 'ok',
-          ...(brouillonServeur
-            ? { issued: brouillonServeur.issued, sample: brouillonServeur.sample === true }
-            : {}),
+          ...(serveur ? { issued: serveur.issued, sample: serveur.sample === true } : {}),
         },
       }));
       previous = state;
-      if (!vue) void soumettre(...ecritureDuBrouillon(state));
-      const aRejouer = miroir?.saisieEnAttente();
-      if (vue && aRejouer !== undefined)
+      if (ecranGarde) void soumettre(...ecritureDuBrouillon(state));
+      const aRejouer = miroir.saisieEnAttente();
+      if (!ecranGarde && aRejouer !== undefined)
         void soumettre('draft', { faire: () => storage.set(KEYS.draft, aRejouer), locale: false });
     })().finally(() => {
       if (reprise === essai) reprise = undefined;
@@ -641,12 +666,23 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
     async enregistrerMaintenant() {
       if (timerMiroir !== undefined) await garder();
       if (state.ui.storage !== 'ok') return state.ui.storage !== 'injoignable';
+      // L'écran n'a-t-il rien de neuf pour `flush` (rechargement, brouillon rouvert, échec réglé
+      // ailleurs) ? Il repart quand même, une fois : la conservation reconnaît alors ces objets-là
+      // pour ce que le serveur a, sans rien envoyer si le contenu est le même.
+      const rienDeNeuf =
+        state.form === previous.form &&
+        state.appearance === previous.appearance &&
+        state.ui.issued === previous.ui.issued &&
+        state.ui.sample === previous.ui.sample;
       await flush();
       await rejouer();
-      // Refusé plus tôt (conflit, refus) puis peut-être réglé hors du magasin (« garder la
-      // mienne ») : le brouillon affiché repart une fois, et son issue fait foi.
       const [cle, e] = ecritureDuBrouillon(state);
-      if (enEchec.has('draft') && !enAttente.has('draft') && cle === 'draft')
+      if (
+        miroir &&
+        cle === 'draft' &&
+        !enAttente.has('draft') &&
+        (rienDeNeuf || enEchec.has('draft'))
+      )
         await soumettre(cle, e);
       return !enEchec.has('draft');
     },

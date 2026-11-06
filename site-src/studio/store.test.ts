@@ -94,6 +94,7 @@ function fausseConservation() {
     },
     saisieEnAttente: () => etat.enAttente,
     brouillonLocal: async () => undefined,
+    preparerBrouillon: async () => ({ brouillon: etat.serveur.draft, appliquer: () => undefined }),
     abandonnerSaisie: async () => undefined,
   };
   return { p, ecrites, gardes, etat };
@@ -508,6 +509,7 @@ describe('course : frappe pendant le changement de document', () => {
       },
       saisieEnAttente: () => undefined,
       brouillonLocal: async () => undefined,
+      preparerBrouillon: async () => ({ brouillon: undefined, appliquer: () => undefined }),
       abandonnerSaisie: async () => undefined,
     };
     demarrer(p, { options: { delai: 1000 } });
@@ -545,8 +547,11 @@ describe('brouillon refusé par le serveur', () => {
       t.compte.conservation.enAttente.refus('unsupported Unicode escape sequence'),
     );
 
-    // « Abandonner cette saisie » : plus rien n'attend, le Studio ne signale plus rien.
+    // « Abandonner cette saisie » : plus rien n'attend, le Studio ne signale plus rien, et
+    // l'éditeur revient à la dernière version enregistrée (que le serveur accepte).
     oublierLeBrouillonRefuse();
+    store.set({ form: blankForm('2026-11-04') });
+    etat.refus = undefined;
     expect(store.get().ui.brouillonRefuse).toBeUndefined();
     expect(await quitterLeBrouillon()).toBe(true);
   });
@@ -564,7 +569,9 @@ describe('serveur injoignable au démarrage', () => {
     store.set((s) => ({
       company: { ...s.company, defaults: { ...s.company.defaults, vat: 'S:10' } },
     }));
-    expect(store.get().company).toBe(entreprise);
+    // Remise à l'identique, mais dans un nouvel objet : les onglets ouverts se redessinent.
+    expect(store.get().company).toEqual(entreprise);
+    expect(store.get().company).not.toBe(entreprise);
     expect(store.get().ui.toast?.text).toBe(t.compte.conservation.injoignableVerrou);
     expect(await startDraft({ ...blankForm('2026-11-04'), id: 'F-autre' })).toBe(false);
     expect(store.get().ui.toast?.text).toBe(t.compte.conservation.enAttente.injoignable);
@@ -609,11 +616,49 @@ describe('putFile', () => {
     expect(await putFile('font-2', Uint8Array.of(1))).toBe(true);
   });
 
+  it('serveur injoignable : refusé, avec un message, rien d’appliqué ni de perdu en silence', async () => {
+    const { putFile } = await import('./files.js');
+    const { p, ecrites } = fausseConservation();
+    demarrer(p);
+    ui({ storage: 'injoignable' });
+    expect(await putFile('logo-1', Uint8Array.of(1))).toBe(false);
+    expect(store.get().ui.toast?.text).toBe(t.compte.conservation.injoignableFichier);
+    expect(ecrites).toEqual([]);
+  });
+
   it('sans compte, la copie en mémoire suffit, comme avant', async () => {
     const { putFile } = await import('./files.js');
     const { p, etat } = fausseConservation();
     etat.refus = new Error('quota');
     demarrer(p, { sansCompte: true });
     expect(await putFile('logo-1', Uint8Array.of(1))).toBe(true);
+  });
+});
+
+describe('après un rechargement', () => {
+  it('sans rien taper, changer de document passe (l’écran montre des copies de ce qui a été lu)', async () => {
+    const { p, ecrites, etat } = fausseConservation();
+    // La conservation a confirmé les objets qu'elle a lus ; l'écran en montre des copies complétées.
+    const lu = { ...blankForm('2026-11-04'), id: 'F-lu' };
+    etat.confirme = { form: lu, appearance: {} };
+    utiliser(p);
+    store.set((s) => ({
+      form: structuredClone(lu),
+      ui: {
+        ...s.ui,
+        storage: 'ok',
+        compte: COMPTE,
+        conflit: false,
+        reseau: 'ok',
+        issued: undefined,
+        sample: false,
+        toast: undefined,
+      },
+    }));
+    arreter = startPersistence({ delai: 1000 });
+    expect(await startDraft({ ...blankForm('2026-11-04'), id: 'F-copie' })).toBe(true);
+    // Le brouillon affiché est reparti une fois : la conservation reconnaît désormais ces objets.
+    expect(brouillonsEcrits(ecrites)).toHaveLength(1);
+    expect(etat.nouveaux).toBe(1);
   });
 });
