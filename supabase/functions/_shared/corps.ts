@@ -84,13 +84,21 @@ export const VIRGULES_MAX = 150_000;
  * font manquer de mémoire `JSON.parse` lui-même. Un worker sert plusieurs requêtes : celui qui meurt
  * emporte les autres.
  *
- * Les plafonds sont choisis par la mesure, non par la taille des corps. La pire forme qu'ils admettent
- * (tests/decodage-large.ts : 99 997 `{"$bytes":"<16 caractères>"}` et 50 004 entrées de clé et de
- * chaîne, soit les deux plafonds atteints) traverse le décodage, le contrôle des textes et la
- * sérialisation avec un tas final de 64 Mio, 38 Mio après ramasse-miettes (160 Mio au plus, asserté),
- * sous 256 Mo. Seules, les formes pèsent, à leur plafond : de 45 à 66 Mio pour 100 000 conteneurs
- * `{"$bytes":…}`, 73 Mio pour 150 000 entrées de clé et de chaîne ; à 300 000, de 138 à 154 Mio et
- * 145 Mio.
+ * Les plafonds sont choisis par la mesure, non par la taille des corps. La pire forme admise connue
+ * (tests/decodage-large.ts) atteint les quatre limites à la fois : 10 Mio, 64 niveaux (enfouie sous 62
+ * tableaux), 100 000 conteneurs (presque tous des `{"$bytes":"<16 caractères>"}`), 150 000 virgules
+ * (entrées de clé et de chaîne, et une chaîne de remplissage), et un caractère non latin dans la clé
+ * racine, qui met le texte reçu et le texte sérialisé à deux octets par caractère. Elle traverse le
+ * décodage, le contrôle des textes et la sérialisation avec 74 Mio de tas vivant (après un
+ * ramasse-miettes forcé) et 128 Mio au plus à la fin ; le plus petit tas sous lequel elle passe est de
+ * 88 Mio, pour les 256 Mo des fonctions hébergées. Le test exige moins de 140 Mio vivants et 200 Mio à
+ * la fin. Un balayage de 62 formes (profondeurs, échelles de 40 à 100 % des plafonds, caractères
+ * échappés, octets, chaînes et clés longues) n'en trouve pas de plus lourde : au plus 74 Mio vivants.
+ *
+ * La sérialisation est compacte (`serialiser`) : indentée de deux espaces, à 64 niveaux, 350 000
+ * lignes portent jusqu'à 128 espaces, près de 90 Mio de texte que `jsonb` jette, et la même forme
+ * montait à 160 Mio vivants (165 Mio au plus petit tas qui passe). `jsonb` stocke les deux textes à
+ * l'identique.
  *
  * La marge est large pour une facture réelle : une ligne de la facture d'essai compte 2 conteneurs et
  * 8,5 virgules ; en comptant 5 conteneurs et 25 virgules par ligne, une facture tient jusqu'à 6 000
@@ -288,8 +296,9 @@ export function exigerAdmissible(
 }
 
 /**
- * `valeur` en JSON portable : le texte que l'appelant garde pour l'enregistrer en `jsonb`. Sérialisé
- * une fois, ici, sous `try` : `toPortableJson` lève (`RangeError`) au-delà de quelque 2 700 niveaux,
+ * `valeur` en JSON portable, compact : le texte que l'appelant garde pour l'enregistrer en `jsonb`, qui
+ * jette l'indentation (voir `examinerJson` pour ce qu'elle coûte en mémoire). Sérialisé une fois, ici,
+ * sous `try` : `toPortableJson` lève (`RangeError`) au-delà de quelque 2 700 niveaux,
  * et le même appel fait plus tard, dans la transaction, serait une erreur du serveur après le dépôt du
  * PDF. Un corps reçu n'en approche pas (`lireObjetPortable` plafonne la profondeur à
  * `PROFONDEUR_MAX`), mais la facture validée peut porter ce que le SDK laisse passer : ce n'est
@@ -298,7 +307,7 @@ export function exigerAdmissible(
  */
 export function serialiser(valeur: unknown, path: string, code: string, message: string): string {
   try {
-    return toPortableJson(valeur);
+    return toPortableJson(valeur, { compact: true });
   } catch {
     throw anomalies(
       [

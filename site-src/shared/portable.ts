@@ -19,12 +19,17 @@ export function fromBase64(text: string): Uint8Array {
   return out;
 }
 
-/** JSON qui transporte des `Uint8Array` (pièces jointes, logo, polices) en base64 balisé. */
-export function toPortableJson(value: unknown): string {
+/**
+ * JSON qui transporte des `Uint8Array` (pièces jointes, logo, polices) en base64 balisé. Indenté de deux
+ * espaces, lisible dans une sauvegarde du Studio ; `compact` : sans indentation ni retour à la ligne,
+ * pour ce qui n'est pas lu mais stocké (les Edge Functions l'écrivent en `jsonb`, qui jette l'indentation
+ * : à 64 niveaux, elle pèse des dizaines de Mio).
+ */
+export function toPortableJson(value: unknown, options: { compact?: boolean } = {}): string {
   return JSON.stringify(
     value,
     (_, v) => (v instanceof Uint8Array ? { $bytes: toBase64(v) } : v),
-    2,
+    options.compact ? undefined : 2,
   );
 }
 

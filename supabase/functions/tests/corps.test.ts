@@ -14,7 +14,7 @@ import {
   serialiser,
   VIRGULES_MAX,
 } from '../_shared/corps.ts';
-import { toPortableJson } from '../_vendor/shared/portable.ts';
+import { fromPortableJson, toPortableJson } from '../_vendor/shared/portable.ts';
 
 /** Un corps envoyé par morceaux, sans `content-length`. */
 function parMorceaux(morceaux: string[]): Request {
@@ -157,11 +157,15 @@ Deno.test('lireObjetPortable : les guillemets échappés et les barres obliques 
   assertEquals(lireObjetPortable(`{"a":"${BARRE.repeat(3)}""}`, 'message').a, `${BARRE}"`);
 });
 
-Deno.test('lireObjetPortable : sous 256 Mo, les corps de 10 Mio qui épuiseraient le tas sont refusés, et la pire forme admise traverse tout le chemin sous 160 Mio', async () => {
+Deno.test('lireObjetPortable : sous 256 Mo, les corps de 10 Mio qui épuiseraient le tas sont refusés, et la pire forme admise connue traverse tout le chemin à moins de 140 Mio vivants', async () => {
   // `JSON.parse` et son réviseur coûtent bien plus que le texte : un worker qui meurt de mémoire
   // emporte les requêtes des autres. Un processus à part, au tas plafonné. Les plafonds sont choisis
-  // par cette mesure : la pire forme qu'ils admettent (conteneurs `{"$bytes":""}` et entrées de clé
-  // et de chaîne, tous deux à leur plafond) doit finir sous 160 Mio, décodée, contrôlée et sérialisée.
+  // par cette mesure. La pire forme admise connue (decodage-large.ts : 10 Mio, 64 niveaux, 100 000
+  // conteneurs et 150 000 virgules, un caractère non latin dans la clé racine, une chaîne de
+  // remplissage) est décodée, contrôlée et sérialisée (compacte : l'indentation de 2 espaces, à 64
+  // niveaux, y ajoutait près de 90 Mio de texte que `jsonb` jette). Le tas vivant, après un
+  // ramasse-miettes forcé, est la mesure stable : sous 140 Mio. Le tas à la fin, sans ramasse-miettes,
+  // dépend du moment des collectes : il reste sous 200 Mio.
   const chemin = (nom: string) => decodeURIComponent(new URL(nom, import.meta.url).pathname);
   const sortie = await new Deno.Command(Deno.execPath(), {
     args: [
@@ -184,11 +188,13 @@ Deno.test('lireObjetPortable : sous 256 Mo, les corps de 10 Mio qui épuiseraien
     chaines_de_seize: 422,
     ouvrants: 422,
   });
-  // La forme mesurée est bien la pire admise : elle atteint les deux plafonds.
+  // La forme mesurée atteint les quatre limites : profondeur, conteneurs, virgules et 10 Mio.
   assertEquals(resultat.pire.conteneurs, OUVRANTS_MAX);
   assertEquals(resultat.pire.virgules, VIRGULES_MAX);
-  assert(resultat.pire.tas_Mio < 160, `tas final : ${resultat.pire.tas_Mio} Mio`);
-  assert(resultat.pire.vivant_Mio < 160, `tas vivant : ${resultat.pire.vivant_Mio} Mio`);
+  assertEquals(resultat.pire.profondeur, PROFONDEUR_MAX);
+  assert(resultat.pire.taille_Mio >= 9.9, `taille : ${resultat.pire.taille_Mio} Mio`);
+  assert(resultat.pire.vivant_Mio < 140, `tas vivant : ${resultat.pire.vivant_Mio} Mio`);
+  assert(resultat.pire.tas_Mio < 200, `tas final : ${resultat.pire.tas_Mio} Mio`);
 });
 
 Deno.test('cheminInadmissible : un texte propre, des paires de substituts valides, des octets', () => {
@@ -253,7 +259,12 @@ Deno.test('cheminInadmissible : la mémoire suit la profondeur, non la largeur (
 
 Deno.test('serialiser : le JSON portable de la valeur ; trop imbriquée, 422 ANOMALIES sous le chemin donné', async () => {
   const valeur = { a: [1, 'é'], pdf: Uint8Array.of(1, 2, 3) };
-  assertEquals(serialiser(valeur, 'form', 'CORPS', 'refusé'), toPortableJson(valeur));
+  // Compacte : l'indentation ne sert à rien en `jsonb`, et à 64 niveaux elle pèse des dizaines de Mio.
+  const texte = serialiser(valeur, 'form', 'CORPS', 'refusé');
+  assertEquals(texte, toPortableJson(valeur, { compact: true }));
+  assert(!texte.includes('\n'), texte);
+  // La même valeur que l'écriture indentée (celle des sauvegardes du Studio) une fois relue.
+  assertEquals(fromPortableJson(texte), fromPortableJson(toPortableJson(valeur)));
 
   // `toPortableJson` (un remplaçant par nœud) lève bien avant le JSON ordinaire : la lecture du corps
   // en admet davantage que l'écriture.

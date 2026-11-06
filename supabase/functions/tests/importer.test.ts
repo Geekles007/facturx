@@ -245,6 +245,32 @@ Deno.test('form, appearance et facture sont stockés en objets jsonb, sans être
   assertEquals(ligne.appearance, appearance);
 });
 
+Deno.test('jsonb : l’écriture compacte stocke exactement ce que l’écriture indentée stockait', async () => {
+  const compte = await creerCompte();
+  const pdf = await pdfDe(factureLocale('F-2025-0042', '2025-03-14', 3));
+  const form = {
+    note: 'é€🙂',
+    lignes: [{ a: 1.5, b: null, c: [true, false] }],
+    vide: {},
+    'clé 🙂': 'x',
+  };
+  const appearance = { ...apparenceDeTest(), footer: 'Merci — é€\n"citation"\\' };
+  const { status, corps } = await importer(compte, pdf, { form, appearance });
+  assertEquals(status, 201);
+
+  // Ce que les trois colonnes auraient reçu de `toPortableJson` indenté, la sérialisation d'avant,
+  // comparé par Postgres lui-même, en `jsonb`.
+  const lue = (await extractInvoice(pdf, { validate: false }))?.invoice;
+  const [ligne] = await base(
+    (sql) => sql`
+    select invoice = ${toPortableJson(lue)}::text::jsonb as facture,
+           form = ${toPortableJson(form)}::text::jsonb as formulaire,
+           appearance = ${toPortableJson(appearance)}::text::jsonb as apparence
+      from factures where id = ${corps.id}`,
+  );
+  assertEquals(ligne, { facture: true, formulaire: true, apparence: true });
+});
+
 Deno.test('numéro déjà importé : 409 DOUBLON, une seule ligne, un seul PDF', async () => {
   const compte = await creerCompte();
   const pdf = await pdfDe(factureLocale('F-2025-0042'));
