@@ -6,9 +6,12 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { RENDER_LABELS } from 'facturx-sdk/pdf';
 import { expect, test } from 'vitest';
 import { FONT_FAMILIES } from '../studio/fonts.js';
+import { defaultAppearance } from '../studio/library.js';
 import { FICHIERS_POLICES } from './polices.js';
+import { labelsFor } from './rendu.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -22,6 +25,23 @@ test('rendu.ts n’importe que facturx-sdk/pdf', () => {
     ...readFileSync(join(here, 'rendu.ts'), 'utf8').matchAll(/from\s+'([^']+)'/g),
   ].map((m) => m[1]);
   expect(new Set(imports)).toEqual(new Set(['facturx-sdk/pdf']));
+});
+
+test('labelsFor ne renomme que les libellés renommables, jamais une mention ni la pagination', () => {
+  // Une apparence lue en base ou reçue par une Edge Function peut porter n'importe quelle clé.
+  const labels = {
+    seller: 'Prestataire',
+    page: 'Page',
+    invoice: 'Titre',
+    vatOnDebits: 'Rien',
+    inconnu: 'x',
+  };
+  const table = labelsFor({ ...defaultAppearance(), labels });
+  expect(table.seller).toBe('Prestataire');
+  expect(table.page).toBe(RENDER_LABELS.fr.page);
+  expect(table.invoice).toEqual(RENDER_LABELS.fr.invoice);
+  expect(table.vatOnDebits).toBe(RENDER_LABELS.fr.vatOnDebits);
+  expect(table).not.toHaveProperty('inconnu');
 });
 
 test('chaque famille du Studio a ses fichiers dans FICHIERS_POLICES', () => {

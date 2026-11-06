@@ -9,6 +9,7 @@
 
 import type { RenderDisplay, RenderStyle, RenderTemplate } from 'facturx-sdk/pdf';
 import { formatNumber, type Numbering, nextRank } from '../shared/numerotation.js';
+import type { LIBELLES_RENOMMABLES } from '../shared/rendu.js';
 import {
   addDays,
   blankForm,
@@ -27,18 +28,8 @@ import {
 
 // ---------- apparence ----------
 
-export type LabelKey =
-  | 'seller'
-  | 'buyer'
-  | 'designation'
-  | 'quantity'
-  | 'unitPrice'
-  | 'vat'
-  | 'netAmount'
-  | 'amountDue'
-  | 'paymentTerms'
-  | 'notes'
-  | 'scanToPay';
+/** Un libellé renommable : la liste est partagée avec le rendu du serveur (`shared/rendu.ts`). */
+export type LabelKey = (typeof LIBELLES_RENOMMABLES)[number];
 
 export interface Appearance {
   template: RenderTemplate;

@@ -39,12 +39,37 @@ export interface Assets {
   logo?: { bytes: Uint8Array; type: 'png' | 'jpeg' };
 }
 
-/** Table de libellés : la langue du document, et ce que l'utilisateur a renommé. */
+/**
+ * Les libellés que l'utilisateur peut renommer, dans l'ordre de l'éditeur d'apparence. Les autres
+ * clés de `RenderLabels` ne se renomment pas : ce sont les mentions légales, ou des fonctions (la
+ * pagination) qu'une chaîne remplacerait et casserait. Le Studio en tire `LabelKey`.
+ */
+export const LIBELLES_RENOMMABLES = [
+  'designation',
+  'quantity',
+  'unitPrice',
+  'vat',
+  'netAmount',
+  'seller',
+  'buyer',
+  'amountDue',
+  'paymentTerms',
+  'notes',
+  'scanToPay',
+] as const;
+
+const RENOMMABLES: ReadonlySet<string> = new Set(LIBELLES_RENOMMABLES);
+
+/**
+ * Table de libellés : la langue du document, et ce que l'utilisateur a renommé parmi
+ * `LIBELLES_RENOMMABLES` ; toute autre clé est ignorée, qu'elle vienne d'une sauvegarde ou du corps
+ * d'une requête.
+ */
 export function labelsFor(appearance: RenderAppearance): RenderLabels {
   const base = RENDER_LABELS[appearance.language];
   const renamed = Object.fromEntries(
     Object.entries(appearance.labels).filter(
-      ([, value]) => typeof value === 'string' && value.trim() !== '',
+      ([key, value]) => RENOMMABLES.has(key) && typeof value === 'string' && value.trim() !== '',
     ),
   );
   return { ...base, ...renamed };

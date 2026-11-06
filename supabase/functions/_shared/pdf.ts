@@ -28,25 +28,6 @@ export interface ApparenceEmise extends Omit<RenderAppearance, 'logo'> {
   customFont?: { regularKey: string; boldKey?: string | undefined } | undefined;
 }
 
-/**
- * Les libellés que le Studio laisse renommer (`LabelKey`, site-src/studio/library.ts). Les autres
- * clés de `RenderLabels` ne se renomment pas : ce sont les mentions légales, ou des fonctions (la
- * pagination) qu'une chaîne remplacerait et casserait.
- */
-const LIBELLES_RENOMMABLES = new Set([
-  'seller',
-  'buyer',
-  'designation',
-  'quantity',
-  'unitPrice',
-  'vat',
-  'netAmount',
-  'amountDue',
-  'paymentTerms',
-  'notes',
-  'scanToPay',
-]);
-
 const MESSAGE = 'L’apparence de la facture est refusée : aucun numéro n’a été consommé.';
 
 const estObjet = (v: unknown): v is Record<string, unknown> =>
@@ -168,11 +149,11 @@ export async function produirePdf(
       type: appearance.logo.type,
     };
   }
-  const labels = Object.fromEntries(
-    Object.entries(appearance.labels).filter(([cle]) => LIBELLES_RENOMMABLES.has(cle)),
-  );
   try {
-    const page = await renderInvoicePdf(invoice, renderOptions({ ...appearance, labels }, assets));
+    // `renderOptions` passe les libellés par `labelsFor`, qui ne garde que ceux que le Studio laisse
+    // renommer (`LIBELLES_RENOMMABLES`) : une apparence reçue ne remplace ni une mention légale ni
+    // la pagination, et l'aperçu applique la même règle.
+    const page = await renderInvoicePdf(invoice, renderOptions(appearance, assets));
     return await embedFacturX(
       page,
       { invoice },

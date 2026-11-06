@@ -15,11 +15,12 @@ import {
   type RenderTemplate,
 } from 'facturx-sdk/pdf';
 import { useEffect, useState } from 'preact/hooks';
+import { LIBELLES_RENOMMABLES } from '../shared/rendu.js';
 import { useDerived } from './context.js';
 import { getFile, normalizeLogo, putFile } from './files.js';
 import { FONT_FAMILIES, type LoadedFonts, loadFamily } from './fonts.js';
 import { t } from './i18n.js';
-import type { Appearance, LabelKey } from './library.js';
+import type { Appearance } from './library.js';
 import { uid } from './model.js';
 import { type Assets, layoutFor } from './pipeline.js';
 import { Thumbnail } from './preview.js';
@@ -437,26 +438,12 @@ function StyleTuner() {
   );
 }
 
-const LABEL_KEYS: LabelKey[] = [
-  'designation',
-  'quantity',
-  'unitPrice',
-  'vat',
-  'netAmount',
-  'seller',
-  'buyer',
-  'amountDue',
-  'paymentTerms',
-  'notes',
-  'scanToPay',
-];
-
 function LabelsEditor() {
   const appearance = useStudio((s) => s.appearance);
   const defaults = RENDER_LABELS[appearance.language];
   return (
     <div class="grid">
-      {LABEL_KEYS.map((key) => (
+      {LIBELLES_RENOMMABLES.map((key) => (
         <Field key={key} label={t.appearance.labelNames[key]} span={3}>
           {(id) => (
             <Input
