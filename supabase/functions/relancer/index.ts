@@ -208,18 +208,16 @@ Deno.serve(
     const relance = await sql.begin(async (tx) => {
       const niveau = await appliquerLimites(tx, e, factureId, req);
 
-      // Les lignes que la relance référence (clés étrangères) sont tenues jusqu'à la fin de la
-      // transaction : l'essai de consignation ci-dessous les prend aussi, mais sa défaite aussitôt les
-      // relâche, et la purge d'un compte (`purger`) pourrait supprimer l'entreprise pendant l'appel à
-      // Brevo, puis faire échouer la vraie consignation après l'envoi. Ainsi tenues, elles ne se
-      // suppriment qu'après la relance (la purge attend, puis reprend la nuit suivante). L'entreprise
-      // d'abord, comme la suppression en cascade de la purge : deux ordres inverses s'interbloqueraient.
-      // Supprimées depuis la lecture de la facture, elles ne sont pas trouvées, et l'essai de
-      // consignation échoue sur la clé étrangère, avant tout envoi.
+      // L'entreprise que la relance référence (clé étrangère) est tenue jusqu'à la fin de la transaction :
+      // l'essai de consignation ci-dessous la prend aussi, mais sa défaite aussitôt la relâche, et la purge
+      // d'un compte (`purger`) pourrait supprimer l'entreprise pendant l'appel à Brevo, puis faire échouer
+      // la vraie consignation après l'envoi. Ainsi tenue, elle ne se supprime qu'après la relance (la purge
+      // attend, puis reprend la nuit suivante). La facture n'a pas à l'être : elle ne disparaît que par la
+      // suppression en cascade de l'entreprise, et la tenir ferait attendre un paiement (`for update` sur
+      // la facture, sous le délai de 8 secondes des comptes) pendant tout l'envoi. Supprimée depuis la
+      // lecture de la facture, l'entreprise n'est pas trouvée, et l'essai de consignation échoue sur la clé
+      // étrangère, avant tout envoi.
       await tx`select 1 from public.entreprises where id = ${e} for key share`;
-      await tx`
-        select 1 from public.factures where entreprise_id = ${e} and id = ${factureId}
-           for key share`;
 
       const consigner = (q: typeof tx, etat: 'envoyee' | 'refusee', messageId: string | null) =>
         q<{ id: string }[]>`

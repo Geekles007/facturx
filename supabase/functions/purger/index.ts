@@ -36,17 +36,19 @@
  * lui son appartenance à celle-là (`membres.user_id` descend en cascade). Son appartenance à
  * l'entreprise purgée part avec elle. v1 n'a qu'une entreprise par compte ; la garde ne coûte rien.
  *
- * La demande de suppression est relue juste avant les effacements et au moment de supprimer
- * l'entreprise : une annulation arrivée entre la liste et la fin de la passe l'emporte, sauf pour ce
- * qui est déjà effacé du Storage et d'Auth, dans la durée d'une entreprise (quelques secondes).
+ * La demande de suppression est relue juste avant les effacements (une demande retirée à la main entre
+ * la liste et ce moment n'est pas purgée). Une fois l'effacement commencé, l'entreprise est supprimée par
+ * son identifiant, sans condition d'échéance : `supprimer-compte` n'annule plus une demande de plus de 30
+ * jours, aucune annulation ne peut donc aboutir pendant la passe, et l'entreprise ne reste jamais à moitié
+ * effacée (sans Storage ni utilisateurs, mais avec ses lignes, hors de portée de toute passe). Reste la
+ * demande qui franchit les 30 jours à la milliseconde même d'une annulation : l'annulation, validée après
+ * la relecture, ne la sauve pas.
  */
 import { admin, sql } from '../_shared/db.ts';
 import { erreur, json, resumer, traiter } from '../_shared/erreurs.ts';
+import { echue } from '../_shared/suppression.ts';
 import { supprimerUtilisateur } from './auth.ts';
-import { secretValide } from './secret.ts';
-
-/** Délai de grâce d'une suppression de compte (spec § 12), en jours. */
-const DELAI_GRACE_JOURS = 30;
+import { secretConfigure, secretValide } from './secret.ts';
 
 /** Âge à partir duquel un PDF sans facture est un orphelin (spec § 7), en jours. */
 const AGE_ORPHELIN_JOURS = 1;
@@ -60,10 +62,6 @@ const LOT = 100;
  * l'entreprise est reprise la nuit suivante.
  */
 const ATTENTE_VERROU = 5;
-
-/** La suppression de l'entreprise a été demandée il y a plus de `DELAI_GRACE_JOURS` jours. */
-const echue = () =>
-  sql`suppression_demandee_le < now() - make_interval(days => ${DELAI_GRACE_JOURS})`;
 
 function journaliser(evenement: string, e: unknown, entreprise?: string): void {
   console.error(JSON.stringify({ purger: evenement, entreprise, erreur: resumer(e) }));
@@ -158,18 +156,19 @@ async function purgerEntreprise(id: string): Promise<boolean> {
   for (const { user_id } of utilisateurs) await supprimerUtilisateur(user_id);
 
   // c. La base, en une transaction de purge : la suppression descend en cascade dans toutes les tables
-  // de l'entreprise, y compris celles que ses déclencheurs figent hors purge. `lock_timeout` : une
-  // relance en cours d'envoi tient la facture et l'entreprise (`relancer`) ; la suppression ne l'attend
-  // pas au-delà de quelques secondes, l'entreprise est reprise la nuit suivante.
+  // de l'entreprise, y compris celles que ses déclencheurs figent hors purge. Par identifiant, sans
+  // redemander l'échéance : le Storage et les utilisateurs sont partis, l'entreprise doit suivre, sans
+  // quoi ses lignes resteraient sans membre ni date, et personne ne les reprendrait. L'échéance est
+  // garantie par `supprimer-compte` (une demande échue n'est plus annulable). `lock_timeout` : une
+  // relance en cours d'envoi tient l'entreprise (`relancer`) ; la suppression ne l'attend pas au-delà de
+  // quelques secondes, l'entreprise est reprise la nuit suivante.
   const supprimees = await sql.begin(async (tx) => {
     await tx`select set_config('lock_timeout', ${`${ATTENTE_VERROU}s`}, true)`;
     await tx`set local facturx.purge = 'on'`;
-    return await tx`delete from public.entreprises where id = ${id} and ${echue()} returning id`;
+    return await tx`delete from public.entreprises where id = ${id} returning id`;
   });
   if (supprimees.length === 0) {
-    console.warn(
-      JSON.stringify({ purger: 'entreprise plus échue ou déjà supprimée', entreprise: id }),
-    );
+    console.warn(JSON.stringify({ purger: 'entreprise déjà supprimée', entreprise: id }));
   }
   return supprimees.length > 0;
 }
@@ -177,16 +176,21 @@ async function purgerEntreprise(id: string): Promise<boolean> {
 Deno.serve(
   traiter(async (req) => {
     if (!(await secretValide(req.headers.get('x-purge-secret')))) {
-      // Une fonction sans secret refuse tout : sans ce journal, l'oubli passerait pour un 401 ordinaire.
-      if (!Deno.env.get('PURGE_SECRET')) {
+      // Une fonction sans secret utilisable refuse tout : sans ce journal, l'oubli passerait pour un 401
+      // ordinaire.
+      if (!secretConfigure()) {
         console.error(
-          JSON.stringify({ purger: 'PURGE_SECRET est absent ou vide : tout est refusé' }),
+          JSON.stringify({
+            purger: 'PURGE_SECRET est absent, vide ou indigne d’un projet hébergé',
+          }),
         );
       }
       throw erreur(401, 'SESSION', 'Secret de purge absent ou invalide.');
     }
     if (req.method !== 'POST') {
-      return new Response(null, { status: 405, headers: { allow: 'POST' } });
+      const refus = erreur(405, 'METHODE', 'Seule la méthode POST est admise.');
+      refus.headers.set('allow', 'POST');
+      return refus;
     }
 
     let echecs = 0;

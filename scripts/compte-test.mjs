@@ -81,12 +81,19 @@ function aDesTests(dossier, extension) {
   return readdirSync(dossier, { recursive: true }).some((nom) => nom.endsWith(extension));
 }
 
-/** La valeur de `nom` dans un fichier `.env` (une ligne `NOM=valeur`), ou `undefined`. */
+/**
+ * La valeur de `nom` dans un fichier `.env` (une ligne `NOM=valeur`), ou `undefined`. Comme dotenv, que
+ * le serveur de fonctions applique au même fichier, des guillemets simples ou doubles qui entourent la
+ * valeur n'en font pas partie.
+ */
 function lireVariable(chemin, nom) {
   const ligne = readFileSync(chemin, 'utf8')
     .split('\n')
     .find((l) => l.startsWith(`${nom}=`));
-  return ligne?.slice(nom.length + 1).trim();
+  return ligne
+    ?.slice(nom.length + 1)
+    .trim()
+    .replace(/^(['"])(.*)\1$/, '$2');
 }
 
 /** Lit `KEY="valeur"` ligne à ligne, tel que `supabase status -o env` l'écrit. */

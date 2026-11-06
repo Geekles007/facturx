@@ -26,6 +26,7 @@ export type CodeErreur =
   | 'ANOMALIES'
   | 'LIMITE'
   | 'ENVOI'
+  | 'METHODE'
   | 'INTERNE';
 
 /** Une anomalie au format des `Issue` du SDK : le Studio ouvre l'onglet Contrôle sur `path`. */

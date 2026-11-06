@@ -17,7 +17,12 @@ import { AuthApiError, AuthRetryableFetchError, createClient } from '@supabase/s
 import type { Invoice } from 'facturx-sdk';
 import { aujourdhuiParis } from '../_shared/dates.ts';
 import { type ClientAuth, supprimerUtilisateur } from '../purger/auth.ts';
-import { secretValide } from '../purger/secret.ts';
+import {
+  LONGUEUR_MINIMALE,
+  SECRET_D_EXEMPLE,
+  secretConfigure,
+  secretValide,
+} from '../purger/secret.ts';
 import {
   admin,
   apparenceDeTest,
@@ -333,33 +338,35 @@ async function avecRefus<T>(
 
 /**
  * Exécute `f` pendant qu'une transaction du test tient la ligne de l'utilisateur dans `auth.users` :
- * le serveur d'auth, qui le supprime, attend. `f` rend un objet (et non une promesse) pour que la
- * transaction se termine avant qu'on en attende le résultat.
+ * le serveur d'auth, qui le supprime, attend. `f` reçoit le processus de la transaction du test et rend
+ * un objet (et non une promesse) pour que la transaction se termine avant qu'on en attende le résultat.
  */
 async function avecUtilisateurTenu<T extends object>(
   userId: string,
-  f: () => Promise<T>,
+  f: (pid: number) => Promise<T>,
 ): Promise<T> {
   let resultat: T | undefined;
   await base((sql) =>
     sql.begin(async (tx) => {
       await tx`select 1 from auth.users where id = ${userId} for update`;
-      resultat = await f();
+      const [{ pid }] = await tx<{ pid: number }[]>`select pg_backend_pid() as pid`;
+      resultat = await f(pid);
     }),
   );
   return resultat as T;
 }
 
-/** Attend qu'un processus de la base patiente sur un verrou (ici, Auth devant l'utilisateur tenu). */
-async function attendreUnVerrou(): Promise<void> {
+/** Attend qu'un processus de la base patiente derrière la transaction du test, de processus `pid`. */
+async function attendreLeBlocage(pid: number): Promise<void> {
   const limite = Date.now() + 20_000;
   for (;;) {
     const [{ n }] = await base(
       (sql) => sql<{ n: number }[]>`
-        select count(*)::int as n from pg_stat_activity where wait_event_type = 'Lock'`,
+        select count(*)::int as n from pg_stat_activity a
+         where ${pid}::int = any(pg_blocking_pids(a.pid))`,
     );
     if (n > 0) return;
-    if (Date.now() > limite) throw new Error('aucun processus n’attend de verrou');
+    if (Date.now() > limite) throw new Error('aucun processus n’attend la transaction du test');
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 }
@@ -368,9 +375,13 @@ async function attendreUnVerrou(): Promise<void> {
 // Le secret
 // ---------------------------------------------------------------------------------------------
 
+const LOCAL = 'http://127.0.0.1:55421';
+const HEBERGE = 'https://abcdefgh.supabase.co';
+
 Deno.test('secret : fermé par défaut, comparé en entier', async () => {
-  await avecEnv({ PURGE_SECRET: 'un-secret-de-test' }, async () => {
+  await avecEnv({ PURGE_SECRET: 'un-secret-de-test', SUPABASE_URL: LOCAL }, async () => {
     assert(await secretValide('un-secret-de-test'));
+    assert(secretConfigure());
     for (const recu of [
       null,
       '',
@@ -384,12 +395,51 @@ Deno.test('secret : fermé par défaut, comparé en entier', async () => {
     }
   });
   // Un secret absent ou vide refuse tout, y compris un en-tête absent ou vide (deux vides ne
-  // s'égalent pas).
-  for (const attendu of [undefined, '']) {
-    await avecEnv({ PURGE_SECRET: attendu }, async () => {
-      for (const recu of [null, '', 'un-secret-de-test', 'undefined']) {
-        assertEquals(await secretValide(recu), false, JSON.stringify([attendu, recu]));
-      }
+  // s'égalent pas), en local comme sur un projet hébergé.
+  for (const url of [LOCAL, HEBERGE]) {
+    for (const attendu of [undefined, '']) {
+      await avecEnv({ PURGE_SECRET: attendu, SUPABASE_URL: url }, async () => {
+        assertEquals(secretConfigure(), false);
+        for (const recu of [null, '', 'un-secret-de-test', 'undefined']) {
+          assertEquals(await secretValide(recu), false, JSON.stringify([url, attendu, recu]));
+        }
+      });
+    }
+  }
+});
+
+Deno.test('secret : sur un projet hébergé, ni celui d’exemple ni un secret de moins de 32 caractères', async () => {
+  // Le secret d'exemple est celui de `.env.example`, que la CI et les essais locaux emploient.
+  const exemple = (await Deno.readTextFile(new URL('../.env.example', import.meta.url)))
+    .split('\n')
+    .find((ligne) => ligne.startsWith('PURGE_SECRET='))
+    ?.slice('PURGE_SECRET='.length);
+  assertEquals(exemple, SECRET_D_EXEMPLE);
+
+  const court = 'a'.repeat(LONGUEUR_MINIMALE - 1);
+  const long = 'a'.repeat(LONGUEUR_MINIMALE);
+  // En local, tout secret non vide sert, celui d'exemple compris.
+  for (const secret of [SECRET_D_EXEMPLE, court, long]) {
+    await avecEnv({ PURGE_SECRET: secret, SUPABASE_URL: LOCAL }, async () => {
+      assertEquals(await secretValide(secret), true, secret);
+    });
+  }
+  // Hébergé : seul un secret d'au moins 32 caractères, et qui n'est pas celui d'exemple.
+  for (const [secret, admis] of [
+    [SECRET_D_EXEMPLE, false],
+    [court, false],
+    [long, true],
+    [crypto.randomUUID() + crypto.randomUUID(), true],
+  ] as const) {
+    await avecEnv({ PURGE_SECRET: secret, SUPABASE_URL: HEBERGE }, async () => {
+      assertEquals(await secretValide(secret), admis, secret);
+      assertEquals(secretConfigure(), admis, secret);
+    });
+  }
+  // Une adresse absente ou illisible compte comme hébergée : la garde ferme par défaut.
+  for (const url of [undefined, 'pas une URL']) {
+    await avecEnv({ PURGE_SECRET: SECRET_D_EXEMPLE, SUPABASE_URL: url }, async () => {
+      assertEquals(await secretValide(SECRET_D_EXEMPLE), false);
     });
   }
 });
@@ -449,7 +499,9 @@ essai(
       const reponse = await appelerPurge({ methode });
       assertEquals(reponse.status, 405, methode);
       assertEquals(reponse.headers.get('allow'), 'POST');
-      await reponse.body?.cancel();
+      const corps: Corps = await reponse.json();
+      assertEquals(Object.keys(corps).sort(), ['code', 'message']);
+      assertEquals(corps.code, 'METHODE');
     }
     assertEquals(await etat(compte.entrepriseId), avant);
   },
@@ -903,26 +955,106 @@ essai(
 );
 
 essai(
-  'purger : une demande annulée pendant la passe n’est pas purgée, celle qui attendait l’est',
+  'supprimer-compte : annuler après 30 jours est refusé (409 SUPPRESSION) et la passe purge tout ; à 29 jours il est accepté et la passe ne touche rien',
+  async () => {
+    const tardive = await entrepriseGarnie();
+    const dans_les_temps = await entrepriseGarnie();
+    await supprimerCompte(tardive, 'demander');
+    await supprimerCompte(dans_les_temps, 'demander');
+    await antidater(tardive.entrepriseId, 31);
+    await antidater(dans_les_temps.entrepriseId, 29);
+    const avantTardive = await etat(tardive.entrepriseId);
+    const avantDansLesTemps = await etat(dans_les_temps.entrepriseId);
+    const dateTardive = await dateDeSuppression(tardive.entrepriseId);
+
+    // Passé le délai : refusé, avec la date de la demande ; rien ne change.
+    const refus = await supprimerCompte(tardive, 'annuler');
+    assertEquals(refus.status, 409, JSON.stringify(refus.corps));
+    assertEquals(refus.corps.code, 'SUPPRESSION');
+    assertMatch(refus.corps.message, /30 jours/);
+    assertEquals(
+      new Date(refus.corps.details.suppressionDemandeeLe).getTime(),
+      dateTardive?.getTime(),
+    );
+    assertEquals(
+      (await dateDeSuppression(tardive.entrepriseId))?.getTime(),
+      dateTardive?.getTime(),
+    );
+    assertEquals(await etat(tardive.entrepriseId), avantTardive);
+
+    // Dans le délai : accepté, la demande disparaît.
+    const accepte = await supprimerCompte(dans_les_temps, 'annuler');
+    assertEquals(accepte.status, 200, JSON.stringify(accepte.corps));
+    assertEquals(accepte.corps, { suppressionDemandeeLe: null });
+    assertEquals(await dateDeSuppression(dans_les_temps.entrepriseId), null);
+
+    // La passe purge la demande refusée, et ne touche pas à celle qui a été annulée.
+    const { status, corps } = await purger(tardive, dans_les_temps);
+    assertEquals(status, 200, JSON.stringify(corps));
+    assertEquals(corps.comptes, 1);
+    assertEquals(await etat(tardive.entrepriseId), await etatVide());
+    assertEquals(await utilisateurExiste(tardive.userId), false);
+    assertEquals(await etat(dans_les_temps.entrepriseId), avantDansLesTemps);
+    assertEquals(await utilisateurExiste(dans_les_temps.userId), true);
+  },
+);
+
+essai(
+  'supprimer-compte : annuler refuse la limite des 30 jours, ni avant ni après, et sans demande il répond null',
+  async () => {
+    const compte = await creerCompte();
+    // Sans demande : rien à annuler, la réponse est la même.
+    const sansDemande = await supprimerCompte(compte, 'annuler');
+    assertEquals(sansDemande.status, 200);
+    assertEquals(sansDemande.corps, { suppressionDemandeeLe: null });
+
+    await supprimerCompte(compte, 'demander');
+    // Une heure avant la limite : annulable. Une heure après : non.
+    await base(
+      (sql) => sql`
+        update entreprises set suppression_demandee_le = now() - interval '30 days' + interval '1 hour'
+         where id = ${compte.entrepriseId}`,
+    );
+    const avant = await supprimerCompte(compte, 'annuler');
+    assertEquals(avant.status, 200, JSON.stringify(avant.corps));
+    await supprimerCompte(compte, 'demander');
+    await base(
+      (sql) => sql`
+        update entreprises set suppression_demandee_le = now() - interval '30 days' - interval '1 hour'
+         where id = ${compte.entrepriseId}`,
+    );
+    const apres = await supprimerCompte(compte, 'annuler');
+    assertEquals(apres.status, 409, JSON.stringify(apres.corps));
+    assertEquals(apres.corps.code, 'SUPPRESSION');
+    assertExists(await dateDeSuppression(compte.entrepriseId));
+  },
+);
+
+essai(
+  'purger : une demande retirée à la main avant les effacements n’est pas purgée, celle qui attendait l’est',
   async () => {
     // `ancienne` passe la première (la plus ancienne) et attend Auth, tenu par le test ; pendant ce
-    // temps `annulee`, déjà dans la liste lue au début de la passe, est annulée.
+    // temps la demande de `retiree`, déjà dans la liste lue au début de la passe, est retirée par SQL
+    // (`annuler` ne le permet plus passé 30 jours : c'est la relecture qui la protège).
     const ancienne = await entrepriseGarnie();
-    const annulee = await entrepriseGarnie();
+    const retiree = await entrepriseGarnie();
     for (const [compte, jours] of [
       [ancienne, 40],
-      [annulee, 35],
+      [retiree, 35],
     ] as const) {
       await supprimerCompte(compte, 'demander');
       await antidater(compte.entrepriseId, jours);
     }
-    const avant = await etat(annulee.entrepriseId);
+    const avant = await etat(retiree.entrepriseId);
 
-    const { passe } = await avecUtilisateurTenu(ancienne.userId, async () => {
-      const passe = purger(ancienne, annulee);
+    const { passe } = await avecUtilisateurTenu(ancienne.userId, async (pid) => {
+      const passe = purger(ancienne, retiree);
       passe.catch(() => {});
-      await attendreUnVerrou();
-      assertEquals((await supprimerCompte(annulee, 'annuler')).status, 200);
+      await attendreLeBlocage(pid);
+      await base(
+        (sql) => sql`
+          update entreprises set suppression_demandee_le = null where id = ${retiree.entrepriseId}`,
+      );
       return { passe };
     });
 
@@ -930,40 +1062,43 @@ essai(
     assertEquals(status, 200, JSON.stringify(corps));
     assertEquals(corps.comptes, 1);
     assertEquals(await etat(ancienne.entrepriseId), await etatVide());
-    // L'annulée n'a rien perdu : ni ses lignes, ni ses objets, ni son utilisateur.
-    assertEquals(await etat(annulee.entrepriseId), avant);
-    assertEquals(await utilisateurExiste(annulee.userId), true);
-    assertEquals(await dateDeSuppression(annulee.entrepriseId), null);
+    // L'autre n'a rien perdu : ni ses lignes, ni ses objets, ni son utilisateur.
+    assertEquals(await etat(retiree.entrepriseId), avant);
+    assertEquals(await utilisateurExiste(retiree.userId), true);
   },
 );
 
 essai(
-  'purger : une demande annulée juste avant la suppression en base garde son entreprise',
+  'purger : une fois l’effacement commencé, l’entreprise est supprimée jusqu’au bout, même si sa demande disparaît',
   async () => {
     const compte = await entrepriseGarnie();
     await supprimerCompte(compte, 'demander');
     await antidater(compte.entrepriseId, 31);
 
-    // Le Storage est vidé ; Auth attend l'utilisateur tenu ; l'annulation arrive avant la suppression
-    // de l'entreprise, qui doit la relire.
-    const { passe } = await avecUtilisateurTenu(compte.userId, async () => {
+    // Le Storage est vidé ; Auth attend l'utilisateur tenu ; la demande est retirée (par SQL : `annuler`
+    // ne le permet plus) avant la suppression de l'entreprise. Si celle-ci redemandait l'échéance, les
+    // lignes resteraient sans membre ni date, hors de portée de toute passe.
+    const { passe } = await avecUtilisateurTenu(compte.userId, async (pid) => {
       const passe = purger(compte);
       passe.catch(() => {});
-      await attendreUnVerrou();
-      assertEquals((await supprimerCompte(compte, 'annuler')).status, 200);
+      await attendreLeBlocage(pid);
+      await base(
+        (sql) => sql`
+          update entreprises set suppression_demandee_le = null where id = ${compte.entrepriseId}`,
+      );
       return { passe };
     });
 
     const { status, corps } = await passe;
     assertEquals(status, 200, JSON.stringify(corps));
-    assertEquals(corps.comptes, 0);
-    assertEquals((await etat(compte.entrepriseId)).lignes.entreprises, 1);
-    assertEquals(await dateDeSuppression(compte.entrepriseId), null);
+    assertEquals(corps.comptes, 1);
+    assertEquals(await etat(compte.entrepriseId), await etatVide());
+    assertEquals(await utilisateurExiste(compte.userId), false);
   },
 );
 
 essai(
-  'relancer : la facture et l’entreprise restent verrouillées pendant l’envoi, une purge ne peut pas les supprimer sous la relance',
+  'relancer : l’entreprise reste verrouillée pendant l’envoi (une purge ne peut pas la supprimer sous la relance), la facture non (un paiement passe)',
   async () => {
     const compte = await entrepriseGarnie();
     /** La ligne est-elle tenue (clé étrangère) par une autre transaction ? Un essai `nowait` le dit. */
@@ -994,15 +1129,49 @@ essai(
         throw new Error('l’entreprise n’est pas verrouillée pendant l’envoi');
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    assertEquals(await tenue('factures', compte.factureId), true);
+    // La facture, elle, est libre : le contrôle d'un paiement la verrouille (`for update`) et ne doit pas
+    // attendre la fin de l'envoi (le rôle des comptes a un délai de 8 secondes). Un vrai paiement, sans
+    // attente permise.
+    assertEquals(await tenue('factures', compte.factureId), false);
+    await base((sql) =>
+      sql.begin(async (tx) => {
+        await tx`select set_config('lock_timeout', '500ms', true)`;
+        await tx`
+          insert into paiements (entreprise_id, facture_id, date, montant, moyen, cree_par)
+          values (${compte.entrepriseId}, ${compte.factureId}, ${aujourdhui()}::date, 1000, 'virement',
+                  ${compte.userId})`;
+      }),
+    );
+    // L'envoi n'était pas fini : l'entreprise est toujours tenue.
+    assertEquals(await tenue('entreprises', compte.entrepriseId), true);
 
     const reponse = await relance;
     assertEquals(reponse.status, 201, JSON.stringify(await reponse.json()));
-    // Validée : les deux lignes sont rendues.
+    // Validée : l'entreprise est rendue.
     assertEquals(await tenue('entreprises', compte.entrepriseId), false);
-    assertEquals(await tenue('factures', compte.factureId), false);
   },
 );
+
+Deno.test('migrations : aucune ne sème de secret dans le Vault, ni n’écrit l’adresse ou la valeur de PURGE_SECRET', async () => {
+  const dossier = new URL('../../migrations/', import.meta.url);
+  const exemple = SECRET_D_EXEMPLE;
+  let lues = 0;
+  for await (const fichier of Deno.readDir(dossier)) {
+    if (!fichier.name.endsWith('.sql')) continue;
+    lues++;
+    const sql = await Deno.readTextFile(new URL(fichier.name, dossier));
+    // Le Vault se lit (`vault.decrypted_secrets`) ; il ne s'écrit pas.
+    assert(!/create_secret|update_secret|insert\s+into\s+vault\./i.test(sql), fichier.name);
+    assert(!sql.includes(exemple), fichier.name);
+    // La tâche de nuit ne porte aucune adresse en clair.
+    if (fichier.name.endsWith('_purge.sql')) {
+      const code = sql.split('\n').filter((ligne) => !ligne.trimStart().startsWith('--'));
+      assert(!/https?:\/\//i.test(code.join('\n')), fichier.name);
+      assert(code.join('\n').includes('vault.decrypted_secrets'), fichier.name);
+    }
+  }
+  assert(lues >= 6, `${lues} migrations lues`);
+});
 
 // ---------------------------------------------------------------------------------------------
 // Les PDF orphelins

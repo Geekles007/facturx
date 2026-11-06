@@ -7,7 +7,16 @@
 -- transaction, après avoir écarté ceux que la base pourrait déjà porter (l'exploitation les crée à la
 -- mise en production).
 begin;
-select plan(16);
+select plan(17);
+
+-- Aucune migration ne sème de secret : sur une base que les seules migrations ont montée (la pile locale,
+-- la CI), le Vault ne porte ni `purger_url` ni `purger_secret`. À vérifier avant d'écarter ceux d'une
+-- mise en production, ce que fait le nettoyage qui suit. (Le fichier de la migration, lui, est lu par un
+-- test des fonctions : une base ne connaît pas les fichiers qui l'ont montée.)
+select is(
+  (select count(*)::int from vault.secrets where name in ('purger_url', 'purger_secret')),
+  0,
+  'les migrations ne créent ni purger_url ni purger_secret dans le Vault');
 
 -- Hermétique : ni les secrets d'une mise en production, ni une requête déjà en file.
 delete from vault.secrets where name in ('purger_url', 'purger_secret');
