@@ -10,27 +10,11 @@
 -- `paiements` les borne à l'entreprise du compte, sans qu'ils aient à la connaître.
 
 -- ---------------------------------------------------------------------------------------------
--- Les avoirs
--- ---------------------------------------------------------------------------------------------
-
--- Les avoirs sont les types 381, 261, 262 et 396 (spec § 6). La vue et le tableau de bord s'y réfèrent
--- ici, à un seul endroit ; `controler_paiement()` (migration précédente) emploie la même liste, écrite
--- en clair : les deux doivent bouger ensemble.
--- Le corps ne nomme aucun objet : le chemin de recherche vide n'est là que par principe.
-create function public.est_un_avoir(code text) returns boolean
-language sql
-immutable
-parallel safe
-set search_path = ''
-as $corps$
-  select code in ('381', '261', '262', '396')
-$corps$;
-
--- ---------------------------------------------------------------------------------------------
 -- La vue de suivi
 -- ---------------------------------------------------------------------------------------------
 
--- Pour chaque facture qui n'est pas un avoir :
+-- Pour chaque facture qui n'est pas un avoir (`public.est_un_avoir`, définie avec le contrôle des
+-- paiements, qui emploie la même liste) :
 --   - `encaisse` : les paiements non annulés ;
 --   - `avoirs` : le TTC des avoirs qui la citent (`facture_origine_id`) ;
 --   - `reste_du` : `net_a_payer − encaisse − avoirs`, négatif quand on a trop reçu ;
@@ -105,6 +89,8 @@ from etat s;
 --     période, d'après la vue (donc à la date de Paris). Seul un reste dû positif est à encaisser : une
 --     facture à rembourser n'en fait pas partie.
 -- Une période sans facture ni paiement rend des zéros, pas des `null`, et toujours une ligne.
+-- Les montants s'additionnent sans conversion de devise : le Studio laisse choisir la devise d'une
+-- facture, et une facture en USD s'ajoute à l'EUR. Une ventilation par devise reste à décider.
 --
 -- `security invoker` (c'est aussi la valeur par défaut, écrite ici pour qu'on la lise) : la RLS s'applique,
 -- le compte ne compte que son entreprise. `search_path` est vide, tous les noms sont qualifiés.
@@ -178,12 +164,11 @@ $corps$;
 revoke all on public.suivi_factures from anon, authenticated;
 grant select on public.suivi_factures to authenticated;
 
--- La vue appelle `est_un_avoir` avec les droits du compte connecté.
-revoke execute on function public.est_un_avoir(text) from public, anon;
-grant execute on function public.est_un_avoir(text) to authenticated, service_role;
-
-revoke execute on function public.tableau_de_bord(date, date) from public, anon;
-grant execute on function public.tableau_de_bord(date, date) to authenticated, service_role;
+-- Réservé aux comptes : appelée par `service_role`, que la RLS ne borne pas, la fonction rendrait le total
+-- de toutes les entreprises, et aucun appelant légitime n'en a besoin. Supabase accorde `execute` à
+-- `service_role` d'office (privilèges par défaut) : il faut donc le retirer expressément.
+revoke execute on function public.tableau_de_bord(date, date) from public, anon, service_role;
+grant execute on function public.tableau_de_bord(date, date) to authenticated;
 
 -- Les indicateurs ne sont pas ceux d'un compte : ni `public`, ni `anon`, ni `authenticated`.
 revoke execute on function public.indicateurs(date) from public, anon, authenticated;

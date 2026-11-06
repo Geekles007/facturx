@@ -133,6 +133,26 @@ create policy paiements_annulation on public.paiements
   using (entreprise_id in (select public.mes_entreprises()))
   with check (entreprise_id in (select public.mes_entreprises()));
 
+-- Les avoirs sont les types 381, 261, 262 et 396 (spec § 6) : la seule liste de la base. Le contrôle des
+-- paiements ci-dessous et la vue de suivi (migration suivante) l'appellent ; elle ne s'écrit nulle part
+-- ailleurs, de sorte que ce qui est accepté à l'encaissement et ce que la vue affiche comme reste dû ne
+-- peuvent pas diverger. Un type absent (`null`) n'est pas un avoir : `false`, jamais `null`, pour que
+-- `not est_un_avoir(…)` ne perde pas de ligne.
+-- Le corps ne nomme aucun objet : le chemin de recherche vide n'est là que par principe. `execute` suit
+-- les fonctions appelées par les comptes (la vue de suivi l'appelle avec leurs droits) ; ni `public` ni
+-- `anon`.
+create function public.est_un_avoir(code text) returns boolean
+language sql
+immutable
+parallel safe
+set search_path = ''
+as $corps$
+  select coalesce(code in ('381', '261', '262', '396'), false)
+$corps$;
+
+revoke execute on function public.est_un_avoir(text) from public, anon;
+grant execute on function public.est_un_avoir(text) to authenticated, service_role;
+
 -- Le contrôle d'un paiement avant son écriture.
 --
 -- `security definer` : il verrouille la facture (`for update`, ce que `authenticated` n'a pas le droit
@@ -187,7 +207,7 @@ begin
     return new;
   end if;
 
-  if v_type in ('381', '261', '262', '396') then
+  if public.est_un_avoir(v_type) then
     raise exception 'PAIEMENT_AVOIR';
   end if;
   if new.date > (now() at time zone 'Europe/Paris')::date then
@@ -201,7 +221,7 @@ begin
   select coalesce(sum(a.ttc), 0) into v_avoirs
     from public.factures a
    where a.entreprise_id = new.entreprise_id and a.facture_origine_id = new.facture_id
-     and a.type_code in ('381', '261', '262', '396');
+     and public.est_un_avoir(a.type_code);
   if v_encaisse + new.montant > v_net - v_avoirs then
     raise exception 'PAIEMENT_EXCESSIF';
   end if;

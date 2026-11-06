@@ -14,13 +14,19 @@
 -- Comme dans 01 et 02 : psql n'interpole pas `:a` dans une chaîne `$$ … $$`, d'où
 -- `format($$ … %L … $$, :'a')`.
 begin;
-select plan(66);
+select plan(73);
 
 -- J + n. Dans une fonction temporaire plutôt qu'en variable psql : les requêtes `$$ … $$` ne reçoivent
 -- aucune interpolation, et celle-ci tourne sous n'importe quel rôle.
 create function pg_temp.j(n int default 0) returns date
 language sql stable
 as $$ select (now() at time zone 'Europe/Paris')::date + n $$;
+
+-- Les indicateurs du mois en cours avant toute donnée de ce test : une base locale peut en contenir
+-- d'autres, et la fin du test compare par différence.
+select comptes_crees as avant_crees, comptes_actifs as avant_actifs, factures_emises as avant_emises,
+       relances_envoyees as avant_relances
+  from indicateurs(date_trunc('month', pg_temp.j()::timestamp)::date) \gset
 
 select tests.creer_utilisateur('a@test') as a,
        tests.creer_utilisateur('b@test') as b,
@@ -52,6 +58,8 @@ select (select entreprise_id from membres where user_id = :'a') as entreprise_a,
 --   P-1 à P-5 : en retard avec un acompte ; échéance aujourd'hui ; en retard mais soldée ; en retard mais
 --   créditée au-delà du dû (AV-P4) ; en retard mais soldée par un avoir (AV-P5) ;
 --   P-6 et P-7 : à un centime près, de part et d'autre de zéro (créditée de 1 de trop, payée à 1 près) ;
+--   P-8 et P-9 : un reste positif après un avoir, sans que l'avoir ne change le statut : non échue avec un
+--   paiement (payee_en_partie), échue sans paiement (en_retard, avec ses jours de retard) ;
 --   S-1 : une facture de solde, dont le net à payer (9 000) est celui du TTC (12 000) moins un acompte
 --   déjà versé : c'est le net à payer qui compte ; AV-262 a de même un net à payer sans rapport avec son
 --   TTC (300) : c'est le TTC d'un avoir qui se déduit.
@@ -89,7 +97,11 @@ insert into fx values
   (:'entreprise_c', :'c', 'AV-P5', '381', -59, null, 3000, 3600, 'P-5'),
   (:'entreprise_c', :'c', 'P-6', '380', -200, 10, 100, 120, null),
   (:'entreprise_c', :'c', 'P-7', '380', -200, 10, 100, 120, null),
-  (:'entreprise_c', :'c', 'AV-P6', '381', -199, null, 1, 1, 'P-6');
+  (:'entreprise_c', :'c', 'AV-P6', '381', -199, null, 1, 1, 'P-6'),
+  (:'entreprise_c', :'c', 'P-8', '380', -150, 10, 8334, 10000, null),
+  (:'entreprise_c', :'c', 'AV-P8', '381', -149, null, 1667, 2000, 'P-8'),
+  (:'entreprise_c', :'c', 'P-9', '380', -150, -10, 5000, 6000, null),
+  (:'entreprise_c', :'c', 'AV-P9', '381', -149, null, 834, 1000, 'P-9');
 insert into fx (entreprise, compte, numero, type_code, emission, echeance, ht, ttc, citee, net) values
   (:'entreprise_c', :'c', 'S-1', '380', -200, 10, 10000, 12000, null, 9000),
   (:'entreprise_c', :'c', 'AV-262', '262', -1, null, 250, 300, 'C-3', 0);
@@ -113,7 +125,7 @@ select f.entreprise_id, f.id, pg_temp.j(v.jour), v.montant, 'virement', f.emise_
     ('F-1', -1, 3000), ('F-2', -1, 5000), ('F-4', -1, 6000), ('F-5', -1, 6000), ('F-7', -1, 2400),
     ('FB-1', -1, 1000),
     ('P-1', -30, 500), ('P-3', -30, 1200), ('P-4', -30, 6000),
-    ('P-6', -200, 120), ('P-7', -200, 119)
+    ('P-6', -200, 120), ('P-7', -200, 119), ('P-8', -150, 3000)
   ) as v(numero, jour, montant)
   join factures f on f.numero = v.numero;
 update paiements set annule_le = now() where facture_id = (select id from factures where numero = 'F-1');
@@ -197,6 +209,26 @@ select col_type_is('public', 'suivi_factures', 'encaisse', 'bigint', 'encaisse :
 select col_type_is('public', 'suivi_factures', 'avoirs', 'bigint', 'avoirs : bigint');
 select col_type_is('public', 'suivi_factures', 'reste_du', 'bigint', 'reste_du : bigint');
 select col_type_is('public', 'suivi_factures', 'jours_retard', 'integer', 'jours_retard : integer');
+-- La liste des avoirs, définie une fois avec le contrôle des paiements (…000200_regles.sql) : les quatre
+-- codes, aucun des types voisins (corrective 384, acompte 386, 389 et 393), et `false` pour un type absent.
+select results_eq(
+  $$ select code, public.est_un_avoir(code)
+       from (values ('381'), ('261'), ('262'), ('396'), ('380'), ('384'), ('386'), ('389'), ('393'), (null)) as v(code) $$,
+  $$ values ('381', true), ('261', true), ('262', true), ('396', true), ('380', false), ('384', false),
+            ('386', false), ('389', false), ('393', false), (null, false) $$,
+  'est_un_avoir : les quatre codes d''avoir, aucun autre, false pour null');
+-- Et personne ne la réécrit : le contrôle des paiements, la vue et le tableau de bord passent par
+-- `est_un_avoir` (trois sources lues dans le catalogue, une absente rendrait faux).
+select ok(
+  (select count(*) = 3 and bool_and(coalesce(v.def, '') like '%est_un_avoir%' and coalesce(v.def, '') not like '%''381''%')
+     from (values
+       (pg_get_functiondef(to_regprocedure('public.controler_paiement()'))),
+       (pg_get_viewdef(to_regclass('public.suivi_factures'))),
+       (pg_get_functiondef(to_regprocedure('public.tableau_de_bord(date, date)')))
+     ) as v(def)),
+  'la liste des avoirs n''est écrite qu''une fois : ni le contrôle des paiements, ni la vue, ni le tableau de bord ne la répètent');
+select ok(has_function_privilege('authenticated', to_regprocedure('public.est_un_avoir(text)'), 'execute'), 'authenticated appelle est_un_avoir');
+select ok(not has_function_privilege('anon', to_regprocedure('public.est_un_avoir(text)'), 'execute'), 'anon n''appelle pas est_un_avoir');
 -- (`to_reg…` rend null pour un objet absent : l'assertion échoue au lieu de faire échouer le fichier.)
 select ok(
   (select coalesce(reloptions @> array['security_invoker=true'], false)
@@ -212,6 +244,8 @@ select ok(
   'tableau_de_bord : security invoker');
 select ok(has_function_privilege('authenticated', to_regprocedure('public.tableau_de_bord(date, date)'), 'execute'), 'authenticated appelle tableau_de_bord');
 select ok(not has_function_privilege('anon', to_regprocedure('public.tableau_de_bord(date, date)'), 'execute'), 'anon n''appelle pas tableau_de_bord');
+-- `service_role` n'est pas borné par la RLS : il aurait le total de toutes les entreprises.
+select ok(not has_function_privilege('service_role', to_regprocedure('public.tableau_de_bord(date, date)'), 'execute'), 'service_role n''appelle pas tableau_de_bord');
 select ok(
   (select prosecdef and proconfig @> array['search_path=""']
      from pg_proc where oid = to_regprocedure('public.indicateurs(date)')),
@@ -312,7 +346,7 @@ select is((select count(*)::int from suivi_factures where numero like 'AV-%'), 0
 select is(
   (select count(*)::int from suivi_factures where type_code in ('381', '261', '262', '396')),
   0, 'aucun code d''avoir dans la vue');
-select is((select count(*)::int from suivi_factures), 13, 'C : treize factures suivies');
+select is((select count(*)::int from suivi_factures), 15, 'C : quinze factures suivies');
 select results_eq(
   $$ select numero, statut, encaisse::int, avoirs::int, reste_du::int, jours_retard from suivi_factures order by numero $$,
   $$ values ('C-1', 'a_payer', 0, 1440, 10560, null),
@@ -326,6 +360,8 @@ select results_eq(
             ('P-5', 'payee', 0, 3600, 0, null),
             ('P-6', 'a_rembourser', 120, 1, -1, null),
             ('P-7', 'payee_en_partie', 119, 0, 1, null),
+            ('P-8', 'payee_en_partie', 3000, 2000, 5000, null),
+            ('P-9', 'en_retard', 0, 1000, 5000, 10),
             ('R-1', 'a_payer', 0, 0, 120, null),
             ('S-1', 'a_payer', 0, 0, 9000, null) $$,
   'C : avoirs, reste dû et statuts, dans l''ordre de priorité');
@@ -333,38 +369,44 @@ select results_eq(
 -- payee_en_partie) ; P-2 à l'échéance d'aujourd'hui (pas encore en retard) ; P-3 soldée après l'échéance
 -- (payee avant en_retard) ; P-4 créditée au-delà du dû après l'échéance (a_rembourser avant en_retard) ;
 -- P-5 soldée par un avoir, sans paiement (payee) ; P-6 et P-7 à un centime de zéro, d'un côté puis de
--- l'autre. L'acompte hors retard est F-2 de A.
+-- l'autre ; P-8 non échue, avec un paiement et un avoir qui laissent 5 000 (payee_en_partie : l'avoir ne
+-- la fait pas retomber à payer) ; P-9 échue de 10 jours, avec un avoir qui laisse 5 000 (en_retard, et
+-- ses 10 jours de retard). L'acompte hors retard, sans avoir, est F-2 de A.
 
 -- facturé HT sur [J−1, J] : C-1 10000 + C-2 5000 + C-3 2500 + C-4 1000 + R-1 100, moins les avoirs HT
 -- 1000 + 200 + 500 + 250 + 100 (chaque code, au signe près : un code qui sortirait de la liste ferait
 -- changer le total de 2 × son montant) ; encaissé : rien (les paiements de C sont à J−30) ;
--- reste à encaisser : 10560 + 5400 + 2700 + 1080 + 700 + 1200 + 1 (P-7) + 120 + 9000 (S-1) ;
--- en retard : P-1.
+-- reste à encaisser : 10560 + 5400 + 2700 + 1080 + 700 + 1200 + 1 (P-7) + 5000 (P-8) + 5000 (P-9) + 120
+-- + 9000 (S-1) ; en retard : P-1 (700) et P-9 (5000).
 select results_eq($$ select * from tableau_de_bord(pg_temp.j(-1), pg_temp.j()) $$,
-  $$ values (16550::bigint, 0::bigint, 30761::bigint, 700::bigint, 1) $$,
+  $$ values (16550::bigint, 0::bigint, 40761::bigint, 5700::bigint, 2) $$,
   'tableau de bord de C sur [J−1, J] : les quatre codes d''avoir se retranchent');
 -- [J−60, J−59] : P-1 à P-5 (11000) moins AV-P4 et AV-P5 émis à J−59 (334 + 3000), bornes incluses.
 select results_eq($$ select * from tableau_de_bord(pg_temp.j(-60), pg_temp.j(-59)) $$,
-  $$ values (7666::bigint, 0::bigint, 30761::bigint, 700::bigint, 1) $$,
+  $$ values (7666::bigint, 0::bigint, 40761::bigint, 5700::bigint, 2) $$,
   'tableau de bord de C sur [J−60, J−59] : début et fin inclus');
 -- Les paiements de J−30 sont hors d'une période qui finit à J−31 : la fin compte pour eux aussi.
 select results_eq($$ select * from tableau_de_bord(pg_temp.j(-60), pg_temp.j(-31)) $$,
-  $$ values (7666::bigint, 0::bigint, 30761::bigint, 700::bigint, 1) $$,
+  $$ values (7666::bigint, 0::bigint, 40761::bigint, 5700::bigint, 2) $$,
   'tableau de bord de C sur [J−60, J−31] : les paiements de J−30 sont après la fin');
 -- [J−31, J−29] : les trois paiements de J−30 (500 + 1200 + 6000), aucune émission.
 select results_eq($$ select * from tableau_de_bord(pg_temp.j(-31), pg_temp.j(-29)) $$,
-  $$ values (0::bigint, 7700::bigint, 30761::bigint, 700::bigint, 1) $$,
+  $$ values (0::bigint, 7700::bigint, 40761::bigint, 5700::bigint, 2) $$,
   'tableau de bord de C sur [J−31, J−29] : les paiements de la période');
 select results_eq($$ select * from tableau_de_bord(pg_temp.j(-30), pg_temp.j(-30)) $$,
-  $$ values (0::bigint, 7700::bigint, 30761::bigint, 700::bigint, 1) $$,
+  $$ values (0::bigint, 7700::bigint, 40761::bigint, 5700::bigint, 2) $$,
   'paiements : une période d''un jour, début et fin inclus');
 -- [J−200, J−199] : P-6, P-7 et S-1 (HT 100 + 100 + 10000, et non le TTC de S-1), moins AV-P6 (1) ; les
 -- deux paiements de J−200 (120 + 119), à la borne de début.
 select results_eq($$ select * from tableau_de_bord(pg_temp.j(-200), pg_temp.j(-199)) $$,
-  $$ values (10199::bigint, 239::bigint, 30761::bigint, 700::bigint, 1) $$,
+  $$ values (10199::bigint, 239::bigint, 40761::bigint, 5700::bigint, 2) $$,
   'tableau de bord de C sur [J−200, J−199] : le HT, pas le TTC');
+-- [J−150, J−149] : P-8 (8334) et P-9 (5000) moins AV-P8 et AV-P9 (1667 + 834) ; le paiement de P-8 (3000).
+select results_eq($$ select * from tableau_de_bord(pg_temp.j(-150), pg_temp.j(-149)) $$,
+  $$ values (10833::bigint, 3000::bigint, 40761::bigint, 5700::bigint, 2) $$,
+  'tableau de bord de C sur [J−150, J−149] : factures et avoirs avec un reste positif');
 select results_eq($$ select * from tableau_de_bord(pg_temp.j(-29), pg_temp.j()) $$,
-  $$ values (16550::bigint, 0::bigint, 30761::bigint, 700::bigint, 1) $$,
+  $$ values (16550::bigint, 0::bigint, 40761::bigint, 5700::bigint, 2) $$,
   'paiements : ceux de la veille du début ne sont pas comptés');
 
 -- « Aujourd'hui » est celui de Paris, quel que soit le fuseau de la session : dans l'un ou l'autre de
@@ -377,7 +419,7 @@ select results_eq(
   $$ values ('P-1', 'en_retard', 1), ('P-2', 'a_payer', null) $$,
   'Paris : session en retard sur Paris, la vue garde le jour de Paris');
 select results_eq($$ select retard_montant, retard_nombre from tableau_de_bord(pg_temp.j(-1), pg_temp.j()) $$,
-  $$ values (700::bigint, 1) $$,
+  $$ values (5700::bigint, 2) $$,
   'Paris : session en retard sur Paris, le tableau de bord aussi');
 set local timezone = 'Pacific/Kiritimati';
 select results_eq(
@@ -385,7 +427,7 @@ select results_eq(
   $$ values ('P-1', 'en_retard', 1), ('P-2', 'a_payer', null) $$,
   'Paris : session en avance sur Paris, la vue garde le jour de Paris');
 select results_eq($$ select retard_montant, retard_nombre from tableau_de_bord(pg_temp.j(-1), pg_temp.j()) $$,
-  $$ values (700::bigint, 1) $$,
+  $$ values (5700::bigint, 2) $$,
   'Paris : session en avance sur Paris, le tableau de bord aussi');
 reset timezone;
 
@@ -414,6 +456,7 @@ reset role;
 -- ---------------------------------------------------------------------------------------------
 set local role service_role;
 select set_config('request.jwt.claims', '', true);
+select throws_ok($$ select * from tableau_de_bord(pg_temp.j(-3), pg_temp.j()) $$, '42501', null, 'service_role : pas de tableau de bord');
 -- Mars 2001 : comptes créés E1 et E2 (minuit pile le 1er mars à Paris) ; actifs E1 et E3 (E2 n'a émis
 -- qu'en avril, et importé en mars) ; émises X-1, X-2 (un avoir compte) et Z-1 ; relances envoyées du
 -- 11 mars et de minuit pile le 1er mars, sans la refusée ni celle de minuit pile le 1er avril.
@@ -432,12 +475,15 @@ select results_eq($$ select * from indicateurs('2001-02-01') $$,
 select results_eq($$ select * from indicateurs('2001-05-01') $$,
   $$ values (0, 0, 0, 0) $$,
   'indicateurs : un mois vide donne des zéros, pas des null');
--- Les comptes de ce test, créés maintenant, comptent dans le mois en cours à Paris (au moins : une base
--- locale peut en contenir d'autres) ; les factures de A, B et C sont émises maintenant.
-select ok(
-  (select comptes_crees >= 4 and comptes_actifs >= 3 and factures_emises >= 27
-     from indicateurs(date_trunc('month', pg_temp.j()::timestamp)::date)),
-  'indicateurs : le mois en cours');
+-- Le mois en cours à Paris, par différence avec le relevé d'avant les données : les comptes de A, B, C et D
+-- sont créés maintenant (E1 à E4 ont été remontés à 2001), ceux de A, B et C ont émis, et toutes les
+-- factures de `fx` portent l'heure d'émission d'aujourd'hui ; aucune relance n'est d'aujourd'hui.
+select results_eq(
+  format($$ select comptes_crees - %s, comptes_actifs - %s, factures_emises - %s, relances_envoyees - %s
+              from indicateurs(date_trunc('month', pg_temp.j()::timestamp)::date) $$,
+         :avant_crees, :avant_actifs, :avant_emises, :avant_relances),
+  format($$ values (4, 3, %s, 0) $$, (select count(*) from fx)),
+  'indicateurs : le mois en cours, au compte près');
 -- Sous un autre fuseau de session, le même résultat.
 set local timezone = 'Pacific/Kiritimati';
 select results_eq($$ select * from indicateurs('2001-03-01') $$,
