@@ -374,22 +374,32 @@ async function seDeconnecter(): Promise<void> {
  */
 function CompteBoutons() {
   const compte = useStudio((s) => s.ui.compte);
+  const [brouillons, setBrouillons] = useState(false);
   if (compte) {
     return (
-      <Menu
-        label={t.compte.menu}
-        align="right"
-        trigger={(props) => (
-          <Button icon="user" variant="ghost" title={compte.email} {...props}>
-            <span class="hide-lg compte-email">{compte.email}</span>
-          </Button>
-        )}
-        items={[
-          { label: compte.email, icon: 'user', disabled: true, onSelect: () => undefined },
-          'separator',
-          { label: t.compte.signOut, icon: 'lock', onSelect: seDeconnecter },
-        ]}
-      />
+      <>
+        <Menu
+          label={t.compte.menu}
+          align="right"
+          trigger={(props) => (
+            <Button icon="user" variant="ghost" title={compte.email} {...props}>
+              <span class="hide-lg compte-email">{compte.email}</span>
+            </Button>
+          )}
+          items={[
+            { label: compte.email, icon: 'user', disabled: true, onSelect: () => undefined },
+            'separator',
+            {
+              label: t.compte.brouillons.titre,
+              icon: 'folder',
+              onSelect: () => setBrouillons(true),
+            },
+            'separator',
+            { label: t.compte.signOut, icon: 'lock', onSelect: seDeconnecter },
+          ]}
+        />
+        <BrouillonsALaDemande open={brouillons} onClose={() => setBrouillons(false)} />
+      </>
     );
   }
   return (
@@ -407,6 +417,19 @@ function CompteBoutons() {
       </Button>
     </>
   );
+}
+
+/** La liste des brouillons du compte, chargée à sa première ouverture. */
+function BrouillonsALaDemande({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [Liste, setListe] = useState<ComponentType<{ open: boolean; onClose: () => void }>>();
+  useEffect(() => {
+    if (!open || Liste) return;
+    void moduleBrouillons().then((m) => {
+      if (m) setListe(() => m.Brouillons);
+      else onClose();
+    });
+  }, [open, Liste, onClose]);
+  return Liste ? <Liste open={open} onClose={onClose} /> : null;
 }
 
 /** Charge le dialogue de connexion, et avec lui `supabase-js`, à la première ouverture. */
@@ -659,6 +682,65 @@ function IssueDialog({
   );
 }
 
+/** Le module des brouillons du compte (liste, conflit), chargé à la première demande. */
+const moduleBrouillons = () =>
+  import('./compte/brouillons.js').catch(() => {
+    toast(t.compte.errors.loadFailed, 'error');
+    return undefined;
+  });
+
+/**
+ * Ce qui empêche l'enregistrement sur le serveur, en mode compte : la session expirée (le plus
+ * urgent, elle bloque tout), le réseau coupé, un conflit sur le brouillon. La saisie reste dans ce
+ * navigateur dans les trois cas.
+ */
+function CompteBanners() {
+  const expiree = useStudio((s) => s.ui.compte?.session === 'expiree');
+  const horsLigne = useStudio((s) => s.ui.compte !== undefined && s.ui.reseau === 'hors-ligne');
+  const conflit = useStudio((s) => s.ui.compte !== undefined && s.ui.conflit);
+  const phrases = t.compte.conservation;
+  return (
+    <>
+      {expiree && (
+        <div class="banner warn actions">
+          <Icon name="lock" />
+          <span>{phrases.sessionExpiree}</span>
+          <Button size="sm" onClick={() => ui({ connexion: 'connexion' })}>
+            {phrases.reconnecter}
+          </Button>
+        </div>
+      )}
+      {!expiree && horsLigne && (
+        <p class="banner warn" role="status">
+          <Icon name="alert" /> {phrases.horsLigne}
+        </p>
+      )}
+      {conflit && (
+        <div class="banner warn actions">
+          <Icon name="alert" />
+          <span>{phrases.conflit}</span>
+          <div class="banner-actions">
+            <Button
+              size="sm"
+              icon="refresh"
+              onClick={() => void moduleBrouillons().then((m) => m?.rechargerBrouillon())}
+            >
+              {phrases.recharger}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void moduleBrouillons().then((m) => m?.garderMaVersion())}
+            >
+              {phrases.garder}
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function Banners() {
   const sample = useStudio((s) => s.ui.sample);
   const issued = useStudio((s) => s.ui.issued);
@@ -673,6 +755,7 @@ function Banners() {
           <Icon name="alert" /> {t.app.storageMemory}
         </p>
       )}
+      <CompteBanners />
       {sample && !issued && (
         <p class="banner info">
           <Icon name="sparkle" /> <span>{t.app.sample}</span>

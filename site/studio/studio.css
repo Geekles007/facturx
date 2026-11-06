@@ -427,6 +427,10 @@ body {
   background: var(--ok-soft);
   flex-wrap: wrap;
 }
+/* Un bandeau qui porte des boutons passe à la ligne sur un écran étroit. */
+.banner.actions {
+  flex-wrap: wrap;
+}
 .banner > span {
   flex: 1;
   min-width: 200px;

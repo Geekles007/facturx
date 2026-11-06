@@ -642,6 +642,48 @@ const fr = {
       other: "L'opération a échoué. Réessayez dans un instant.",
       loadFailed: "Le module de connexion n'a pas pu être chargé : vérifiez votre connexion.",
     },
+    conservation: {
+      horsLigne:
+        'Hors ligne, non enregistré : votre saisie reste dans ce navigateur et partira au retour du réseau.',
+      sessionExpiree:
+        'Votre session a expiré : reconnectez-vous pour enregistrer. Votre saisie est gardée dans ce navigateur.',
+      reconnecter: 'Se reconnecter',
+      reprise:
+        'Votre session a expiré. Reconnectez-vous : votre saisie est gardée, et elle sera enregistrée aussitôt.',
+      conflit:
+        "Ce brouillon a été modifié ailleurs (un autre onglet ou un autre appareil) : votre saisie n'est pas enregistrée.",
+      recharger: 'Recharger la version enregistrée',
+      garder: 'Garder la mienne',
+      garderConfirm:
+        'Remplacer la version enregistrée ailleurs par la vôtre ? Ce qui y a été saisi sera perdu.',
+      recharge: 'Brouillon rechargé.',
+      garde: 'Votre version est enregistrée.',
+      supprimeAilleurs:
+        "Ce brouillon n'existe plus sur le serveur (émis ou supprimé ailleurs) : votre saisie est enregistrée comme un nouveau brouillon.",
+      refus:
+        "Le serveur a refusé d'enregistrer cette modification : elle reste affichée, mais n'est pas conservée.",
+      recul:
+        'La numérotation ne peut pas reculer : le prochain numéro doit rester au moins celui du serveur.',
+      fichier:
+        'Fichier refusé : un logo PNG ou JPEG de 1 Mo au plus, ou une police TTF de 2 Mo au plus.',
+    },
+    brouillons: {
+      titre: 'Brouillons',
+      intro:
+        'Vos brouillons sont enregistrés sur votre compte : vous les retrouvez sur tous vos appareils.',
+      nouveau: 'Nouveau brouillon',
+      ouvrir: 'Ouvrir',
+      ouvert: 'ouvert',
+      supprimerConfirm: (nom: string) =>
+        `Supprimer le brouillon ${nom} ? Il ne pourra pas être récupéré.`,
+      vide: "Aucun brouillon pour l'instant : la facture que vous saisirez sera le premier.",
+      sansClient: 'client à saisir',
+      modifie: (date: string) => `modifié le ${date}`,
+      chargement: 'Chargement…',
+      echec:
+        "L'opération n'a pas abouti : vérifiez votre connexion, puis réessayez dans un instant.",
+      introuvable: "Ce brouillon n'existe plus : il a été émis ou supprimé ailleurs.",
+    },
   },
 };
 
@@ -1268,6 +1310,42 @@ const en: Strings = {
       network: 'The server cannot be reached: check your connection, then try again.',
       other: 'The operation failed. Try again in a moment.',
       loadFailed: 'The sign-in module could not be loaded: check your connection.',
+    },
+    conservation: {
+      horsLigne:
+        'Offline, not saved: your work stays in this browser and will be sent when the network is back.',
+      sessionExpiree:
+        'Your session has expired: sign in again to save. Your work is kept in this browser.',
+      reconnecter: 'Sign in again',
+      reprise:
+        'Your session has expired. Sign in again: your work is kept, and it will be saved right away.',
+      conflit:
+        'This draft was changed elsewhere (another tab or another device): your work is not saved.',
+      recharger: 'Reload the saved version',
+      garder: 'Keep mine',
+      garderConfirm:
+        'Replace the version saved elsewhere with yours? What was entered there will be lost.',
+      recharge: 'Draft reloaded.',
+      garde: 'Your version is saved.',
+      supprimeAilleurs:
+        'This draft no longer exists on the server (issued or deleted elsewhere): your work is saved as a new draft.',
+      refus: 'The server refused to save this change: it is still displayed, but it is not kept.',
+      recul: 'Numbering cannot go backwards: the next number must stay at least the server’s.',
+      fichier: 'File refused: a PNG or JPEG logo of 1 MB at most, or a TTF font of 2 MB at most.',
+    },
+    brouillons: {
+      titre: 'Drafts',
+      intro: 'Your drafts are saved to your account: you find them on all your devices.',
+      nouveau: 'New draft',
+      ouvrir: 'Open',
+      ouvert: 'open',
+      supprimerConfirm: (nom: string) => `Delete the draft ${nom}? It cannot be recovered.`,
+      vide: 'No drafts yet: the invoice you enter will be the first.',
+      sansClient: 'customer to enter',
+      modifie: (date: string) => `modified on ${date}`,
+      chargement: 'Loading…',
+      echec: 'The operation did not go through: check your connection, then try again in a moment.',
+      introuvable: 'This draft no longer exists: it was issued or deleted elsewhere.',
     },
   },
 };

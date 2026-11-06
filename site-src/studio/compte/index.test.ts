@@ -1,8 +1,10 @@
 import { AuthApiError, AuthRetryableFetchError } from '@supabase/supabase-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { t } from '../i18n.js';
+import { indexedDbPersistence, storage, utiliser } from '../storage.js';
 import { store } from '../store.js';
 import { CGU_VERSION, connecter, deconnecter, demarrer, inscrire, reinitialiser } from './index.js';
+import { estPersistenceCompte } from './persistence.js';
 
 // Un client Supabase factice : seuls les appels que `compte/index.ts` fait existent.
 const { auth, from, maybeSingle } = vi.hoisted(() => {
@@ -52,6 +54,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  utiliser(indexedDbPersistence);
   vi.unstubAllGlobals();
   vi.useRealTimers();
   vi.clearAllMocks();
@@ -63,6 +66,7 @@ describe('demarrer', () => {
     expect(await demarrer()).toBeUndefined();
     expect(from).not.toHaveBeenCalled();
     expect(store.get().ui.compte).toBeUndefined();
+    expect(storage).toBe(indexedDbPersistence);
   });
 
   it('relève l’entreprise du compte et renseigne ui.compte', async () => {
@@ -84,6 +88,16 @@ describe('demarrer', () => {
     expect(await demarrer()).toEqual(attendu);
     expect(store.get().ui.compte).toEqual(attendu);
     expect(from).toHaveBeenCalledWith('membres');
+  });
+
+  it('met la conservation du serveur derrière storage, à l’entreprise du compte', async () => {
+    auth.getSession.mockResolvedValue({ data: { session: { user: utilisateur } } });
+    maybeSingle.mockResolvedValue({
+      data: { entreprise_id: 'e-1', entreprises: { suppression_demandee_le: null } },
+      error: null,
+    });
+    await demarrer();
+    expect(estPersistenceCompte(storage) && storage.entrepriseId).toBe('e-1');
   });
 
   it('sans suppression demandée, la date est absente', async () => {
@@ -224,6 +238,45 @@ describe('connecter', () => {
       password: 'secret',
     });
     expect(reload).toHaveBeenCalledOnce();
+  });
+
+  /** Le Studio connecté dont la session a expiré, dialogue de connexion ouvert. */
+  const sessionExpiree = () =>
+    store.set((s) => ({
+      ui: {
+        ...s.ui,
+        connexion: 'connexion',
+        compte: {
+          email: 'a@exemple.test',
+          confirme: true,
+          entrepriseId: 'e-1',
+          suppressionDemandeeLe: undefined,
+          session: 'expiree',
+        },
+      },
+    }));
+
+  it('après une session expirée, au même compte : la session reprend, sans recharger', async () => {
+    sessionExpiree();
+    auth.signInWithPassword.mockResolvedValue({ data: { user: utilisateur }, error: null });
+    maybeSingle.mockResolvedValue({ data: { entreprise_id: 'e-1' }, error: null });
+    await connecter('a@exemple.test', 'secret');
+    expect(reload).not.toHaveBeenCalled();
+    expect(store.get().ui.compte?.session).toBe('active');
+    expect(store.get().ui.connexion).toBeUndefined();
+    expect(from).toHaveBeenCalledWith('membres');
+  });
+
+  it('après une session expirée, avec un autre compte : recharge', async () => {
+    sessionExpiree();
+    auth.signInWithPassword.mockResolvedValue({
+      data: { user: { ...utilisateur, id: 'user-2' } },
+      error: null,
+    });
+    maybeSingle.mockResolvedValue({ data: null, error: null });
+    await connecter('b@exemple.test', 'secret');
+    expect(reload).toHaveBeenCalledOnce();
+    expect(store.get().ui.compte?.session).toBe('expiree');
   });
 
   it('dit « identifiants incorrects » sans citer le texte du serveur', async () => {

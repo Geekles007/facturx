@@ -1,9 +1,12 @@
 /**
  * Ce que le Studio demande à sa conservation, sans dire où elle vit.
  *
- * Aujourd'hui, une seule réponse : IndexedDB, dans le navigateur. Une seconde, côté compte, viendra
- * se placer derrière la même interface ; `store.ts`, `files.ts` et les panneaux n'ont pas à savoir
- * laquelle des deux répond. Les signatures reprennent donc celles de `storage.ts`, à l'identique.
+ * Deux réponses : IndexedDB, dans le navigateur (`storage.ts`), et le serveur du compte
+ * (`compte/persistence.ts`). `store.ts`, `files.ts` et les panneaux n'ont pas à savoir laquelle
+ * des deux répond. Les signatures reprennent celles de `storage.ts`, à l'identique.
+ *
+ * Les écritures rendent la clé écrite (l'`uid` pour `put`) : c'est ce que rend IndexedDB, et ce
+ * que le serveur rend aussi, faute d'autre clé à donner. Personne ne s'en sert pour l'instant.
  */
 
 export type StoreName = 'kv' | 'invoices' | 'clients' | 'products' | 'files';
@@ -27,4 +30,37 @@ export interface Persistence {
   setFile(key: string, bytes: Uint8Array): Promise<IDBValidKey>;
   /** Tout ce que le Studio conserve, pour une sauvegarde téléchargeable. */
   dump(): Promise<Record<string, unknown>>;
+}
+
+/**
+ * Pourquoi une écriture n'a pas abouti, quand la conservation sait le dire (celle du compte) :
+ *
+ *   - `RESEAU` : le serveur ne répond pas (hors ligne, ou erreur 5xx) ; à retenter plus tard ;
+ *   - `SESSION` : le serveur refuse le jeton (401) ; à retenter après la reconnexion ;
+ *   - `BROUILLON_MODIFIE` : le brouillon a été enregistré ailleurs depuis sa lecture ; rien n'a été
+ *     écrasé, l'utilisateur choisit ;
+ *   - `REFUS` : le serveur refuse la valeur (4xx) ; la retenter ne changerait rien ;
+ *   - `EMISSION_SERVEUR` : une facture et son PDF ne s'écrivent que par l'émission, sur le serveur ;
+ *   - `FICHIER` : ni PNG, ni JPEG, ni TTF, ou trop lourd.
+ *
+ * IndexedDB ne lève que des erreurs ordinaires. Le message est le code ; `detail` porte ce que le
+ * serveur a dit, s'il a dit quelque chose (`NUMEROTATION_RECUL`, par exemple).
+ */
+export type CodeConservation =
+  | 'RESEAU'
+  | 'SESSION'
+  | 'BROUILLON_MODIFIE'
+  | 'REFUS'
+  | 'EMISSION_SERVEUR'
+  | 'FICHIER';
+
+export class ErreurConservation extends Error {
+  readonly code: CodeConservation;
+  readonly detail: string | undefined;
+  constructor(code: CodeConservation, detail?: string) {
+    super(code);
+    this.name = 'ErreurConservation';
+    this.code = code;
+    this.detail = detail;
+  }
 }

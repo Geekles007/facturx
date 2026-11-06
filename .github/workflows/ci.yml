@@ -75,6 +75,21 @@ jobs:
         run: supabase start -x studio,imgproxy,vector,logflare,supavisor
       - name: SDK, Studio et modules partagés des fonctions
         run: pnpm build && pnpm site:build && pnpm compte:preparer
+      - name: Tests du Studio contre la pile (persistance du compte)
+        # L'adresse et les clés de la pile viennent de `supabase status`, masquées avant tout usage :
+        # aucune n'apparaît dans le journal. Sans elles, les tests seraient sautés : l'étape échoue.
+        run: |
+          while IFS='=' read -r nom valeur; do
+            valeur="${valeur%\"}"
+            valeur="${valeur#\"}"
+            case "$nom" in
+              API_URL) export SUPABASE_URL="$valeur" ;;
+              ANON_KEY) echo "::add-mask::$valeur"; export SUPABASE_ANON_KEY="$valeur" ;;
+              SERVICE_ROLE_KEY) echo "::add-mask::$valeur"; export SUPABASE_SERVICE_ROLE_KEY="$valeur" ;;
+            esac
+          done < <(supabase status -o env)
+          : "${SUPABASE_URL:?}" "${SUPABASE_ANON_KEY:?}" "${SUPABASE_SERVICE_ROLE_KEY:?}"
+          pnpm exec vitest run --config vitest.site.config.mts site-src/studio/compte
       - name: Tests de la base et des fonctions (le PDF émis passe veraPDF)
         run: pnpm compte:test
         env:

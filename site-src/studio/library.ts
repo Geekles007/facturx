@@ -14,6 +14,7 @@ import {
   addDays,
   blankForm,
   blankLine,
+  blankParty,
   blankPaymentMeans,
   endOfMonth,
   type FormLine,
@@ -231,3 +232,33 @@ export function newInvoiceForm(
 
 // Le JSON portable (octets en base64) vit dans `shared/`, comme la numérotation.
 export { fromBase64, fromPortableJson, toBase64, toPortableJson } from '../shared/portable.js';
+
+// ---------- reprise ----------
+
+/** Complète un objet conservé par les valeurs par défaut : un champ ajouté depuis ne manque jamais. */
+export function fill<T>(defaults: T, saved: unknown): T {
+  if (Array.isArray(defaults) || saved === undefined || saved === null)
+    return (saved ?? defaults) as T;
+  if (
+    typeof defaults !== 'object' ||
+    defaults === null ||
+    typeof saved !== 'object' ||
+    Array.isArray(saved)
+  ) {
+    return saved as T;
+  }
+  if (saved instanceof Uint8Array) return saved as T;
+  const out: Record<string, unknown> = { ...(defaults as Record<string, unknown>) };
+  for (const [key, value] of Object.entries(saved as Record<string, unknown>)) {
+    out[key] = key in out ? fill(out[key], value) : value;
+  }
+  return out as T;
+}
+
+/** Un formulaire conservé (brouillon du navigateur ou du serveur), complété comme au démarrage. */
+export function hydrateForm(saved: InvoiceForm): InvoiceForm {
+  const form = fill(blankForm(), saved);
+  form.seller = fill(blankParty(), saved.seller);
+  form.buyer = fill(blankParty(), saved.buyer);
+  return form;
+}

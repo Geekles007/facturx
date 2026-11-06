@@ -9,11 +9,20 @@
  *
  * Chaque test appelle `fabriquer` lui-même et se suffit : ce que l'implémentation retourne doit
  * partager ses données d'un appel à l'autre, ou n'avoir besoin d'aucun appel précédent.
+ *
+ * Les fichiers écrits portent la signature de ce que le Studio dépose vraiment (PNG, JPEG, TTF) :
+ * la conservation du compte refuse tout autre type, comme son bucket. Les factures, enfin, ne
+ * s'écrivent qu'en local : avec un compte, elles s'émettent par le serveur (`emission: 'serveur'`).
  */
 
 import { describe, expect, test } from 'vitest';
-import type { ClientRecord, ProductRecord } from './library.js';
-import { blankParty } from './model.js';
+import {
+  type ClientRecord,
+  defaultAppearance,
+  type ProductRecord,
+  type SavedInvoice,
+} from './library.js';
+import { blankForm, blankParty } from './model.js';
 import type { Persistence } from './persistence.js';
 
 /** Un client dont le nom permet de reconnaître l'écriture. */
@@ -38,9 +47,34 @@ function produit(uid: string, name: string): ProductRecord {
   };
 }
 
-/** Les 256 valeurs d'un octet, dans l'ordre : aucune ne doit être altérée en chemin. */
+/** Une facture émise en local, telle que l'historique la garde. */
+function facture(uid: string, numero: string): SavedInvoice {
+  return {
+    uid,
+    status: 'issued',
+    form: { ...blankForm('2026-11-04'), id: numero },
+    appearance: defaultAppearance(),
+    summary: {
+      id: numero,
+      typeCode: '380',
+      issueDate: '2026-11-04',
+      buyerName: 'Atelier des Lilas',
+      currency: 'EUR',
+      total: 78_000,
+      due: 78_000,
+    },
+    issuedAt: '2026-11-04T09:30:00.000Z',
+  };
+}
+
+/** Signatures des fichiers que le Studio dépose : un logo PNG ou JPEG, une police TTF. */
+const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const JPEG = [0xff, 0xd8, 0xff];
+const TTF = [0x00, 0x01, 0x00, 0x00];
+
+/** Une police TTF suivie des 256 valeurs d'un octet, dans l'ordre : aucune ne doit être altérée. */
 function tousLesOctets(): Uint8Array {
-  return Uint8Array.from({ length: 256 }, (_, i) => i);
+  return Uint8Array.from([...TTF, ...Array.from({ length: 256 }, (_, i) => i)]);
 }
 
 function octets(bytes: unknown): number[] {
@@ -48,7 +82,11 @@ function octets(bytes: unknown): number[] {
   return Array.from(bytes as Uint8Array);
 }
 
-export function contratPersistence(nom: string, fabriquer: () => Promise<Persistence>): void {
+export function contratPersistence(
+  nom: string,
+  fabriquer: () => Promise<Persistence>,
+  options: { emission: 'locale' | 'serveur' } = { emission: 'locale' },
+): void {
   // Propre à cette exécution : rien de ce qu'une exécution précédente a laissé ne peut y répondre.
   const exec = crypto.randomUUID();
   const cle = (suffixe: string) => `contrat/${exec}/${suffixe}`;
@@ -118,7 +156,7 @@ export function contratPersistence(nom: string, fabriquer: () => Promise<Persist
       await p.put('clients', parti);
       await p.put('clients', reste);
       await p.put('products', produitParti);
-      await p.setFile(cle('fichier'), Uint8Array.of(1, 2, 3));
+      await p.setFile(cle('fichier'), Uint8Array.of(...PNG, 1, 2, 3));
 
       await p.remove('kv', cle('a-supprimer'));
       await p.remove('clients', parti.uid);
@@ -144,22 +182,40 @@ export function contratPersistence(nom: string, fabriquer: () => Promise<Persist
 
     test('setFile puis getFile relisent les octets à l’identique', async () => {
       const p = await fabriquer();
-      const png = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0x00);
+      const png = Uint8Array.of(...PNG, 0x00, 0xff, 0x00);
       await p.setFile(cle('logo'), png);
       await p.setFile(cle('police'), tousLesOctets());
 
       expect(octets(await p.getFile(cle('logo')))).toEqual(Array.from(png));
       expect(octets(await p.getFile(cle('police')))).toEqual(Array.from(tousLesOctets()));
 
-      // Une seconde écriture sous la même clé remplace la première.
-      await p.setFile(cle('logo'), Uint8Array.of(7));
-      expect(octets(await p.getFile(cle('logo')))).toEqual([7]);
+      // Une seconde écriture sous la même clé remplace la première, même d'un autre type.
+      await p.setFile(cle('logo'), Uint8Array.of(...JPEG, 7));
+      expect(octets(await p.getFile(cle('logo')))).toEqual([...JPEG, 7]);
     });
 
     test('getFile d’un fichier jamais écrit ne rend rien', async () => {
       const p = await fabriquer();
       expect(await p.getFile(cle('absent'))).toBeUndefined();
     });
+
+    if (options.emission === 'locale') {
+      test('put puis list relisent une facture émise', async () => {
+        const p = await fabriquer();
+        const emise = facture(uid(), `F-${exec}`);
+        await p.put('invoices', emise);
+        expect(await p.list<SavedInvoice>('invoices')).toContainEqual(emise);
+      });
+    } else {
+      test('une facture ne s’écrit pas : elle s’émet par le serveur', async () => {
+        const p = await fabriquer();
+        const emise = facture(uid(), `F-${exec}`);
+        await expect(p.put('invoices', emise)).rejects.toThrow('EMISSION_SERVEUR');
+        const factures = await p.list<SavedInvoice>('invoices');
+        expect(Array.isArray(factures)).toBe(true);
+        expect(factures.some((f) => f.uid === emise.uid)).toBe(false);
+      });
+    }
 
     test('dump contient tout ce qui a été écrit', async () => {
       const p = await fabriquer();

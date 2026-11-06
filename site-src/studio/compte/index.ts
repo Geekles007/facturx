@@ -6,13 +6,16 @@
  * (main.tsx quand une session est probable, le dialogue de connexion sinon). Les erreurs de
  * l'authentification sont traduites en phrases de l'interface ; `connecter`, `inscrire` (quand la
  * session s'ouvre sans confirmation) et `deconnecter` rechargent la page, qui repart d'une
- * session propre.
+ * session propre — sauf la reconnexion au même compte après une session expirée, qui garde la
+ * saisie en cours là où elle est.
  */
 
 import { type AuthError, isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { type Strings, t } from '../i18n.js';
-import { type CompteUi, toast, ui } from '../store.js';
+import { utiliser } from '../storage.js';
+import { type CompteUi, store, toast, ui } from '../store.js';
 import { client } from './client.js';
+import { supabasePersistence } from './persistence.js';
 import { effacerRetourDeLien, oublierSession, retourDeLien } from './session.js';
 
 /** Version des CGU que l'utilisateur accepte en s'inscrivant ; le serveur refuse l'inscription sans elle. */
@@ -75,8 +78,9 @@ function expliquerRetour(retour: 'code' | 'erreur', etat: Etat): void {
 }
 
 /**
- * Restaure la session, relève l'entreprise du compte et renseigne `ui.compte`. Sans session, ou si
- * le serveur ne répond pas, ne renvoie rien : le Studio démarre alors en mode local. Ne lève jamais.
+ * Restaure la session, relève l'entreprise du compte, met la conservation du serveur derrière
+ * `storage` et renseigne `ui.compte`. Sans session, ou si le serveur ne répond pas, ne renvoie
+ * rien : le Studio démarre alors en mode local. Ne lève jamais.
  */
 export async function demarrer(): Promise<CompteUi | undefined> {
   // Lu avant que `supabase-js` ne touche à l'adresse.
@@ -91,7 +95,11 @@ export async function demarrer(): Promise<CompteUi | undefined> {
   });
   try {
     const compte = await Promise.race([lire(etat), delai]);
-    if (compte) ui({ compte });
+    if (compte) {
+      // Entreprise, brouillons, clients, catalogue, fichiers : tout va désormais au serveur.
+      utiliser(supabasePersistence(client(), compte.entrepriseId));
+      ui({ compte });
+    }
     return compte;
   } catch {
     return undefined;
@@ -149,9 +157,31 @@ export async function inscrire(
   return 'connecte';
 }
 
+/** Vrai si l'utilisateur est membre de cette entreprise. */
+async function membreDe(userId: string, entrepriseId: string): Promise<boolean> {
+  const { data, error } = await client()
+    .from('membres')
+    .select('entreprise_id')
+    .eq('user_id', userId)
+    .eq('entreprise_id', entrepriseId)
+    .maybeSingle();
+  return !error && data !== null;
+}
+
+/**
+ * Ouvre la session, puis recharge la page. Après une session expirée, la reconnexion au même compte
+ * ne recharge rien : la session redevient active, et `store.ts` envoie ce que le serveur avait
+ * refusé, saisie comprise. Un autre compte recharge, et repart avec ses propres données.
+ */
 export async function connecter(email: string, motDePasse: string): Promise<void> {
-  const { error } = await client().auth.signInWithPassword({ email, password: motDePasse });
+  const { data, error } = await client().auth.signInWithPassword({ email, password: motDePasse });
   if (error) throw erreur(error);
+  const compte = store.get().ui.compte;
+  const userId = data.user?.id;
+  if (compte?.session === 'expiree' && userId && (await membreDe(userId, compte.entrepriseId))) {
+    ui({ compte: { ...compte, session: 'active' }, connexion: undefined });
+    return;
+  }
   location.reload();
 }
 

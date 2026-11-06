@@ -16,6 +16,9 @@ const fermer = (): void => ui({ connexion: undefined });
 
 export function Connexion() {
   const volet = useStudio((s) => s.ui.connexion);
+  // Session expirée : on se reconnecte au compte affiché, dont l'adresse est déjà connue.
+  const expiree = useStudio((s) => s.ui.compte?.session === 'expiree');
+  const adresseDuCompte = useStudio((s) => s.ui.compte?.email);
   const [email, setEmail] = useState('');
   const [motDePasse, setMotDePasse] = useState('');
   const [cgu, setCgu] = useState(false);
@@ -32,6 +35,10 @@ export function Connexion() {
     setErreur(undefined);
     setMessage(undefined);
   }, [volet]);
+
+  useEffect(() => {
+    if (volet && expiree && adresseDuCompte) setEmail((saisie) => saisie || adresseDuCompte);
+  }, [volet, expiree, adresseDuCompte]);
 
   /** Change de volet en gardant l'adresse déjà saisie. */
   const aller = (suivant: VoletConnexion): void => {
@@ -103,6 +110,9 @@ export function Connexion() {
                 { value: 'inscription', label: t.compte.createShort },
               ]}
             />
+          )}
+          {volet === 'connexion' && expiree && (
+            <p class="field-hint">{t.compte.conservation.reprise}</p>
           )}
           {volet === 'inscription' && <p class="field-hint">{t.compte.signUpIntro}</p>}
           {volet === 'oubli' && <p class="field-hint">{t.compte.forgotIntro}</p>}
