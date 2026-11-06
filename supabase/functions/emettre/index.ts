@@ -25,7 +25,7 @@
 import { type Invoice, isValidIsoDate, validateInvoice } from 'facturx-sdk';
 import type postgres from 'postgres';
 import { aujourdhui, contexte } from '../_shared/contexte.ts';
-import { lireTexte } from '../_shared/corps.ts';
+import { estObjet, lireObjetPortable, lireTexte } from '../_shared/corps.ts';
 import { admin, sql } from '../_shared/db.ts';
 import { type Anomalie, anomalies, erreur, json, traiter } from '../_shared/erreurs.ts';
 import { type ApparenceEmise, lireApparence, produirePdf } from '../_shared/pdf.ts';
@@ -37,7 +37,7 @@ import {
   nextRank,
   numberProblems,
 } from '../_vendor/shared/numerotation.ts';
-import { fromPortableJson, toPortableJson } from '../_vendor/shared/portable.ts';
+import { toPortableJson } from '../_vendor/shared/portable.ts';
 import { controlerDate } from './regles.ts';
 
 /** Émissions par heure et par compte (spec § 11), comptées sur `factures.emise_le`. */
@@ -58,20 +58,11 @@ interface Corps {
   clientId: string | undefined;
 }
 
-const estObjet = (v: unknown): v is Record<string, unknown> =>
-  typeof v === 'object' && v !== null && !Array.isArray(v);
-
 /** Le corps de la requête, vérifié dans sa forme ; la facture elle-même l'est par le SDK. */
 function lireCorps(texte: string): Corps {
-  const refus = (anomalie: Anomalie) =>
-    anomalies([anomalie], `La demande d’émission est illisible : ${SANS_NUMERO}.`);
-  let corps: unknown;
-  try {
-    corps = fromPortableJson(texte);
-  } catch {
-    throw refus({ code: 'CORPS', path: '', message: 'Le corps n’est pas du JSON.' });
-  }
-  if (!estObjet(corps)) throw refus({ code: 'CORPS', path: '', message: 'Objet attendu.' });
+  const message = `La demande d’émission est illisible : ${SANS_NUMERO}.`;
+  const refus = (anomalie: Anomalie) => anomalies([anomalie], message);
+  const corps = lireObjetPortable(texte, message);
   if (typeof corps.brouillonId !== 'string' || !UUID.test(corps.brouillonId)) {
     throw refus({
       code: 'CORPS',

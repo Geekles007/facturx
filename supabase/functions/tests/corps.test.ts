@@ -1,10 +1,11 @@
 /**
- * `lireTexte` (`_shared/corps.ts`), sans la pile : le corps d'une requête lu avec un plafond, que
- * `content-length` l'annonce ou non. Le refus par l'en-tête est aussi éprouvé de bout en bout dans
- * emettre.test.ts.
+ * `lireTexte` et `lireObjetPortable` (`_shared/corps.ts`), sans la pile : le corps d'une requête lu
+ * avec un plafond, que `content-length` l'annonce ou non, puis lu en JSON portable. Le refus par
+ * l'en-tête est aussi éprouvé de bout en bout dans emettre.test.ts.
  */
 import { assertEquals } from '@std/assert';
-import { lireTexte } from '../_shared/corps.ts';
+import { lireObjetPortable, lireTexte } from '../_shared/corps.ts';
+import { toPortableJson } from '../_vendor/shared/portable.ts';
 
 /** Un corps envoyé par morceaux, sans `content-length`. */
 function parMorceaux(morceaux: string[]): Request {
@@ -51,4 +52,22 @@ Deno.test('un content-length au-delà du plafond refuse avant toute lecture', as
   assertEquals(reponse.status, 413);
   assertEquals(req.bodyUsed, false);
   await reponse.body?.cancel();
+});
+
+Deno.test('lireObjetPortable : un objet, ses octets rendus en Uint8Array', () => {
+  const octets = Uint8Array.of(1, 2, 3);
+  const corps = lireObjetPortable(toPortableJson({ pdf: octets, n: 1 }), 'message');
+  assertEquals(corps, { pdf: octets, n: 1 });
+});
+
+Deno.test('lireObjetPortable : ni du JSON ni un objet, 422 ANOMALIES sous le message donné', async () => {
+  for (const texte of ['pas du JSON', '', '[1]', '"texte"', 'null', '{"pdf":{"$bytes":"%%%"}}']) {
+    const reponse = await refus(Promise.resolve().then(() => lireObjetPortable(texte, 'message')));
+    assertEquals(reponse.status, 422, texte);
+    const corps = await reponse.json();
+    assertEquals(corps.code, 'ANOMALIES', texte);
+    assertEquals(corps.message, 'message', texte);
+    assertEquals(corps.details[0].code, 'CORPS', texte);
+    assertEquals(corps.details[0].path, '', texte);
+  }
 });

@@ -14,6 +14,7 @@ import { FICHIERS_POLICES } from '../_vendor/shared/polices.ts';
 import { fromBase64 } from '../_vendor/shared/portable.ts';
 import { type Assets, type RenderAppearance, renderOptions } from '../_vendor/shared/rendu.ts';
 import { SRGB_ICC_BASE64 } from '../_vendor/srgb.ts';
+import { estObjet } from './corps.ts';
 import { admin } from './db.ts';
 import { type Anomalie, anomalies } from './erreurs.ts';
 import { lireFichier } from './fichiers.ts';
@@ -29,9 +30,6 @@ export interface ApparenceEmise extends Omit<RenderAppearance, 'logo'> {
 }
 
 const MESSAGE = 'L’apparence de la facture est refusée : aucun numéro n’a été consommé.';
-
-const estObjet = (v: unknown): v is Record<string, unknown> =>
-  typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /**
  * Vérifie la forme de l'apparence reçue, ce que le rendu lit sans le contrôler lui-même ; les valeurs

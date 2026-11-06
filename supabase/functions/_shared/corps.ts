@@ -2,8 +2,10 @@
  * Le corps d'une requête, lu avec un plafond : une fonction ne garde pas en mémoire un envoi sans
  * limite avant de le refuser. L'en-tête `content-length`, quand il est là, refuse d'emblée ; les
  * octets sont comptés en lisant de toute façon, car l'en-tête peut manquer (envoi par morceaux).
+ * Puis le JSON portable du Studio (octets en base64 balisé), dont chaque fonction vérifie les champs.
  */
-import { erreur } from './erreurs.ts';
+import { fromPortableJson } from '../_vendor/shared/portable.ts';
+import { anomalies, erreur } from './erreurs.ts';
 
 /** 10 Mio : bien au-delà d'une facture et de ses pièces jointes ordinaires. */
 export const PLAFOND_CORPS = 10 * 1024 * 1024;
@@ -41,4 +43,25 @@ export async function lireTexte(req: Request, plafond = PLAFOND_CORPS): Promise<
     position += morceau.byteLength;
   }
   return new TextDecoder().decode(octets);
+}
+
+export const estObjet = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/**
+ * Le corps `texte` en JSON portable, qui doit être un objet ; sinon lève 422 `ANOMALIES` (`Issue` de
+ * code `CORPS`, chemin vide) sous `message`, que chaque fonction rédige selon ce que le refus laisse
+ * intact.
+ */
+export function lireObjetPortable(texte: string, message: string): Record<string, unknown> {
+  const refus = (detail: string) =>
+    anomalies([{ code: 'CORPS', path: '', message: detail }], message);
+  let corps: unknown;
+  try {
+    corps = fromPortableJson(texte);
+  } catch {
+    throw refus('Le corps n’est pas du JSON.');
+  }
+  if (!estObjet(corps)) throw refus('Objet attendu.');
+  return corps;
 }
