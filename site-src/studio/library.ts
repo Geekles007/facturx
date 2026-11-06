@@ -123,12 +123,13 @@ export interface ProductRecord {
 }
 
 /**
- * Ce qui reconnaît un client dans le carnet : son SIREN, chiffres seuls (tapé avec espaces, points
- * ou tirets, c'est le même), sinon son nom, sans casse. Le carnet (`saveClient`) et l'émission
- * (`clientId`) s'en servent tous deux.
+ * Ce qui reconnaît un client dans le carnet : son identifiant (champ SIREN), sans séparateurs
+ * (espaces, points, tirets : « 732 829 320 » et « 732.829.320 » sont le même) et en majuscules, mais
+ * lettres et chiffres gardés (« SC123456 » et « NI123456 » sont deux clients) ; sinon son nom, sans
+ * casse. Le carnet (`saveClient`) et l'émission (`clientId`) s'en servent tous deux.
  */
 export function cleClient(p: FormParty): string {
-  return p.siren.replace(/\D/g, '') || p.name.trim().toLowerCase();
+  return p.siren.replace(/[\s.-]/g, '').toUpperCase() || p.name.trim().toLowerCase();
 }
 
 export function productToLine(product: ProductRecord): FormLine {

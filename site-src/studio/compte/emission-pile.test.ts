@@ -259,7 +259,90 @@ describe.skipIf(!process.env.SUPABASE_URL)('émettre : la conservation du compte
     expect(await lignes(entrepriseId)).toEqual([]);
   });
 
-  test('« Le recréer avec ma saisie » sur un brouillon émis (réponse perdue) : la facture, pas une seconde', async () => {
+  /**
+   * Un brouillon émis sans qu'on l'ait vu (réponse perdue), puis tapé : la facture existe, le
+   * brouillon n'est plus, la frappe est refusée (« supprimé ailleurs »). Rend la facture.
+   */
+  async function emisSansLeVoir(
+    entrepriseId: string,
+    numero: string,
+  ): Promise<{ facture: string; brouillon: string }> {
+    setForm('buyer.name', 'Émis, réponse perdue');
+    expect(await enregistrerMaintenant()).toBe(true);
+    const [ligne] = await lignes(entrepriseId);
+    if (!ligne) throw new Error('brouillon absent');
+    const facture = await insererFacture(entrepriseId, {
+      numero,
+      form: ligne.form,
+      brouillonId: ligne.id,
+    });
+    await adminDeTest().from('brouillons').delete().eq('id', ligne.id);
+    setForm('buyer.name', 'Tapé après l’émission');
+    expect(await enregistrerMaintenant()).toBe(false);
+    expect(store.get().ui.conflit).toBe('supprime');
+    return { facture, brouillon: ligne.id };
+  }
+
+  /** La saisie tapée après l'émission est un nouveau brouillon, et la frappe suivante y va aussi. */
+  async function saisieGardee(entrepriseId: string, ancien: string): Promise<void> {
+    const apres = await lignes(entrepriseId);
+    expect(apres.map((l) => l.form.buyer.name)).toEqual(['Tapé après l’émission']);
+    expect(apres[0]?.id).not.toBe(ancien);
+    expect(store.get().ui.conflit).toBe(false);
+    expect(store.get().ui.issued).toBeUndefined();
+    expect(store.get().form.buyer.name).toBe('Tapé après l’émission');
+    setForm('buyer.name', 'Et la frappe suivante');
+    expect(await enregistrerMaintenant()).toBe(true);
+    expect((await lignes(entrepriseId)).map((l) => l.form.buyer.name)).toEqual([
+      'Et la frappe suivante',
+    ]);
+  }
+
+  test('« Le recréer avec ma saisie » sur un brouillon émis sans le voir : la saisie, en nouveau brouillon', async () => {
+    const { sb, entrepriseId } = await compteDeTest();
+    const p = supabasePersistence(sb, entrepriseId);
+    demarrer(p, entrepriseId);
+    const { facture, brouillon } = await emisSansLeVoir(entrepriseId, 'F-2026-0031');
+    await recreerBrouillon();
+    await saisieGardee(entrepriseId, brouillon);
+    const s = store.get();
+    expect(s.history.map((h) => [h.uid, h.summary.id])).toEqual([[facture, 'F-2026-0031']]);
+    expect(s.ui.toast?.text).toBe(t.compte.emission.dejaEmisGarde('F-2026-0031'));
+  });
+
+  test('« Recharger » sur un brouillon émis sans le voir : la saisie, en nouveau brouillon', async () => {
+    const { sb, entrepriseId } = await compteDeTest();
+    const p = supabasePersistence(sb, entrepriseId);
+    demarrer(p, entrepriseId);
+    const { brouillon } = await emisSansLeVoir(entrepriseId, 'F-2026-0032');
+    await rechargerBrouillon();
+    await saisieGardee(entrepriseId, brouillon);
+  });
+
+  test('émis sans le voir, historique illisible : la saisie est gardée quand même, le Studio dit vrai', async () => {
+    const { sb, entrepriseId } = await compteDeTest();
+    const p = supabasePersistence(sb, entrepriseId);
+    demarrer(p, entrepriseId);
+    const { brouillon } = await emisSansLeVoir(entrepriseId, 'F-2026-0033');
+    // La recherche de la facture passe, la relecture de l'historique échoue.
+    const fetchOrigine = globalThis.fetch;
+    globalThis.fetch = async (entree, init) => {
+      const adresse = String(entree instanceof Request ? entree.url : entree);
+      if (adresse.includes('/rest/v1/factures') && adresse.includes('emise_le')) {
+        throw new TypeError('Failed to fetch');
+      }
+      return fetchOrigine(entree, init);
+    };
+    try {
+      await recreerBrouillon();
+    } finally {
+      globalThis.fetch = fetchOrigine;
+    }
+    await saisieGardee(entrepriseId, brouillon);
+    expect(store.get().ui.toast?.text).toBe(t.compte.emission.dejaEmisGarde('F-2026-0033'));
+  }, 30_000);
+
+  test('émis sans le voir, rien en attente sous une vue, historique illisible : la vue reste, le Studio dit vrai', async () => {
     const { sb, entrepriseId } = await compteDeTest();
     const p = supabasePersistence(sb, entrepriseId);
     demarrer(p, entrepriseId);
@@ -267,50 +350,35 @@ describe.skipIf(!process.env.SUPABASE_URL)('émettre : la conservation du compte
     expect(await enregistrerMaintenant()).toBe(true);
     const [ligne] = await lignes(entrepriseId);
     if (!ligne) throw new Error('brouillon absent');
-    // Le serveur a émis (la réponse s'est perdue) : la facture existe, le brouillon n'est plus.
-    const id = await insererFacture(entrepriseId, {
-      numero: 'F-2026-0031',
+    await insererFacture(entrepriseId, {
+      numero: 'F-2026-0034',
       form: ligne.form,
       brouillonId: ligne.id,
     });
     await adminDeTest().from('brouillons').delete().eq('id', ligne.id);
-    setForm('buyer.name', 'Tapé après');
-    expect(await enregistrerMaintenant()).toBe(false);
-    expect(store.get().ui.conflit).toBe('supprime');
-
-    await recreerBrouillon();
-    expect(await lignes(entrepriseId)).toEqual([]);
+    // Une facture émise affichée par-dessus, rien en attente dessous, et un conflit à trancher.
+    store.set((s) => ({ ui: { ...s.ui, issued: 'une-autre-facture', conflit: true } }));
+    const fetchOrigine = globalThis.fetch;
+    globalThis.fetch = async (entree, init) => {
+      const adresse = String(entree instanceof Request ? entree.url : entree);
+      if (adresse.includes('/rest/v1/factures') && adresse.includes('emise_le')) {
+        throw new TypeError('Failed to fetch');
+      }
+      return fetchOrigine(entree, init);
+    };
+    try {
+      await recreerBrouillon();
+    } finally {
+      globalThis.fetch = fetchOrigine;
+    }
     const s = store.get();
-    expect(s.ui.issued).toBe(id);
+    expect(s.ui.issued).toBe('une-autre-facture');
     expect(s.ui.conflit).toBe(false);
-    expect(s.ui.toast?.text).toBe(t.compte.emission.dejaEmis('F-2026-0031'));
-    // Rien ne repart pour le brouillon émis.
-    expect(await enregistrerMaintenant()).toBe(true);
-    await p.envoisTermines();
+    expect(s.ui.toast?.text).toBe(t.compte.emission.emiseNonAffichee('F-2026-0034'));
     expect(await lignes(entrepriseId)).toEqual([]);
-  });
-
-  test('« Recharger » sur un brouillon émis : la facture s’ouvre, rien n’est recréé', async () => {
-    const { sb, entrepriseId } = await compteDeTest();
-    const p = supabasePersistence(sb, entrepriseId);
-    demarrer(p, entrepriseId);
-    setForm('buyer.name', 'Émis ailleurs');
-    expect(await enregistrerMaintenant()).toBe(true);
-    const [ligne] = await lignes(entrepriseId);
-    if (!ligne) throw new Error('brouillon absent');
-    const id = await insererFacture(entrepriseId, {
-      numero: 'F-2026-0032',
-      form: ligne.form,
-      brouillonId: ligne.id,
-    });
-    await adminDeTest().from('brouillons').delete().eq('id', ligne.id);
-    setForm('buyer.name', 'Tapé après');
-    expect(await enregistrerMaintenant()).toBe(false);
-
-    await rechargerBrouillon();
-    expect(await lignes(entrepriseId)).toEqual([]);
-    expect(store.get().ui.issued).toBe(id);
-  });
+    // Le brouillon émis est quitté : rien ne repart pour lui.
+    expect(p.brouillonCourant()).toBeUndefined();
+  }, 30_000);
 
   test('factureDuBrouillon : la facture émise depuis ce brouillon, ou rien', async () => {
     const { sb, entrepriseId } = await compteDeTest();

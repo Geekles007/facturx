@@ -343,6 +343,44 @@ describe('emettreSurServeur', () => {
     }
   });
 
+  test('clientId : des identifiants qui ne diffèrent que par les lettres désignent deux clients', async () => {
+    const { p } = fausseConservation();
+    demarrer(p);
+    const acheteur = store.get().form.buyer;
+    store.set({
+      clients: [
+        { uid: 'c-sc', party: { ...acheteur, siren: 'SC123456' }, updatedAt: '2026-11-01' },
+        { uid: 'c-ni', party: { ...acheteur, siren: 'NI123456' }, updatedAt: '2026-11-01' },
+      ],
+    });
+    faux.invoke.mockResolvedValue(coupure());
+    setForm('buyer.siren', 'ni-123.456');
+    await emettreSurServeur();
+    expect((await corpsEnvoye()).clientId).toBe('c-ni');
+  });
+
+  test('l’émission est bornée : sans réponse au bout de 60 s, l’issue est incertaine et l’éditeur reprend', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { p } = fausseConservation();
+      demarrer(p);
+      faux.invoke.mockReturnValue(new Promise(() => undefined));
+      const emission = emettreSurServeur();
+      await vi.waitFor(() => expect(faux.invoke).toHaveBeenCalledTimes(1));
+      expect(store.get().ui.emissionEnCours).toBe(true);
+      await vi.advanceTimersByTimeAsync(59_000);
+      expect(store.get().ui.emissionEnCours).toBe(true);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(await emission).toBe(false);
+      expect(store.get().ui.emissionEnCours).toBe(false);
+      expect(texteDuMessage()).toBe(t.compte.emission.incertain);
+      // L'appel lui-même est borné aussi (le fetch est abandonné au même délai).
+      expect(faux.invoke.mock.calls[0]?.[1]).toMatchObject({ timeout: 60_000 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test('double clic : une seule émission, un seul message, la facture ouverte une fois', async () => {
     const { p, etat } = fausseConservation();
     demarrer(p);

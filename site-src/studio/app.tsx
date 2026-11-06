@@ -656,8 +656,13 @@ function IssueDialog({
   const confirmIssue = async () => {
     if (!derived.assets) return;
     setBusy(true);
-    const done = await issueInvoice(derived.assets, { record: true });
-    setBusy(false);
+    let done = false;
+    try {
+      done = await issueInvoice(derived.assets, { record: true });
+    } finally {
+      // Même si l'émission lève, le dialogue redevient fermable.
+      setBusy(false);
+    }
     if (done) countIssued();
     // En mode compte, un refus mène hors du dialogue (onglet Contrôle, date, bandeau, connexion).
     if (done || compte) onClose();
@@ -1040,10 +1045,10 @@ export function App() {
         <div
           class={`studio mobile-${mobile}${dragging ? ' dragging' : ''}`}
           onDragOver={(e) => {
-            if (store.get().ui.emissionEnCours) return;
             if (e.dataTransfer?.types.includes('Files')) {
+              // Toujours retenu : sinon le navigateur ouvrirait le fichier à la place du Studio.
               e.preventDefault();
-              setDragging(true);
+              if (!store.get().ui.emissionEnCours) setDragging(true);
             }
           }}
           onDragLeave={(e) => {

@@ -59,6 +59,25 @@ const ESSAIS = 10;
 /** Un message d'échec reste affiché le temps de le lire. */
 const DUREE_MS = 9000;
 
+/**
+ * Le plus long qu'une étape de l'émission fige l'éditeur : l'enregistrement qui la précède, l'appel
+ * à `emettre` (le `fetch` est abandonné au même délai). Au-delà, l'issue est incertaine (on cherche
+ * la facture par son brouillon) et l'éditeur reprend.
+ */
+export const DELAI_EMISSION_MS = 60_000;
+
+/** Le plus long que dure la recherche de la facture d'une réponse perdue. */
+const DELAI_RECHERCHE_MS = 15_000;
+
+/** `promesse`, ou `repli` au bout de `ms` : l'émission ne fige jamais l'éditeur sans fin. */
+function borne<T>(promesse: Promise<T>, ms: number, repli: T): Promise<T> {
+  let minuterie: ReturnType<typeof setTimeout> | undefined;
+  const delai = new Promise<T>((resolve) => {
+    minuterie = setTimeout(() => resolve(repli), ms);
+  });
+  return Promise.race([promesse, delai]).finally(() => clearTimeout(minuterie));
+}
+
 /** Ce qui part : le corps, et ce qu'il a été construit à partir de. */
 interface Envoi {
   brouillonId: string;
@@ -166,8 +185,12 @@ async function enregistrerPuisEnvoyer(
   const phrases = t.compte.emission;
   for (let essai = 1; ; essai++) {
     const avant = store.get();
-    if (!(await enregistrerMaintenant())) return refus(phrases.nonEnregistre);
-    await p.envoisTermines();
+    // Un enregistrement qui ne répond pas ne fige pas l'éditeur : il continue sans l'émission.
+    if (!(await borne(enregistrerMaintenant(), DELAI_EMISSION_MS, false))) {
+      return refus(phrases.nonEnregistre);
+    }
+    const termines = p.envoisTermines().then(() => true);
+    if (!(await borne(termines, DELAI_EMISSION_MS, false))) return refus(phrases.nonEnregistre);
     const envoi = preparer(p);
     if (envoi) {
       // Au-delà du plafond du serveur, rien ne part : le message dit quoi réduire.
@@ -208,8 +231,8 @@ async function emettre(etape: { envoye: boolean }): Promise<boolean> {
       await ouvrirLaFactureEmise(p, resultat.emise, {
         brouillonOuvert: resultat.ouvert === true,
         secours: envoi,
-        message: phrases.emise(resultat.emise.numero),
       });
+      toast(phrases.emise(resultat.emise.numero));
       return true;
     case 'refus':
       return reagir(resultat.reaction, envoi);
@@ -229,10 +252,14 @@ async function echanger(
   etape: { envoye: boolean },
 ): Promise<Resultat> {
   etape.envoye = true;
-  let resultat = await interroger(envoi);
+  // Sans réponse au bout du délai, l'issue est incertaine ; la réponse tardive, s'il en vient une,
+  // est ignorée (rien n'est quitté pour elle) : la recherche ci-dessous, ou plus tard la reprise
+  // d'un brouillon émis (`imposer`), dit ce qu'il en est.
+  let resultat = await borne(interroger(envoi), DELAI_EMISSION_MS, { kind: 'incertaine' });
   if (resultat.kind === 'incertaine') {
     // La réponse n'est pas arrivée, ou ne se lit pas : la facture est-elle émise ?
-    const emise = await p.factureDuBrouillon(envoi.brouillonId).catch(() => undefined);
+    const recherche = p.factureDuBrouillon(envoi.brouillonId).catch(() => undefined);
+    const emise = await borne(recherche, DELAI_RECHERCHE_MS, undefined);
     if (emise) resultat = { kind: 'emise', emise };
   }
   if (resultat.kind !== 'emise') return resultat;
@@ -241,7 +268,10 @@ async function echanger(
 
 /** L'appel à `emettre`, et ce que sa réponse dit. */
 async function interroger(envoi: Envoi): Promise<Resultat> {
-  const { data, error } = await client().functions.invoke('emettre', { body: envoi.corps });
+  const { data, error } = await client().functions.invoke('emettre', {
+    body: envoi.corps,
+    timeout: DELAI_EMISSION_MS,
+  });
   if (!error) {
     const emise = data as { id?: unknown; numero?: unknown } | null;
     return typeof emise?.id === 'string' && typeof emise.numero === 'string'
@@ -325,39 +355,47 @@ function reagir(r: Reaction, envoi: Envoi): false {
 }
 
 /**
- * La facture est émise : ce que le magasin attendait encore du brouillon émis (conflit, écriture en
- * échec) ne vaut plus s'il était l'ouvert ; l'historique et la numérotation sont relus (le numéro
- * proposé du brouillon suivant en dépend), et la facture émise s'ouvre. Relire peut échouer sans
- * rien défaire : la facture est alors reconstituée de ce qui a été envoyé (`secours`), s'il est là.
- * Sert aussi quand on découvre après coup qu'un brouillon a été émis (réponse perdue).
+ * Relit l'historique et la numérotation (le numéro proposé du brouillon suivant en dépend), chacun
+ * s'il se lit. Rend l'historique lu, ou rien s'il ne s'est pas lu.
  */
-export async function ouvrirLaFactureEmise(
-  p: PersistenceCompte,
-  emise: Emise,
-  options: { brouillonOuvert: boolean; secours?: Envoi; message: string },
-): Promise<void> {
-  if (options.brouillonOuvert) oublierLeBrouillonRefuse();
+export async function relireHistorique(p: PersistenceCompte): Promise<SavedInvoice[] | undefined> {
   const [lues, numerotation] = await Promise.allSettled([
     p.list<SavedInvoice>('invoices'),
     p.get<Numbering>('numbering'),
   ]);
-  let history = lues.status === 'fulfilled' ? lues.value : store.get().history;
+  const history = lues.status === 'fulfilled' ? lues.value : undefined;
+  const numbering =
+    numerotation.status === 'fulfilled' && numerotation.value
+      ? fill(defaultNumbering(), numerotation.value)
+      : undefined;
+  store.set({ ...(history ? { history } : {}), ...(numbering ? { numbering } : {}) });
+  return history;
+}
+
+/**
+ * La facture est émise : ce que le magasin attendait encore du brouillon émis (conflit, écriture en
+ * échec) ne vaut plus s'il était l'ouvert ; l'historique et la numérotation sont relus, et la
+ * facture émise s'ouvre. Relire peut échouer sans rien défaire : la facture est alors reconstituée
+ * de ce qui a été envoyé (`secours`), s'il est là ; sinon elle ne s'ouvre pas, et l'écran reste ce
+ * qu'il est. Vrai si elle s'est ouverte : à l'appelant de dire ce qu'il en est. Sert aussi quand on
+ * découvre après coup qu'un brouillon a été émis (réponse perdue).
+ */
+export async function ouvrirLaFactureEmise(
+  p: PersistenceCompte,
+  emise: Emise,
+  options: { brouillonOuvert: boolean; secours?: Envoi },
+): Promise<boolean> {
+  if (options.brouillonOuvert) oublierLeBrouillonRefuse();
+  let history = (await relireHistorique(p)) ?? store.get().history;
   let saved = history.find((h) => h.uid === emise.id);
   if (!saved && options.secours) {
     saved = reconstituer(emise, options.secours);
     history = [...history.filter((h) => h.uid !== emise.id), saved];
   }
-  const numbering =
-    numerotation.status === 'fulfilled' && numerotation.value
-      ? fill(defaultNumbering(), numerotation.value)
-      : undefined;
-  store.set((s) => ({
-    history,
-    ...(numbering ? { numbering } : {}),
-    ui: { ...s.ui, refusServeur: undefined },
-  }));
-  if (saved) openIssued(saved);
-  toast(options.message);
+  store.set((s) => ({ history, ui: { ...s.ui, refusServeur: undefined } }));
+  if (!saved) return false;
+  openIssued(saved);
+  return true;
 }
 
 /** La facture émise, telle que l'historique la rendra, d'après ce qui a été envoyé. */

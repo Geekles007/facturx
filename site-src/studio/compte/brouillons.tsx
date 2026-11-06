@@ -38,7 +38,7 @@ import {
   remplacer,
   startDraft,
 } from '../workflows.js';
-import { ouvrirLaFactureEmise } from './emission.js';
+import { ouvrirLaFactureEmise, relireHistorique } from './emission.js';
 import {
   type Brouillon,
   estPersistenceCompte,
@@ -111,29 +111,38 @@ function contenuEnConflit(p: PersistenceCompte): Brouillon | undefined {
 }
 
 /**
- * Le brouillon ouvert a-t-il été émis, la réponse s'étant perdue ? Le recréer ferait une seconde
- * facture du même contenu : la facture s'ouvre à la place, et le Studio le dit.
+ * Le contenu du brouillon en conflit remplace la version du serveur (ou la recrée), et le dit.
+ *
+ * Le brouillon a peut-être été émis sans qu'on l'ait vu (réponse d'émission perdue) : le serveur l'a
+ * supprimé, et sa facture existe. On le vérifie d'abord (`factureDuBrouillon`). Alors rien n'est
+ * jeté ni émis deux fois : la saisie faite depuis devient un nouveau brouillon, par le même chemin
+ * que « supprimé ailleurs » (`imposerBrouillon`), que l'on n'émettra que si on le veut ; sans saisie
+ * à garder (une vue à l'écran, rien en attente dessous), le brouillon émis est quitté, et sa facture
+ * s'ouvre si l'historique se lit — sinon l'écran reste ce qu'il est. Le Studio dit ce qu'il en est.
+ * Un échec en route (réseau) laisse le conflit tel quel, avec son bandeau.
  */
-async function emisEntreTemps(p: PersistenceCompte): Promise<boolean> {
+async function imposer(p: PersistenceCompte, message: string, genre: 'ok' | 'info'): Promise<void> {
+  const phrases = t.compte.emission;
   const id = p.brouillonCourant()?.id;
   const emise = id ? await p.factureDuBrouillon(id) : undefined;
-  if (!id || !emise) return false;
-  const ouvert = await p.brouillonEmis(id);
-  await ouvrirLaFactureEmise(p, emise, {
-    brouillonOuvert: ouvert,
-    message: t.compte.emission.dejaEmis(emise.numero),
-  });
-  return true;
-}
-
-/** Le contenu du brouillon en conflit remplace la version du serveur (ou la recrée), et le dit. */
-async function imposer(p: PersistenceCompte, message: string, genre: 'ok' | 'info'): Promise<void> {
-  if (await emisEntreTemps(p)) return;
   const b = contenuEnConflit(p);
+  if (emise && id && !b) {
+    const ouvert = await p.brouillonEmis(id);
+    const ouverte = await ouvrirLaFactureEmise(p, emise, { brouillonOuvert: ouvert });
+    toast(
+      ouverte ? phrases.dejaEmis(emise.numero) : phrases.emiseNonAffichee(emise.numero),
+      'info',
+      9000,
+    );
+    return;
+  }
   // Sous une vue, plus aucune saisie n'attend : il n'y a plus rien à trancher.
   if (b) await p.imposerBrouillon(b);
   ui({ conflit: false });
-  if (b) toast(message, genre, genre === 'info' ? 7000 : undefined);
+  if (emise) {
+    await relireHistorique(p);
+    toast(phrases.dejaEmisGarde(emise.numero), 'info', 9000);
+  } else if (b) toast(message, genre, genre === 'info' ? 7000 : undefined);
 }
 
 /**

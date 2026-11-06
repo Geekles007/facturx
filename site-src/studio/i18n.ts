@@ -798,7 +798,11 @@ const fr = {
       confirmationRenvoyee: (email: string) =>
         `Un nouvel e-mail de confirmation est parti vers ${email} : ouvrez le lien qu'il contient, puis émettez de nouveau.`,
       dejaEmis: (numero: string) =>
-        `Ce brouillon a déjà été émis (facture ${numero}) : la facture s'ouvre. Ce qui a été tapé depuis n'est pas repris, et aucune seconde facture n'est émise.`,
+        `Ce brouillon a déjà été émis (facture ${numero}) : la facture s'ouvre, et aucune seconde facture n'est émise.`,
+      dejaEmisGarde: (numero: string) =>
+        `La facture ${numero} a bien été émise ; votre saisie depuis est gardée dans un nouveau brouillon.`,
+      emiseNonAffichee: (numero: string) =>
+        `Ce brouillon a déjà été émis (facture ${numero}), mais l'historique n'a pas pu être relu : retrouvez la facture dans l'historique dès que le réseau répond.`,
     },
   },
 };
@@ -1573,7 +1577,11 @@ const en: Strings = {
       confirmationRenvoyee: (email: string) =>
         `A new confirmation email was sent to ${email}: open the link it contains, then issue again.`,
       dejaEmis: (numero: string) =>
-        `This draft was already issued (invoice ${numero}): the invoice opens. What was typed since is not kept, and no second invoice is issued.`,
+        `This draft was already issued (invoice ${numero}): the invoice opens, and no second invoice is issued.`,
+      dejaEmisGarde: (numero: string) =>
+        `Invoice ${numero} was indeed issued; what you typed since is kept in a new draft.`,
+      emiseNonAffichee: (numero: string) =>
+        `This draft was already issued (invoice ${numero}), but the history could not be read: find the invoice in the history once the network responds.`,
     },
   },
 };
