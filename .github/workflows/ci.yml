@@ -75,4 +75,7 @@ jobs:
         run: supabase start -x studio,imgproxy,vector,logflare,supavisor
       - name: SDK, Studio et modules partagés des fonctions
         run: pnpm build && pnpm site:build && pnpm compte:preparer
-      - run: pnpm compte:test
+      - name: Tests de la base et des fonctions (le PDF émis passe veraPDF)
+        run: pnpm compte:test
+        env:
+          VERAPDF: '1'

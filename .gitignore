@@ -22,8 +22,10 @@ site/studio/polices/
 # Page d'accueil : relevé des téléchargements npm (pnpm downloads:fetch)
 site/npm-downloads.json
 
-# Comptes : SDK et modules copiés dans les Edge Functions (pnpm compte:preparer), état local du CLI Supabase
+# Comptes : SDK et modules copiés dans les Edge Functions (pnpm compte:preparer), état local du CLI Supabase,
+# variables locales des fonctions (supabase/functions/.env.example est la copie versionnée)
 supabase/functions/_vendor/
+supabase/functions/.env
 supabase/.temp/
 supabase/.branches/
 

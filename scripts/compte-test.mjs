@@ -7,8 +7,10 @@
  *   2. Edge Functions : les polices du Studio (`pnpm site:build` les construit) sont déposées dans le
  *      bucket `polices` de la pile, comme `pnpm compte:polices` le fait, car les fonctions produisent
  *      les PDF avec elles et `supabase db reset` vide le bucket ; puis `supabase functions serve` en
- *      arrière-plan, et `deno test -A` sur supabase/functions/tests/ (avec l'import map de
- *      supabase/functions/deno.json), l'adresse de la pile et ses clés dans l'environnement.
+ *      arrière-plan, avec les variables de supabase/functions/.env (ou de .env.example, sa copie
+ *      versionnée, quand il n'existe pas : en CI), et `deno test -A` sur supabase/functions/tests/
+ *      (avec l'import map de supabase/functions/deno.json), l'adresse de la pile et ses clés dans
+ *      l'environnement.
  *
  * Le code de sortie est celui de `deno test`. Un dossier de tests absent ou vide est sauté, et sans
  * aucun test le script sort proprement sans toucher à la pile.
@@ -22,6 +24,10 @@ import { deposerPolices } from './compte-polices.mjs';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pgtapDir = join(root, 'supabase/tests');
 const denoDir = join(root, 'supabase/functions/tests');
+/** Les variables des fonctions : le fichier local s'il existe, sinon sa copie versionnée. */
+const envFonctions = ['.env', '.env.example']
+  .map((nom) => join(root, 'supabase/functions', nom))
+  .find((chemin) => existsSync(chemin));
 
 /** Le dossier existe-t-il, avec au moins un fichier de test (à n'importe quelle profondeur) ? */
 function aDesTests(dossier, extension) {
@@ -50,7 +56,8 @@ const SERVEUR_PRET = /Serving functions (?:on|at)\b/i;
 
 /** Lance `supabase functions serve`, relaie sa sortie, et résout quand il annonce qu'il sert. */
 function demarrerServeur() {
-  const serveur = spawn('supabase', ['functions', 'serve'], {
+  const options = envFonctions ? ['--env-file', envFonctions] : [];
+  const serveur = spawn('supabase', ['functions', 'serve', ...options], {
     cwd: root,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
