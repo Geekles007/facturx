@@ -5,8 +5,9 @@
  *
  *   - le corps, en texte, est échappé puis placé dans un gabarit HTML fixe (`textContent` garde le
  *     texte brut) : aucun HTML saisi par l'utilisateur n'est envoyé ;
- *   - l'objet est débarrassé des retours à la ligne et des caractères de contrôle, et coupé à 200
- *     caractères ; le nom de l'expéditeur, des guillemets et des retours à la ligne ;
+ *   - l'objet est débarrassé des retours à la ligne, des caractères de contrôle et de mise en forme
+ *     (sens d'écriture, largeur nulle), et coupé à 200 caractères ; le nom de l'expéditeur, de ces
+ *     caractères, des guillemets et des chevrons ;
  *   - le destinataire est une seule adresse (`destinataireValide`).
  *
  * L'adresse d'expédition est celle du domaine de facturx (`RELANCES_EXPEDITEUR`) ; `Reply-To` est
@@ -33,6 +34,13 @@ const NOM_MAX = 100;
 /** Une fin de ligne, sous toutes ses formes : caractères de contrôle (CR, LF, tabulation…) et U+2028/9. */
 const FINS_DE_LIGNE = /[\p{Cc}\p{Zl}\p{Zp}]+/gu;
 
+/**
+ * Les caractères de mise en forme (catégorie Cf) : sens d'écriture (U+202E, U+2066-2069 : un objet qui
+ * se lirait à l'envers), largeur nulle (U+200B…), marque d'ordre des octets. Ils n'ont rien à faire dans
+ * un objet ni dans un nom d'expéditeur ; retirés, ils séparent les composants d'un émoji composé.
+ */
+const MISE_EN_FORME = /\p{Cf}/gu;
+
 const ENTITES: Record<string, string> = {
   '&': '&amp;',
   '<': '&lt;',
@@ -55,12 +63,20 @@ function couper(texte: string, max: number): string {
 }
 
 /**
- * L'objet d'un e-mail sur une seule ligne : chaque suite de retours à la ligne et de caractères de
- * contrôle devient une espace (c'est ce qui empêche `Relance\r\nBcc: x@y` d'ouvrir un en-tête), puis
- * l'objet est coupé à 200 caractères.
+ * `texte` sur une seule ligne, de `max` caractères au plus : les caractères de mise en forme sont
+ * retirés, chaque suite de retours à la ligne et de caractères de contrôle devient une espace, puis le
+ * texte est coupé. Aussi pour ce que Brevo répond (l'identifiant du message), avant qu'il soit consigné.
+ */
+export function uneLigne(texte: string, max: number): string {
+  return couper(texte.replace(MISE_EN_FORME, '').replace(FINS_DE_LIGNE, ' ').trim(), max).trim();
+}
+
+/**
+ * L'objet d'un e-mail sur une seule ligne (c'est ce qui empêche `Relance\r\nBcc: x@y` d'ouvrir un
+ * en-tête), de 200 caractères au plus.
  */
 export function nettoyerObjet(objet: string): string {
-  return couper(objet.replace(FINS_DE_LIGNE, ' ').trim(), OBJET_MAX).trim();
+  return uneLigne(objet, OBJET_MAX);
 }
 
 /** « *Nom de l'entreprise* via facturx », sans guillemet, chevron, barre oblique inverse ni retour à la ligne. */
@@ -68,6 +84,7 @@ function nomExpediteur(entreprise: string): string {
   const nom = couper(
     entreprise
       .replace(/["<>\\]/g, '')
+      .replace(MISE_EN_FORME, '')
       .replace(FINS_DE_LIGNE, ' ')
       .replace(/\s+/g, ' ')
       .trim(),

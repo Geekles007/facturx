@@ -2,7 +2,7 @@
 // `FACTURX_TESTS` vaut exactement `1` (fichier .env local et CI) et hors d'un projet hébergé par
 // Supabase, jamais en production.
 import { assertEquals } from '@std/assert';
-import { aujourdhui } from '../_shared/contexte.ts';
+import { aujourdhui, aujourdhuiImpose } from '../_shared/contexte.ts';
 import { aujourdhuiParis } from '../emettre/regles.ts';
 import { avecEnv } from './aide.ts';
 
@@ -38,6 +38,22 @@ Deno.test('même avec FACTURX_TESTS=1, un projet hébergé par Supabase ignore l
   ]) {
     await avecEnv({ FACTURX_TESTS: '1', SUPABASE_URL: url }, () => {
       assertEquals(aujourdhui(requete('2001-02-03')), aujourdhuiParis(new Date()));
+    });
+  }
+});
+
+Deno.test('aujourdhuiImpose() : le jour de l’en-tête sous les mêmes gardes, sinon rien (la vraie horloge)', async () => {
+  await avecEnv({ FACTURX_TESTS: '1', SUPABASE_URL: LOCAL }, () => {
+    assertEquals(aujourdhuiImpose(requete('2001-02-03')), '2001-02-03');
+    assertEquals(aujourdhuiImpose(requete()), undefined);
+    assertEquals(aujourdhuiImpose(requete('demain')), undefined);
+  });
+  for (const env of [
+    { FACTURX_TESTS: undefined, SUPABASE_URL: LOCAL },
+    { FACTURX_TESTS: '1', SUPABASE_URL: 'https://abcdefgh.supabase.co' },
+  ]) {
+    await avecEnv(env, () => {
+      assertEquals(aujourdhuiImpose(requete('2001-02-03')), undefined);
     });
   }
 });

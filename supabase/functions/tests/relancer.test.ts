@@ -13,6 +13,10 @@
  */
 import { assert, assertEquals, assertExists, assertMatch } from '@std/assert';
 import { aujourdhuiParis } from '../_shared/dates.ts';
+import { fromBase64 } from '../_vendor/shared/portable.ts';
+import { DOSSIER_TRACES } from '../relancer/brevo.ts';
+import { cleDuVerrou } from '../relancer/limites.ts';
+import type { MessageBrevo } from '../relancer/message.ts';
 import { admin, appeler, base, creerCompte, decaler, urlFonction } from './aide.ts';
 
 type Compte = Awaited<ReturnType<typeof creerCompte>>;
@@ -33,8 +37,9 @@ const ilYA = (ms: number): Date => new Date(Date.now() - ms);
 const aujourdhui = (): string => aujourdhuiParis(new Date());
 
 /** Un compte confirmé dont l'entreprise a un SIREN et un nom : ce qu'il faut pour relancer. */
-async function compteRelanceur(): Promise<Compte> {
-  const compte = await creerCompte();
+async function compteRelanceur(): Promise<Compte & { email: string }> {
+  const email = `essai-${crypto.randomUUID()}@facturx.test`;
+  const compte = await creerCompte(email);
   await base(
     (sql) => sql`
       update entreprises
@@ -43,7 +48,28 @@ async function compteRelanceur(): Promise<Compte> {
                '{seller,name}', to_jsonb(${'Atelier Exemple SAS'}::text))
        where id = ${compte.entrepriseId}`,
   );
-  return compte;
+  return { ...compte, email };
+}
+
+/** Le numéro que `ecrireFactures` donne à la facture, et sous lequel le simulateur range ses traces. */
+const numeroDe = (factureId: string): string => `F-${factureId.slice(0, 8)}`;
+
+/**
+ * Les messages que le simulateur d'envoi a reçus pour cette facture (sa pièce jointe porte son numéro) :
+ * ce qui serait parti chez Brevo, pièce jointe comprise. Vide : rien n'a été remis au service.
+ */
+async function messagesRemis(factureId: string): Promise<MessageBrevo[]> {
+  const dossier = `${DOSSIER_TRACES}/${numeroDe(factureId)}`;
+  const stockage = admin().storage.from('factures');
+  const liste = await stockage.list(dossier);
+  if (liste.error) throw new Error(`${dossier} : ${liste.error.message}`);
+  const messages: MessageBrevo[] = [];
+  for (const fichier of liste.data) {
+    const lu = await stockage.download(`${dossier}/${fichier.name}`);
+    if (lu.error) throw new Error(`${dossier}/${fichier.name} : ${lu.error.message}`);
+    messages.push(JSON.parse(await lu.data.text()));
+  }
+  return messages;
 }
 
 /** L'oid du type `uuid[]` de Postgres, que postgres.js ne devine pas pour un paramètre. */
@@ -53,7 +79,7 @@ const UUID_ARRAY = 2951;
 async function ecrireFactures(
   compte: Compte,
   ids: string[],
-  options: { echeance?: string | null; typeCode?: string } = {},
+  options: { echeance?: string | null; typeCode?: string; pdfChemin?: string } = {},
 ): Promise<void> {
   const echeance = options.echeance === undefined ? decaler(aujourdhui(), -10) : options.echeance;
   await base(
@@ -64,7 +90,8 @@ async function ecrireFactures(
       select t.id, ${compte.entrepriseId}, 'F-' || left(t.id::text, 8), ${options.typeCode ?? '380'},
              ${decaler(aujourdhui(), -60)}::date, ${echeance}::date, 'Client Démo SARL', 'EUR',
              100000, 120000, 120000, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb,
-             ${compte.entrepriseId}::text || '/' || t.id || '.pdf', '0', 'emise', ${compte.userId}
+             coalesce(${options.pdfChemin ?? null}, ${compte.entrepriseId}::text || '/' || t.id || '.pdf'),
+             '0', 'emise', ${compte.userId}
         from unnest(${sql.array(ids, UUID_ARRAY)}) as t(id)`,
   );
 }
@@ -72,7 +99,7 @@ async function ecrireFactures(
 /** Une facture en retard, avec son PDF dans le Storage ; son identifiant. */
 async function creerFacture(
   compte: Compte,
-  options: { echeance?: string | null; typeCode?: string } = {},
+  options: { echeance?: string | null; typeCode?: string; pdfChemin?: string } = {},
 ): Promise<string> {
   const id = crypto.randomUUID();
   await ecrireFactures(compte, [id], options);
@@ -214,6 +241,27 @@ Deno.test('nominal : 201 { id, niveau }, relance consignée envoyee avec l’ide
       recente: true,
     },
   );
+
+  // Le message remis au service d'envoi : ce qui part chez Brevo, de bout en bout.
+  const [remis, ...autresRemis] = await messagesRemis(factureId);
+  assertEquals(autresRemis, []);
+  assertEquals(remis.sender, {
+    name: 'Atelier Exemple SAS via facturx',
+    email: 'relances@localhost',
+  });
+  // Reply-To est l'adresse du compte, et non celle du destinataire ni de l'expéditeur.
+  assertEquals(remis.replyTo, { email: compte.email });
+  assertEquals(remis.to, [{ email: DESTINATAIRE }]);
+  assertEquals(remis.subject, 'Relance Bcc: x@y');
+  assertEquals(remis.textContent, '<b>Bonjour</b>\n\nMerci.');
+  assert(remis.htmlContent.includes('<p style="margin:0 0 16px">&lt;b&gt;Bonjour&lt;/b&gt;</p>'));
+  assert(!remis.htmlContent.includes('<b>'));
+  // La pièce jointe est le PDF de la facture, octet pour octet, sous le nom de son numéro.
+  assertEquals(
+    remis.attachment.map((pj) => pj.name),
+    [`${numeroDe(factureId)}.pdf`],
+  );
+  assertEquals(fromBase64(remis.attachment[0].content), PDF);
 });
 
 Deno.test('deuxième relance immédiate : 429 LIMITE, avec l’heure où réessayer, rien de consigné', async () => {
@@ -316,6 +364,9 @@ Deno.test('refus de Brevo : la relance est consignée refusee, validée, et la r
     },
   );
 
+  // Le service a reçu le message (et l'a refusé).
+  assertEquals((await messagesRemis(factureId)).length, 1);
+
   // Rien n'est parti : ni le délai de 72 heures ni le niveau ne s'en ressentent.
   const reprise = await relancer(compte, factureId);
   assertEquals(reprise.status, 201);
@@ -324,6 +375,34 @@ Deno.test('refus de Brevo : la relance est consignée refusee, validée, et la r
     (await relancesDe(factureId)).map((r) => r.etat),
     ['refusee', 'envoyee'],
   );
+});
+
+Deno.test('issue inconnue (Brevo n’a pas répondu) : 201 incertain, consignée envoyee sans identifiant, elle compte', async () => {
+  const compte = await compteRelanceur();
+  const factureId = await creerFacture(compte);
+
+  const { status, corps } = await relancer(compte, factureId, {
+    destinataire: 'client@incertain.test',
+  });
+  assertEquals(status, 201, JSON.stringify(corps));
+  assertEquals(Object.keys(corps).sort(), ['id', 'incertain', 'niveau']);
+  assertEquals(corps.incertain, true);
+  assertEquals(corps.niveau, 1);
+
+  // L'e-mail a pu partir : consigné comme envoyé, sans identifiant de message.
+  const [ligne, ...autres] = await relancesDe(factureId);
+  assertEquals(autres, []);
+  assertEquals(
+    { etat: ligne.etat, message_id: ligne.message_id, niveau: ligne.niveau },
+    { etat: 'envoyee', message_id: null, niveau: 1 },
+  );
+  assertEquals((await messagesRemis(factureId)).length, 1);
+
+  // Il compte pour le délai, pour le niveau et pour le plafond : une nouvelle tentative attend.
+  const encore = await relancer(compte, factureId);
+  assertEquals(encore.status, 429);
+  assertEquals(encore.corps.code, 'LIMITE');
+  assertEquals(await envoyeesDuJour(compte.entrepriseId), 1);
 });
 
 Deno.test('plafond : 20 relances par jour et par entreprise, la 21e donne 429 jusqu’à minuit à Paris', async () => {
@@ -533,6 +612,149 @@ Deno.test('corps de requête : facture, objet et message vérifiés, 422 sur le 
   });
   assertEquals(long.status, 201);
   assertEquals((await relancesDe(factureId))[0].objet, 'o'.repeat(200));
+
+  // La limite compte des caractères, non des unités UTF-16 : un émoji vaut un.
+  const emoji = await creerFacture(compte);
+  const trop = await relancer(compte, emoji, { corps: '🙂'.repeat(10_001) });
+  assertEquals(issues(trop.status, trop.corps)[0].path, 'corps');
+  assertEquals((await relancer(compte, emoji, { corps: '🙂'.repeat(10_000) })).status, 201);
+});
+
+Deno.test('caractère que la base refuse : 422 avant l’envoi, le simulateur n’est jamais appelé, le délai n’est pas consommé', async () => {
+  const compte = await compteRelanceur();
+  const factureId = await creerFacture(compte);
+
+  // Un NUL, un autre contrôle C0, un demi-substitut isolé : dans le corps comme dans l'objet.
+  const cas: [string, Options][] = [
+    ['corps', { corps: 'Bon\u0000jour' }],
+    ['corps', { corps: 'Bonjour\u0001' }],
+    ['corps', { corps: 'Bonjour\u001b[31m' }],
+    ['corps', { corps: 'Bonjour \ud83d' }],
+    ['corps', { corps: '\ude00 Bonjour' }],
+    ['objet', { objet: 'Relance\u0000' }],
+    ['objet', { objet: 'Re\u0008lance' }],
+    ['objet', { objet: 'Relance \ud800' }],
+  ];
+  for (const [champ, options] of cas) {
+    const { status, corps } = await relancer(compte, factureId, options);
+    const [anomalie] = issues(status, corps);
+    assertEquals([anomalie.code, anomalie.path], ['CORPS', champ], JSON.stringify(options));
+  }
+  // Ni 500, ni e-mail remis, ni ligne : les limites n'ont rien compté de plus.
+  assertEquals(await messagesRemis(factureId), []);
+  assertEquals(await relancesDe(factureId), []);
+
+  // La tabulation, le saut de ligne et le retour chariot sont des caractères d'un message ; la même
+  // facture se relance aussitôt (le délai de 72 heures n'a pas été consommé).
+  const bonne = await relancer(compte, factureId, { corps: 'Bonjour\tà\r\ntous\n\nMerci' });
+  assertEquals(bonne.status, 201);
+  assertEquals(bonne.corps.niveau, 1);
+  assertEquals((await messagesRemis(factureId)).length, 1);
+});
+
+Deno.test('une ligne que la base refuserait l’est avant l’envoi : rien n’est remis au service', async () => {
+  // Un déclencheur, propre au test, refuse l'insertion d'une relance dont le corps porte la marque. Si
+  // l'insertion n'était tentée qu'après l'envoi, l'e-mail serait parti sans trace.
+  const marque = `refus-de-la-base-${crypto.randomUUID()}`;
+  const compte = await compteRelanceur();
+  const factureId = await creerFacture(compte);
+  await base(async (sql) => {
+    await sql.unsafe(`
+      create or replace function public.essai_refus_relance() returns trigger language plpgsql as $f$
+      begin raise exception 'essai: la base refuse cette relance'; end $f$`);
+    await sql.unsafe('drop trigger if exists essai_refus_relance on public.relances');
+    await sql.unsafe(`
+      create trigger essai_refus_relance before insert on public.relances
+      for each row when (new.corps like '%${marque}%') execute function public.essai_refus_relance()`);
+  });
+  try {
+    const { status, corps } = await relancer(compte, factureId, { corps: `Bonjour ${marque}` });
+    assertEquals(status, 500, JSON.stringify(corps));
+    assertEquals(corps.code, 'INTERNE');
+    assertEquals(await messagesRemis(factureId), []);
+    assertEquals(await relancesDe(factureId), []);
+
+    // Le point de sauvegarde a été défait : rien de l'essai ne reste, la relance normale passe.
+    const bonne = await relancer(compte, factureId);
+    assertEquals(bonne.status, 201);
+    assertEquals((await relancesDe(factureId)).length, 1);
+  } finally {
+    await base(async (sql) => {
+      await sql.unsafe('drop trigger if exists essai_refus_relance on public.relances');
+      await sql.unsafe('drop function if exists public.essai_refus_relance()');
+    });
+  }
+});
+
+Deno.test('le PDF d’une facture hors du dossier de l’entreprise n’est pas lu : 500, rien remis', async () => {
+  const compte = await compteRelanceur();
+  const autre = await compteRelanceur();
+  const chemin = `${autre.entrepriseId}/autre.pdf`;
+  const factureId = await creerFacture(compte, { pdfChemin: chemin });
+  // Le PDF existe, chez l'autre entreprise : sans le contrôle du chemin, il serait joint à l'e-mail.
+  const depot = await admin()
+    .storage.from('factures')
+    .upload(chemin, PDF, { contentType: 'application/pdf' });
+  assertEquals(depot.error, null);
+
+  const { status, corps } = await relancer(compte, factureId);
+  assertEquals(status, 500, JSON.stringify(corps));
+  assertEquals(corps.code, 'INTERNE');
+  assertEquals(await messagesRemis(factureId), []);
+  assertEquals(await relancesDe(factureId), []);
+});
+
+Deno.test('l’identifiant que Brevo rend est nettoyé avant d’être consigné : une ligne, 200 caractères au plus', async () => {
+  const compte = await compteRelanceur();
+  const factureId = await creerFacture(compte);
+
+  // Le simulateur répond un identifiant avec un NUL, un retour à la ligne et 600 caractères : la base
+  // refuserait le NUL, et l'e-mail serait parti sans ligne consignée.
+  const { status, corps } = await relancer(compte, factureId, {
+    destinataire: 'client@id-hostile.test',
+  });
+  assertEquals(status, 201, JSON.stringify(corps));
+  assertEquals(corps.incertain, undefined);
+  const [ligne] = await relancesDe(factureId);
+  assertEquals(ligne.etat, 'envoyee');
+  assertMatch(ligne.message_id, /^simule-[0-9a-f-]{36} Bcc: x@yxxx/);
+  assertEquals(ligne.message_id.length, 200);
+  assertEquals(
+    [...ligne.message_id].some((c: string) => c.charCodeAt(0) < 0x20),
+    false,
+  );
+});
+
+Deno.test('plafond lâche des refus : 60 tentatives refusées par jour, puis 429 ; les envoyées ne s’y ajoutent pas', async () => {
+  const compte = await compteRelanceur();
+  const [a, b] = await Promise.all([creerFacture(compte), creerFacture(compte)]);
+  // 59 refus aujourd'hui : il en reste un, et la relance de B part.
+  await consigner(
+    compte,
+    Array.from({ length: 59 }, () => a),
+    { etat: 'refusee' },
+  );
+  assertEquals((await relancer(compte, b)).status, 201);
+
+  // Le 60e refus consigné : A est refusée, quelle que soit l'adresse, avec l'heure de minuit à Paris.
+  await consigner(compte, [a], { etat: 'refusee' });
+  const { status, corps } = await relancer(compte, a);
+  assertEquals(status, 429);
+  assertEquals(corps.code, 'LIMITE');
+  assertEquals(corps.details.reessayerApres, await minuitSuivant(aujourdhui()));
+  assertEquals(await messagesRemis(a), []);
+  // Les refus d'hier ne comptent pas.
+  const autre = await compteRelanceur();
+  const c = await creerFacture(autre);
+  await consigner(
+    autre,
+    Array.from({ length: 60 }, () => c),
+    {
+      etat: 'refusee',
+      instant: ilYA(30 * HEURE),
+    },
+  );
+  assertEquals((await relancer(autre, c)).status, 201);
 });
 
 Deno.test('SIREN du vendeur vide : 422 ANOMALIES SIREN, path company.seller.siren', async () => {
@@ -673,20 +895,22 @@ Deno.test('la 20e et la 21e relance du jour lancées ensemble : une part, l’au
 });
 
 /**
- * Attend qu'une requête patiente derrière un verrou consultatif (la relance qui attend celui que le
- * test tient) ; échoue au bout de dix secondes.
+ * Attend, dix secondes au plus, que le verrou consultatif de l'entreprise soit `tenu` par une relance en
+ * cours d'envoi, ou `attendu` par une relance qui patiente derrière celui que le test tient. La clé est
+ * celle de `relancer/limites.ts` : seul le verrou de cette entreprise compte, pas celui d'un autre test.
  */
-async function attendreLeVerrou(): Promise<void> {
-  for (let essai = 0; essai < 100; essai++) {
-    const [{ attente }] = await base(
-      (sql) => sql<{ attente: number }[]>`
-        select count(*)::int as attente from pg_stat_activity
-         where wait_event_type = 'Lock' and wait_event = 'advisory'`,
+async function attendreVerrou(entrepriseId: string, etat: 'tenu' | 'attendu'): Promise<void> {
+  for (let essai = 0; essai < 200; essai++) {
+    const [{ n }] = await base(
+      (sql) => sql<{ n: number }[]>`
+        select count(*)::int as n from pg_locks
+         where locktype = 'advisory' and granted = ${etat === 'tenu'}
+           and ((classid::bigint << 32) | objid::bigint) = hashtextextended(${cleDuVerrou(entrepriseId)}, 0)`,
     );
-    if (attente > 0) return;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    if (n > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error('la relance n’attend pas le verrou de l’entreprise');
+  throw new Error(`le verrou de l’entreprise n’est pas ${etat}`);
 }
 
 Deno.test('verrou : la relance attend celui de l’entreprise, puis compte ce qui a été consigné', async () => {
@@ -698,9 +922,9 @@ Deno.test('verrou : la relance attend celui de l’entreprise, puis compte ce qu
   const envoi: { reponse?: ReturnType<typeof relancer> } = {};
   await base((sql) =>
     sql.begin(async (tx) => {
-      await tx`select pg_advisory_xact_lock(hashtextextended(${`relancer:${compte.entrepriseId}`}, 0))`;
+      await tx`select pg_advisory_xact_lock(hashtextextended(${cleDuVerrou(compte.entrepriseId)}, 0))`;
       envoi.reponse = relancer(compte, factureId);
-      await attendreLeVerrou();
+      await attendreVerrou(compte.entrepriseId, 'attendu');
       assertEquals(await relancesDe(factureId), []);
       await tx`
         insert into relances (entreprise_id, facture_id, niveau, destinataire, objet, corps, message_id, etat)
@@ -715,25 +939,10 @@ Deno.test('verrou : la relance attend celui de l’entreprise, puis compte ce qu
   assertEquals((await relancesDe(factureId)).length, 1);
 });
 
-/** Attend que le verrou consultatif de l'entreprise soit tenu (par la relance en cours d'envoi). */
-async function attendreVerrouTenu(entrepriseId: string): Promise<void> {
-  for (let essai = 0; essai < 100; essai++) {
-    const [{ tenu }] = await base(
-      (sql) => sql<{ tenu: number }[]>`
-        select count(*)::int as tenu from pg_locks
-         where locktype = 'advisory' and granted
-           and ((classid::bigint << 32) | objid::bigint) = hashtextextended(${`relancer:${entrepriseId}`}, 0)`,
-    );
-    if (tenu > 0) return;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  throw new Error('la relance ne tient pas le verrou de l’entreprise');
-}
-
 Deno.test('envoi sous le verrou : pendant l’envoi, le verrou de l’entreprise est tenu et rien n’est consigné', async () => {
   const compte = await compteRelanceur();
   const factureId = await creerFacture(compte);
-  const cle = `relancer:${compte.entrepriseId}`;
+  const cle = cleDuVerrou(compte.entrepriseId);
   /** Une autre transaction obtiendrait-elle le verrou ? Et que contient `relances` ? */
   const regarder = () =>
     base((sql) =>
@@ -750,7 +959,7 @@ Deno.test('envoi sous le verrou : pendant l’envoi, le verrou de l’entreprise
   // HTTP ne montrerait rien ici, le runtime local mettant en file les requêtes d'une même fonction ;
   // c'est donc la base qui dit si la transaction, ouverte pour l'envoi, tient le verrou.
   const relance = relancer(compte, factureId, { destinataire: 'client@lent.test' });
-  await attendreVerrouTenu(compte.entrepriseId);
+  await attendreVerrou(compte.entrepriseId, 'tenu');
   assertEquals(await regarder(), { libre: false, n: 0 });
 
   assertEquals((await relance).status, 201);
@@ -766,12 +975,57 @@ Deno.test('le verrou est celui d’une entreprise : une autre relance, ailleurs,
   let status = 0;
   await base((sql) =>
     sql.begin(async (tx) => {
-      await tx`select pg_advisory_xact_lock(hashtextextended(${`relancer:${compte.entrepriseId}`}, 0))`;
+      await tx`select pg_advisory_xact_lock(hashtextextended(${cleDuVerrou(compte.entrepriseId)}, 0))`;
       // Tant que le verrou de `compte` est tenu, `ailleurs` relance sans attendre.
       status = (await relancer(ailleurs, factureAilleurs)).status;
     }),
   );
   assertEquals(status, 201);
+});
+
+Deno.test('verrou tenu trop longtemps : 429 LIMITE au bout de 10 secondes, rien d’envoyé ni de consigné', async () => {
+  const compte = await compteRelanceur();
+  const factureId = await creerFacture(compte);
+
+  // Le test tient le verrou de l'entreprise (une autre relance en cours d'envoi, qui ne finit pas).
+  const attente: { debut: number; fin: number; reponse?: { status: number; corps: Corps } } = {
+    debut: 0,
+    fin: 0,
+  };
+  await base((sql) =>
+    sql.begin(async (tx) => {
+      await tx`select pg_advisory_xact_lock(hashtextextended(${cleDuVerrou(compte.entrepriseId)}, 0))`;
+      attente.debut = Date.now();
+      // Sans délai du verrou, la relance attendrait ce test, qui l'attend : le garde-fou l'en sort.
+      let minuteur: ReturnType<typeof setTimeout> | undefined;
+      const garde = new Promise<never>((_, rejet) => {
+        minuteur = setTimeout(
+          () => rejet(new Error('la relance attend le verrou sans limite')),
+          30_000,
+        );
+      });
+      try {
+        attente.reponse = await Promise.race([relancer(compte, factureId), garde]);
+      } finally {
+        clearTimeout(minuteur);
+      }
+      attente.fin = Date.now();
+    }),
+  );
+  const { status, corps } = attente.reponse ?? { status: 0, corps: {} };
+  assertEquals(status, 429, JSON.stringify(corps));
+  assertEquals(corps.code, 'LIMITE');
+  // Elle a attendu les 10 secondes du verrou, pas davantage de beaucoup.
+  const duree = attente.fin - attente.debut;
+  assert(duree >= 9_500 && duree < 20_000, `${duree} ms`);
+  // Réessayer dans quelques secondes.
+  const apres = new Date(corps.details.reessayerApres).getTime();
+  assert(apres > attente.fin - 1_000 && apres < attente.fin + 30_000, corps.details.reessayerApres);
+  assertEquals(await messagesRemis(factureId), []);
+  assertEquals(await relancesDe(factureId), []);
+
+  // Le verrou rendu, la relance passe.
+  assertEquals((await relancer(compte, factureId)).status, 201);
 });
 
 Deno.test('sans jeton, ou avec un jeton refusé : 401 SESSION', async () => {

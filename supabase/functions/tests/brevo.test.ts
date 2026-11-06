@@ -5,7 +5,14 @@
  * locale accepte.
  */
 import { assert, assertEquals, assertInstanceOf, assertRejects } from '@std/assert';
-import { brevo, ErreurBrevo, expediteurConfigure, simule } from '../relancer/brevo.ts';
+import {
+  brevo,
+  EnvoiIncertain,
+  ErreurBrevo,
+  expediteurConfigure,
+  simule,
+  tracant,
+} from '../relancer/brevo.ts';
 import type { MessageBrevo } from '../relancer/message.ts';
 import { avecEnv } from './aide.ts';
 
@@ -101,30 +108,56 @@ Deno.test('brevo : un refus lève une erreur qui porte le statut, ni le corps ni
   }
 });
 
-Deno.test('brevo : une panne du réseau est une erreur de statut 0, qui ne cite pas la clé', async () => {
-  await avecFetch(
-    () => {
-      throw new TypeError(`error sending request: api-key ${CLE}`);
-    },
-    async () => {
-      const erreur = await assertRejects(() => brevo(CLE).envoyer(message), ErreurBrevo);
-      assertInstanceOf(erreur, ErreurBrevo);
-      assertEquals(erreur.statut, 0);
-      assert(!JSON.stringify({ message: erreur.message, pile: erreur.stack }).includes(CLE));
-      // La cause n'est pas conservée : elle pourrait citer ce que `fetch` a vu de la requête.
-      assertEquals(erreur.cause, undefined);
-    },
-  );
-});
-
-Deno.test('brevo : un succès sans identifiant de message n’est pas pris pour un envoi', async () => {
-  for (const corps of [{}, { messageId: 12 }, { messageId: '' }]) {
+Deno.test('brevo : pas de réponse (réseau coupé, délai dépassé) : issue inconnue, ni refus ni clé citée', async () => {
+  const pannes: Record<string, () => Error> = {
+    'réseau coupé': () => new TypeError(`error sending request: api-key ${CLE}`),
+    'délai dépassé': () => new DOMException(`signal timed out ${CLE}`, 'TimeoutError'),
+    'requête abandonnée': () => new DOMException('aborted', 'AbortError'),
+  };
+  for (const [cas, panne] of Object.entries(pannes)) {
     await avecFetch(
-      () => Response.json(corps, { status: 201 }),
+      () => {
+        throw panne();
+      },
       async () => {
-        await assertRejects(() => brevo(CLE).envoyer(message), Error, 'identifiant');
+        const erreur = await assertRejects(() => brevo(CLE).envoyer(message), EnvoiIncertain);
+        assertInstanceOf(erreur, EnvoiIncertain, cas);
+        assert(!(erreur instanceof ErreurBrevo), cas);
+        assert(!JSON.stringify({ message: erreur.message, pile: erreur.stack }).includes(CLE), cas);
+        // La cause n'est pas conservée : elle pourrait citer ce que `fetch` a vu de la requête.
+        assertEquals(erreur.cause, undefined, cas);
       },
     );
+  }
+});
+
+Deno.test('brevo : la requête porte un délai, que l’abandon de la requête interrompt', async () => {
+  let signal: AbortSignal | null | undefined;
+  const reel = globalThis.fetch;
+  globalThis.fetch = (_entree, options) => {
+    signal = options?.signal;
+    return Promise.resolve(Response.json({ messageId: 'x' }, { status: 201 }));
+  };
+  try {
+    await brevo(CLE).envoyer(message);
+  } finally {
+    globalThis.fetch = reel;
+  }
+  assert(signal instanceof AbortSignal);
+  assertEquals(signal.aborted, false);
+});
+
+Deno.test('brevo : un succès sans identifiant lisible : issue inconnue, l’e-mail a pu partir', async () => {
+  for (const reponse of [
+    () => Response.json({}, { status: 201 }),
+    () => Response.json({ messageId: 12 }, { status: 201 }),
+    () => Response.json({ messageId: '' }, { status: 201 }),
+    () => new Response('pas du JSON', { status: 201 }),
+    () => new Response(null, { status: 204 }),
+  ]) {
+    await avecFetch(reponse, async () => {
+      await assertRejects(() => brevo(CLE).envoyer(message), EnvoiIncertain);
+    });
   }
 });
 
@@ -159,12 +192,50 @@ Deno.test('simule : refuse ce que Brevo refuserait (message mal formé, domaine 
   }
 });
 
+Deno.test('simule : une adresse de incertain.test est sans réponse, issue inconnue', async () => {
+  const erreur = await assertRejects(
+    () => simule().envoyer({ ...message, to: [{ email: 'client@incertain.test' }] }),
+    EnvoiIncertain,
+  );
+  assert(!(erreur instanceof ErreurBrevo));
+});
+
+Deno.test('tracant : la trace est déposée avant l’envoi, et sans trace rien ne part', async () => {
+  const ordre: string[] = [];
+  const interne = {
+    envoyer(m: MessageBrevo) {
+      ordre.push(`envoi ${m.subject}`);
+      return Promise.resolve({ messageId: 'id-1' });
+    },
+  };
+  const deposer = (m: MessageBrevo) => {
+    ordre.push(`trace ${m.subject}`);
+    return Promise.resolve();
+  };
+  assertEquals(await tracant(interne, deposer).envoyer(message), { messageId: 'id-1' });
+  assertEquals(ordre, ['trace Relance', 'envoi Relance']);
+
+  // Une trace qui ne se dépose pas est une panne : le message n'est pas remis.
+  ordre.length = 0;
+  await assertRejects(
+    () => tracant(interne, () => Promise.reject(new Error('Storage'))).envoyer(message),
+    Error,
+    'Storage',
+  );
+  assertEquals(ordre, []);
+
+  // L'issue de l'expéditeur (un refus) traverse la trace, qui a été déposée.
+  const refus = { envoyer: () => Promise.reject(new ErreurBrevo(400)) };
+  await assertRejects(() => tracant(refus, deposer).envoyer(message), ErreurBrevo);
+  assertEquals(ordre, ['trace Relance']);
+});
+
 const LOCAL = 'http://127.0.0.1:55421';
 
 Deno.test('expediteurConfigure : la clé « simule » choisit le simulateur, une autre le vrai client', async () => {
-  await avecEnv({ BREVO_API_KEY: 'simule', SUPABASE_URL: LOCAL }, async () => {
-    const { messageId } = await expediteurConfigure().envoyer(message);
-    assert(messageId.startsWith('simule-'));
+  // Rien n'est envoyé ici : le simulateur dépose ses traces dans le Storage de la pile (tests de pile).
+  await avecEnv({ BREVO_API_KEY: 'simule', SUPABASE_URL: LOCAL }, () => {
+    assertEquals(typeof expediteurConfigure().envoyer, 'function');
   });
   // La vraie clé, elle, vaut aussi sur un projet hébergé.
   await avecEnv({ BREVO_API_KEY: CLE, SUPABASE_URL: 'https://abcdefgh.supabase.co' }, async () => {

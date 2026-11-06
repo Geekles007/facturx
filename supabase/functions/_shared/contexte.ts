@@ -75,9 +75,16 @@ export function projetHeberge(): boolean {
  * cas où la variable y serait envoyée par erreur. Les tests y placent un 31 décembre ou un 2 janvier.
  */
 export function aujourdhui(req: Request): string {
-  if (Deno.env.get('FACTURX_TESTS') === '1' && !projetHeberge()) {
-    const date = req.headers.get('x-facturx-aujourdhui');
-    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
-  }
-  return aujourdhuiParis(new Date());
+  return aujourdhuiImpose(req) ?? aujourdhuiParis(new Date());
+}
+
+/**
+ * Le jour que l'en-tête de test impose (voir `aujourdhui`), ou `undefined` : l'horloge est la vraie.
+ * Une fonction qui fixe le jour sous un verrou (`relancer`) le lit dans la base à ce moment-là et ne
+ * se sert de ceci que pour la substitution des tests.
+ */
+export function aujourdhuiImpose(req: Request): string | undefined {
+  if (Deno.env.get('FACTURX_TESTS') !== '1' || projetHeberge()) return undefined;
+  const date = req.headers.get('x-facturx-aujourdhui');
+  return date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : undefined;
 }

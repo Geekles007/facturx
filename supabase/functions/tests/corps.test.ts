@@ -4,7 +4,12 @@
  * l'en-tête est aussi éprouvé de bout en bout dans emettre.test.ts.
  */
 import { assert, assertEquals } from '@std/assert';
-import { cheminInadmissible, lireObjetPortable, lireTexte } from '../_shared/corps.ts';
+import {
+  cheminInadmissible,
+  exigerAdmissible,
+  lireObjetPortable,
+  lireTexte,
+} from '../_shared/corps.ts';
 import { toPortableJson } from '../_vendor/shared/portable.ts';
 
 /** Un corps envoyé par morceaux, sans `content-length`. */
@@ -106,4 +111,49 @@ Deno.test('cheminInadmissible : une imbrication très profonde ne fait pas débo
   let fautif: unknown = '\u0000';
   for (let i = 0; i < 100_000; i++) fautif = { a: fautif };
   assert((cheminInadmissible(fautif) ?? '').length <= 201);
+});
+
+Deno.test('cheminInadmissible avec contrôles : tout caractère C0 refusé, sauf tabulation et fins de ligne', () => {
+  // Sans l'option, seuls le NUL et les demi-substituts sont refusés (ce que jsonb refuse).
+  assertEquals(cheminInadmissible({ a: 'x\u0001' }), undefined);
+  assertEquals(cheminInadmissible({ a: 'x\u0001' }, true), '.a');
+  for (const code of [0x00, 0x01, 0x08, 0x0b, 0x0c, 0x0e, 0x1b, 0x1f]) {
+    assertEquals(
+      cheminInadmissible(['ok', `a${String.fromCharCode(code)}`], true),
+      '[1]',
+      `${code}`,
+    );
+  }
+  // Tabulation, saut de ligne, retour chariot, DEL, C1 et caractères non ASCII passent.
+  assertEquals(cheminInadmissible(['a\tb\nc\r\nd\u007f\u0085é€🙂'], true), undefined);
+  // Les demi-substituts et les clés restent refusés.
+  assertEquals(cheminInadmissible({ a: 'x\ud800' }, true), '.a');
+  assertEquals(cheminInadmissible({ x: { 'k\u0001': 1 } }, true), '.x');
+});
+
+Deno.test('exigerAdmissible avec contrôles : 422 ANOMALIES, le chemin du champ en cause', async () => {
+  exigerAdmissible({ objet: 'a\tb', corps: 'a\r\nb' }, '', 'CORPS', 'refusé', true);
+  const refus = (valeur: unknown): Response => {
+    try {
+      exigerAdmissible(valeur, '', 'CORPS', 'refusé', true);
+    } catch (e) {
+      return e as Response;
+    }
+    throw new Error('aucun refus');
+  };
+  for (const [valeur, path] of [
+    [{ objet: 'a', corps: 'x\u0000y' }, 'corps'],
+    [{ objet: 'a\u001b', corps: 'x' }, 'objet'],
+    [{ objet: 'a', corps: 'x\udc00' }, 'corps'],
+  ] as const) {
+    const reponse = refus(valeur);
+    assertEquals(reponse.status, 422);
+    const corps = await reponse.json();
+    assertEquals(corps.code, 'ANOMALIES');
+    assertEquals(corps.message, 'refusé');
+    assertEquals(
+      corps.details.map((d: { code: string; path: string }) => [d.code, d.path]),
+      [['CORPS', path]],
+    );
+  }
 });

@@ -2,29 +2,42 @@
  * L'envoi des relances (spec § 9, étape 4) par l'API transactionnelle de Brevo, ou son simulateur.
  *
  * La clé de l'API (`BREVO_API_KEY`, un secret de la fonction, spec § 11) n'apparaît qu'en en-tête de
- * la requête : ni dans une erreur, ni dans un journal, ni dans une réponse. L'erreur d'un refus porte
- * le statut et rien de la réponse de Brevo, qui peut citer l'adresse ou un fragment de la requête.
+ * la requête : ni dans une erreur, ni dans un journal, ni dans une réponse. Les erreurs ne portent ni
+ * le corps de la réponse de Brevo, qui peut citer l'adresse ou un fragment de la requête, ni la cause
+ * d'une exception de `fetch`.
+ *
+ * Une issue a trois formes. L'e-mail est accepté (`messageId`). Brevo le refuse par une réponse
+ * explicite, 4xx ou 5xx : `ErreurBrevo`, rien n'est parti. Ou l'on ne sait pas : pas de réponse (délai,
+ * réseau coupé après l'envoi de la requête) ou une 2xx sans identifiant lisible, `EnvoiIncertain` ;
+ * Brevo a pu envoyer, et l'appelant le consigne comme envoyé.
  */
 import { projetHeberge } from '../_shared/contexte.ts';
+import { admin } from '../_shared/db.ts';
 import type { MessageBrevo } from './message.ts';
 
 export interface Expediteur {
   envoyer(m: MessageBrevo): Promise<{ messageId: string }>;
 }
 
-/** Brevo n'a pas accepté l'e-mail : `statut` est celui de sa réponse, ou 0 s'il n'a pas répondu. */
+/** Brevo a refusé l'e-mail par une réponse explicite : `statut` est celui de sa réponse. */
 export class ErreurBrevo extends Error {
   constructor(readonly statut: number) {
-    super(
-      statut === 0 ? 'Brevo : service injoignable.' : `Brevo : envoi refusé (statut ${statut}).`,
-    );
+    super(`Brevo : envoi refusé (statut ${statut}).`);
     this.name = 'ErreurBrevo';
+  }
+}
+
+/** On ne sait pas si Brevo a envoyé l'e-mail : il n'a pas répondu, ou sa réponse n'est pas lisible. */
+export class EnvoiIncertain extends Error {
+  constructor() {
+    super('Brevo : issue de l’envoi inconnue.');
+    this.name = 'EnvoiIncertain';
   }
 }
 
 const ADRESSE = 'https://api.brevo.com/v3/smtp/email';
 
-/** Au-delà, la relance est tenue pour refusée : l'envoi se fait sous le verrou de l'entreprise. */
+/** Au-delà, l'issue est tenue pour inconnue : l'envoi se fait sous le verrou de l'entreprise. */
 const DELAI_MS = 15_000;
 
 /** Le client de l'API Brevo, avec la clé `cle`. */
@@ -44,8 +57,9 @@ export function brevo(cle: string): Expediteur {
           signal: AbortSignal.timeout(DELAI_MS),
         });
       } catch {
-        // Ni le message ni la cause de l'exception : `fetch` peut y citer la requête.
-        throw new ErreurBrevo(0);
+        // Délai dépassé ou réseau coupé : Brevo a pu recevoir la requête. Ni le message ni la cause de
+        // l'exception, où `fetch` peut citer la requête.
+        throw new EnvoiIncertain();
       }
       if (!reponse.ok) {
         await reponse.body?.cancel();
@@ -53,9 +67,7 @@ export function brevo(cle: string): Expediteur {
       }
       const corps: unknown = await reponse.json().catch(() => null);
       const messageId = (corps as { messageId?: unknown } | null)?.messageId;
-      if (typeof messageId !== 'string' || messageId === '') {
-        throw new Error('Brevo : identifiant de message absent de la réponse.');
-      }
+      if (typeof messageId !== 'string' || messageId === '') throw new EnvoiIncertain();
       return { messageId };
     },
   };
@@ -63,6 +75,15 @@ export function brevo(cle: string): Expediteur {
 
 /** Le domaine dont le simulateur refuse les adresses, comme Brevo refuserait une adresse qu'il rejette. */
 export const DOMAINE_REFUSE = 'refus.test';
+
+/** Le domaine dont le simulateur ne dit pas ce qu'il est advenu de l'e-mail (délai dépassé de Brevo). */
+export const DOMAINE_INCERTAIN = 'incertain.test';
+
+/** Le domaine dont le simulateur est lent : un envoi long, que les tests de verrou observent en cours. */
+export const DOMAINE_LENT = 'lent.test';
+
+/** Le domaine dont le simulateur répond un identifiant de message hostile (contrôles, 600 caractères). */
+export const DOMAINE_ID_HOSTILE = 'id-hostile.test';
 
 /** Le PDF joint est-il un seul fichier `.pdf` dont le contenu commence par `%PDF` ? */
 function pieceJointeValide(attachment: MessageBrevo['attachment']): boolean {
@@ -91,32 +112,70 @@ function accepte(m: MessageBrevo): boolean {
   );
 }
 
-/** Le domaine dont le simulateur est lent : un envoi long, que les tests de verrou observent en cours. */
-export const DOMAINE_LENT = 'lent.test';
-
 /**
  * Le simulateur de la pile locale et de la CI : rien ne part, la réponse est `simule-<uuid>`. Il
  * refuse (statut 400) un message que Brevo refuserait (expéditeur, réponse, objet, pièce jointe ou
  * destinataire absents ou multiples) et les adresses du domaine `refus.test`, ce qui donne aux tests
- * un refus du service. Il répond aussitôt, sauf pour une adresse du domaine `lent.test` (3 secondes) :
- * le test qui tient une relance en plein envoi y regarde si la transaction tient le verrou.
+ * un refus du service ; celles de `incertain.test` n'ont pas de réponse (issue inconnue) ; celles de
+ * `lent.test` répondent après 3 secondes, le temps pour un test de regarder la base pendant l'envoi ;
+ * celles de `id-hostile.test` reçoivent un identifiant de message que la base refuserait tel quel.
  */
 export function simule(): Expediteur {
   return {
     async envoyer(m) {
-      if (m.to[0]?.email.endsWith(`@${DOMAINE_LENT}`)) {
+      const adresse = m.to[0]?.email ?? '';
+      if (adresse.endsWith(`@${DOMAINE_LENT}`)) {
         await new Promise((resolve) => setTimeout(resolve, 3000));
       }
+      if (adresse.endsWith(`@${DOMAINE_INCERTAIN}`)) throw new EnvoiIncertain();
       if (!accepte(m)) throw new ErreurBrevo(400);
-      return { messageId: `simule-${crypto.randomUUID()}` };
+      const messageId = `simule-${crypto.randomUUID()}`;
+      if (adresse.endsWith(`@${DOMAINE_ID_HOSTILE}`)) {
+        return { messageId: `${messageId}\u0000\r\nBcc: x@y${'x'.repeat(600)}` };
+      }
+      return { messageId };
+    },
+  };
+}
+
+/** Où les tests lisent les messages remis au simulateur : `simule/<numéro>/<uuid>.json`, bucket `factures`. */
+export const DOSSIER_TRACES = 'simule';
+
+/** Dépose `m` (pièce jointe comprise) dans le Storage local, sous le nom de sa pièce jointe. */
+async function deposerLeMessage(m: MessageBrevo): Promise<void> {
+  const numero = (m.attachment[0]?.name ?? 'sans-nom').replace(/\.pdf$/, '');
+  const depot = await admin()
+    .storage.from('factures')
+    .upload(
+      `${DOSSIER_TRACES}/${numero.replace(/[^A-Za-z0-9._-]+/g, '-')}/${crypto.randomUUID()}.json`,
+      JSON.stringify(m),
+      { contentType: 'application/json' },
+    );
+  if (depot.error) throw depot.error;
+}
+
+/**
+ * `expediteur`, qui laisse une trace de chaque message qu'on lui remet, avant de le lui remettre : un
+ * test lit ce qui serait parti (destinataire, `Reply-To`, nom de l'expéditeur, PDF) ou constate que rien
+ * n'a été remis. `deposer` : où la trace va, pour les tests unitaires.
+ */
+export function tracant(
+  expediteur: Expediteur,
+  deposer: (m: MessageBrevo) => Promise<void> = deposerLeMessage,
+): Expediteur {
+  return {
+    async envoyer(m) {
+      await deposer(m);
+      return await expediteur.envoyer(m);
     },
   };
 }
 
 /**
  * L'expéditeur de l'environnement : `BREVO_API_KEY` vaut `simule` en local et en CI, la clé de l'API
- * en production. Le simulateur n'est jamais admis sur un projet hébergé par Supabase : il y ferait
- * croire à des relances parties. Sans clé, lève (une erreur du serveur) au lieu de simuler.
+ * en production. Le simulateur, qui trace ses messages, n'est jamais admis sur un projet hébergé par
+ * Supabase : il y ferait croire à des relances parties. Sans clé, lève (une erreur du serveur) au lieu
+ * de simuler.
  */
 export function expediteurConfigure(): Expediteur {
   const cle = Deno.env.get('BREVO_API_KEY')?.trim();
@@ -127,5 +186,5 @@ export function expediteurConfigure(): Expediteur {
   if (projetHeberge()) {
     throw new Error('BREVO_API_KEY : « simule » est refusé sur un projet hébergé par Supabase.');
   }
-  return simule();
+  return tracant(simule());
 }

@@ -12,6 +12,7 @@ import {
   echapper,
   type MessageBrevo,
   nettoyerObjet,
+  uneLigne,
 } from '../relancer/message.ts';
 import { avecEnv } from './aide.ts';
 
@@ -144,9 +145,33 @@ Deno.test('le nom de l’expéditeur : ni guillemet, ni retour à la ligne, ni c
     // Sans nom d'entreprise, l'expéditeur n'est plus que le service.
     ['', 'facturx'],
     ['"\n"', 'facturx'],
+    // Un caractère de sens d'écriture ne retourne pas ce qui suit le nom (« … via facturx »).
+    ['Atelier‮', 'Atelier via facturx'],
+    ['At​elier⁦ Exemple⁩', 'Atelier Exemple via facturx'],
+    ['﻿‮', 'facturx'],
   ]) {
     assertEquals((await compose({ entreprise: nom })).sender.name, attendu);
   }
+});
+
+Deno.test('nettoyerObjet : les caractères de mise en forme sont retirés (sens d’écriture, largeur nulle)', () => {
+  assertEquals(nettoyerObjet('Facture‮ 1234'), 'Facture 1234');
+  assertEquals(nettoyerObjet('Re​lance⁦ due⁩'), 'Relance due');
+  assertEquals(nettoyerObjet('﻿Relance­'), 'Relance');
+  // Retirés avant les fins de ligne : ils ne séparent pas deux mots, et ne cachent pas un retour.
+  assertEquals(nettoyerObjet('a​\r\nBcc: x@y'), 'a Bcc: x@y');
+  assertEquals(nettoyerObjet('‮​'), '');
+  // Un caractère accentué, une lettre arabe, un émoji simple restent.
+  assertEquals(nettoyerObjet('Relance é ع 🙂'), 'Relance é ع 🙂');
+});
+
+Deno.test('uneLigne : une ligne, de la longueur demandée, sans caractère de contrôle', () => {
+  assertEquals(
+    uneLigne('<202611061200.1@smtp-relay.mailin.fr>', 200),
+    '<202611061200.1@smtp-relay.mailin.fr>',
+  );
+  assertEquals(uneLigne(`id\u0000\r\n${'x'.repeat(500)}`, 20), `id ${'x'.repeat(17)}`);
+  assertEquals(uneLigne('\u0000\u0001', 20), '');
 });
 
 Deno.test('la pièce jointe : le PDF en base64, sous le nom du numéro', async () => {
