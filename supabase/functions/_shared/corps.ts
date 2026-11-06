@@ -4,7 +4,7 @@
  * octets sont comptés en lisant de toute façon, car l'en-tête peut manquer (envoi par morceaux).
  * Puis le JSON portable du Studio (octets en base64 balisé), dont chaque fonction vérifie les champs.
  */
-import { fromPortableJson } from '../_vendor/shared/portable.ts';
+import { fromPortableJson, toPortableJson } from '../_vendor/shared/portable.ts';
 import { anomalies, erreur } from './erreurs.ts';
 
 /** 10 Mio : bien au-delà d'une facture et de ses pièces jointes ordinaires. */
@@ -89,18 +89,47 @@ function aDesControles(texte: string): boolean {
 const admissible = (texte: string, controles: boolean): boolean =>
   !texte.includes('\u0000') && texte.isWellFormed() && !(controles && aDesControles(texte));
 
-/** Un nœud de la valeur parcourue ; le chemin ne se construit que si on en a besoin. */
-interface Noeud {
-  valeur: unknown;
-  parent: Noeud | undefined;
+/**
+ * Un cadre du parcours : un tableau ou un objet en cours de lecture, à l'enfant `i`. Le parcours ne
+ * garde qu'un cadre par niveau d'imbrication, jamais un par élément : sa mémoire suit la profondeur.
+ */
+interface Cadre {
+  conteneur: unknown[] | Record<string, unknown>;
+  /** Les clés d'un objet ; `undefined` pour un tableau. */
+  cles: string[] | undefined;
+  /** Le prochain enfant à lire. */
+  i: number;
+  parent: Cadre | undefined;
+  /** Le segment de chemin qui mène à ce conteneur depuis son parent (`.a`, `[2]`). */
   segment: string;
 }
 
-function cheminDe(noeud: Noeud): string {
-  const segments: string[] = [];
-  for (let n: Noeud | undefined = noeud; n; n = n.parent) segments.push(n.segment);
+const segmentDe = (cles: string[] | undefined, i: number): string =>
+  cles ? `.${cles[i]}` : `[${i}]`;
+
+/** Le chemin de l'enfant n° `i` de `cadre` ; celui de `cadre` lui-même : l'enfant de son parent. */
+function cheminDe(cadre: Cadre | undefined, segment: string): string {
+  const segments = [segment];
+  for (let c = cadre; c; c = c.parent) segments.push(c.segment);
   const chemin = segments.reverse().join('');
   return chemin.length > CHEMIN_MAX ? `${chemin.slice(0, CHEMIN_MAX)}…` : chemin;
+}
+
+/**
+ * Le cadre de `valeur`, enfant n° `i` de `parent` ; `undefined` si ce n'est ni un tableau ni un objet
+ * (ni des octets). Le segment de chemin ne se compose que pour un conteneur : une chaîne par élément,
+ * pour des millions d'éléments, remplirait le tas.
+ */
+function ouvrir(valeur: unknown, parent: Cadre | undefined, i: number): Cadre | undefined {
+  const tableau = Array.isArray(valeur);
+  if (!tableau && !(estObjet(valeur) && !(valeur instanceof Uint8Array))) return undefined;
+  return {
+    conteneur: valeur as unknown[] | Record<string, unknown>,
+    cles: tableau ? undefined : Object.keys(valeur as object),
+    i: 0,
+    parent,
+    segment: parent ? segmentDe(parent.cles, i) : '',
+  };
 }
 
 /**
@@ -110,28 +139,37 @@ function cheminDe(noeud: Noeud): string {
  * serveur (500) pour une demande qu'un refus 422 explique. Pour une clé fautive, le chemin est celui
  * de l'objet qui la porte. Les octets (`Uint8Array`, rendus en base64) sont sans objet.
  *
- * Le parcours est itératif : un corps de 10 Mio peut imbriquer des milliers de niveaux, qu'une récursion
- * ne tiendrait pas. `undefined` : rien à refuser. `controles` : refuse aussi les autres caractères de
- * contrôle C0, hors tabulation, saut de ligne et retour chariot (un texte qui part dans un e-mail).
+ * Le parcours est itératif et paresseux : un corps de 10 Mio peut imbriquer des milliers de niveaux,
+ * qu'une récursion ne tiendrait pas, ou compter des millions d'éléments, qu'on ne saurait empiler (le
+ * tas des fonctions hébergées est de 256 Mo). Il ne garde qu'un cadre par niveau et n'empile aucune
+ * primitive ; le chemin ne se construit qu'au refus. `undefined` : rien à refuser. `controles` : refuse
+ * aussi les autres caractères de contrôle C0, hors tabulation, saut de ligne et retour chariot (un
+ * texte qui part dans un e-mail).
  */
 export function cheminInadmissible(racine: unknown, controles = false): string | undefined {
-  const pile: Noeud[] = [{ valeur: racine, parent: undefined, segment: '' }];
-  for (let noeud = pile.pop(); noeud; noeud = pile.pop()) {
-    const { valeur } = noeud;
-    if (typeof valeur === 'string') {
-      if (!admissible(valeur, controles)) return cheminDe(noeud);
-    } else if (Array.isArray(valeur)) {
-      // Empilés à rebours : le premier élément sort le premier.
-      for (let i = valeur.length - 1; i >= 0; i--) {
-        pile.push({ valeur: valeur[i], parent: noeud, segment: `[${i}]` });
-      }
-    } else if (estObjet(valeur) && !(valeur instanceof Uint8Array)) {
-      const entrees = Object.entries(valeur);
-      if (entrees.some(([cle]) => !admissible(cle, controles))) return cheminDe(noeud);
-      for (let i = entrees.length - 1; i >= 0; i--) {
-        pile.push({ valeur: entrees[i][1], parent: noeud, segment: `.${entrees[i][0]}` });
-      }
+  if (typeof racine === 'string') return admissible(racine, controles) ? undefined : '';
+  const mauvaiseCle = (cadre: Cadre) => cadre.cles?.some((cle) => !admissible(cle, controles));
+  let cadre = ouvrir(racine, undefined, 0);
+  if (cadre && mauvaiseCle(cadre)) return '';
+  while (cadre) {
+    const { cles, conteneur } = cadre;
+    if (cadre.i >= (cles ? cles.length : (conteneur as unknown[]).length)) {
+      cadre = cadre.parent;
+      continue;
     }
+    const i = cadre.i++;
+    const enfant = cles
+      ? (conteneur as Record<string, unknown>)[cles[i]]
+      : (conteneur as unknown[])[i];
+    if (typeof enfant === 'string') {
+      if (!admissible(enfant, controles)) return cheminDe(cadre, segmentDe(cles, i));
+      continue;
+    }
+    const ouvert = ouvrir(enfant, cadre, i);
+    if (!ouvert) continue;
+    // Une clé fautive : le chemin de l'objet qui la porte.
+    if (mauvaiseCle(ouvert)) return cheminDe(ouvert.parent, ouvert.segment);
+    cadre = ouvert;
   }
   return undefined;
 }
@@ -164,4 +202,22 @@ export function exigerAdmissible(
     ],
     message,
   );
+}
+
+/**
+ * `valeur` en JSON portable : le texte que l'appelant garde pour l'enregistrer en `jsonb`. Sérialisé
+ * une fois, ici, sous `try` : `toPortableJson` lève (`RangeError`) au-delà de quelque 2 700 niveaux,
+ * alors que la lecture du JSON en admet davantage, et le même appel fait plus tard, dans la
+ * transaction, serait une erreur du serveur après le dépôt du PDF. Trop imbriquée : 422 `ANOMALIES`
+ * (`Issue` de code `code` et de chemin `path`, sous `message`).
+ */
+export function serialiser(valeur: unknown, path: string, code: string, message: string): string {
+  try {
+    return toPortableJson(valeur);
+  } catch {
+    throw anomalies(
+      [{ code, path, message: 'Structure trop imbriquée pour être enregistrée.' }],
+      message,
+    );
+  }
 }

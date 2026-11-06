@@ -9,6 +9,7 @@ import {
   exigerAdmissible,
   lireObjetPortable,
   lireTexte,
+  serialiser,
 } from '../_shared/corps.ts';
 import { toPortableJson } from '../_vendor/shared/portable.ts';
 
@@ -111,6 +112,55 @@ Deno.test('cheminInadmissible : une imbrication très profonde ne fait pas débo
   let fautif: unknown = '\u0000';
   for (let i = 0; i < 100_000; i++) fautif = { a: fautif };
   assert((cheminInadmissible(fautif) ?? '').length <= 201);
+});
+
+Deno.test('cheminInadmissible : la mémoire suit la profondeur, non la largeur (5 millions d’éléments sous 256 Mo)', async () => {
+  // Un tableau large qu'un corps de 10 Mio peut porter : un parcours qui empile chaque élément avant de
+  // le visiter dépasse 256 Mo (la limite des Edge Functions hébergées). Un processus à part, au tas
+  // plafonné, pour qu'il meure là et non avec les tests.
+  const chemin = (nom: string) => decodeURIComponent(new URL(nom, import.meta.url).pathname);
+  const sortie = await new Deno.Command(Deno.execPath(), {
+    args: [
+      'run',
+      '--config',
+      chemin('../deno.json'),
+      '--v8-flags=--max-old-space-size=256',
+      chemin('./parcours-large.ts'),
+    ],
+    stdout: 'piped',
+    stderr: 'piped',
+  }).output();
+  const decoder = new TextDecoder();
+  assertEquals(sortie.code, 0, decoder.decode(sortie.stderr).slice(0, 500));
+  assertEquals(JSON.parse(decoder.decode(sortie.stdout)), {
+    propre: null,
+    fautif: '.form.a[4999999]',
+  });
+});
+
+Deno.test('serialiser : le JSON portable de la valeur ; trop imbriquée, 422 ANOMALIES sous le chemin donné', async () => {
+  const valeur = { a: [1, 'é'], pdf: Uint8Array.of(1, 2, 3) };
+  assertEquals(serialiser(valeur, 'form', 'CORPS', 'refusé'), toPortableJson(valeur));
+
+  // `toPortableJson` (un remplaçant par nœud) lève bien avant le JSON ordinaire : la lecture du corps
+  // en admet davantage que l'écriture.
+  let profond: unknown = 'x';
+  for (let i = 0; i < 20_000; i++) profond = [profond];
+  let reponse: Response | undefined;
+  try {
+    serialiser(profond, 'form', 'CORPS', 'refusé');
+  } catch (e) {
+    reponse = e as Response;
+  }
+  assert(reponse instanceof Response, 'aucun refus');
+  assertEquals(reponse.status, 422);
+  const corps = await reponse.json();
+  assertEquals(corps.code, 'ANOMALIES');
+  assertEquals(corps.message, 'refusé');
+  assertEquals(
+    corps.details.map((d: { code: string; path: string }) => [d.code, d.path]),
+    [['CORPS', 'form']],
+  );
 });
 
 Deno.test('cheminInadmissible avec contrôles : tout caractère C0 refusé, sauf tabulation et fins de ligne', () => {

@@ -8,10 +8,12 @@ import { type Invoice, type InvoiceTypeCode, type IsoDate, toCiiXml } from 'fact
 import { embedFacturX, extractInvoice } from 'facturx-sdk/pdf';
 import { PDFDocument } from 'pdf-lib';
 import type postgres from 'postgres';
+import { toPortableJson } from '../_vendor/shared/portable.ts';
 import {
   admin,
   apparenceDeTest,
   appeler,
+  appelerTexte,
   base,
   creerCompte,
   factureDeTest,
@@ -645,6 +647,32 @@ Deno.test('corps illisible : 422 ANOMALIES, Issue CORPS, rien d’importé', asy
     assertEquals(erreur.code, 'ANOMALIES', nom);
     assertEquals(erreur.details[0].code, 'CORPS', nom);
     assertEquals(erreur.details[0].path, champ, nom);
+  }
+  assertEquals(await nombreDeFactures(compte.entrepriseId), 0);
+  assertEquals(await pdfDeposes(compte.entrepriseId), []);
+});
+
+Deno.test('form ou appearance imbriqués sur 3 000 niveaux : 422 CORPS, rien de déposé', async () => {
+  const compte = await creerCompte();
+  const pdf = toPortableJson(await pdfDe(factureLocale('F-2025-0042')));
+  // `toPortableJson` lève au-delà de 2 700 niveaux environ alors que la lecture du JSON en admet plus :
+  // sérialisé en base, après le dépôt du PDF, ce serait un 500. Selon le runtime, c'est la lecture du
+  // corps (chemin vide) ou sa sérialisation (le champ) qui refuse la première : dans les deux cas, 422
+  // avant tout dépôt. La sérialisation est éprouvée seule (corps.test.ts, `serialiser`).
+  const profond = `${'['.repeat(3000)}${']'.repeat(3000)}`;
+  for (const champ of ['form', 'appearance']) {
+    const form = champ === 'form' ? profond : toPortableJson(FORM);
+    const appearance = champ === 'appearance' ? profond : toPortableJson(apparenceDeTest());
+    const reponse = await appelerTexte(
+      'importer',
+      compte.jwt,
+      `{"form":${form},"appearance":${appearance},"pdf":${pdf}}`,
+    );
+    assertEquals(reponse.status, 422, champ);
+    const erreur = await reponse.json();
+    assertEquals(erreur.code, 'ANOMALIES', champ);
+    assertEquals(erreur.details[0].code, 'CORPS', champ);
+    assert(['', champ].includes(erreur.details[0].path), `${champ} : ${erreur.details[0].path}`);
   }
   assertEquals(await nombreDeFactures(compte.entrepriseId), 0);
   assertEquals(await pdfDeposes(compte.entrepriseId), []);

@@ -8,11 +8,13 @@ import { assert, assertEquals, assertExists } from '@std/assert';
 import type { Invoice, IsoDate } from 'facturx-sdk';
 import { extractInvoice } from 'facturx-sdk/pdf';
 import { PDFDict, PDFDocument, PDFName } from 'pdf-lib';
+import { toPortableJson } from '../_vendor/shared/portable.ts';
 import { aujourdhuiParis } from '../emettre/regles.ts';
 import {
   admin,
   apparenceDeTest,
   appeler,
+  appelerTexte,
   base,
   brouillonDeTest,
   creerCompte,
@@ -738,4 +740,57 @@ Deno.test('date de l’an 0 (émission ou échéance) : 422 FORMAT-DATE, et non 
   }
   assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
   assertEquals(await brouillonExiste(brouillon.id), true);
+});
+
+Deno.test('clientId avec un caractère nul : 422 CORPS, rien d’émis ni déposé', async () => {
+  const compte = await creerCompte();
+  const brouillon = await brouillonDeTest(compte.entrepriseId);
+
+  const { status, corps } = await emettre(compte, factureDeTest(), {
+    brouillon,
+    clientId: 'u-client\u0000',
+  });
+  assertEquals(status, 422);
+  assertEquals(corps.code, 'ANOMALIES');
+  assertEquals(corps.details[0].code, 'CORPS');
+  assertEquals(corps.details[0].path, 'clientId');
+  assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
+  assertEquals(await nombreDeFactures(compte.entrepriseId), 0);
+  assertEquals(await brouillonExiste(brouillon.id), true);
+  const { data } = await admin().storage.from('factures').list(compte.entrepriseId);
+  assertEquals(data?.length, 0);
+});
+
+Deno.test('facture ou apparence imbriquées sur 3 000 niveaux : 422 CORPS, rien d’émis ni déposé', async () => {
+  const compte = await creerCompte();
+  const brouillon = await brouillonDeTest(compte.entrepriseId);
+  // Le SDK laisse passer une propriété inconnue, et la facture enregistrée la porte : `toPortableJson`
+  // lèverait en l'écrivant, après le dépôt du PDF (il lève au-delà de 2 700 niveaux environ). Le corps
+  // s'écrit à la main : `toPortableJson` ne sait pas l'écrire non plus. Selon le runtime, c'est la
+  // lecture du corps (chemin vide) ou la sérialisation (le champ) qui refuse la première : dans les deux
+  // cas, 422 avant tout dépôt. La sérialisation est éprouvée seule (corps.test.ts, `serialiser`).
+  const profond = `${'['.repeat(3000)}${']'.repeat(3000)}`;
+  const avec = (valeur: unknown) => {
+    const texte = toPortableJson(valeur);
+    return `${texte.slice(0, texte.lastIndexOf('}'))},"extra":${profond}}`;
+  };
+  const corps = (invoice: string, appearance: string) =>
+    `{"brouillonId":"${brouillon.id}","version":${brouillon.version},"invoice":${invoice},"appearance":${appearance}}`;
+  const cas: [string, string, string][] = [
+    ['invoice', corps(avec(factureDeTest()), toPortableJson(apparenceDeTest())), 'invoice'],
+    ['appearance', corps(toPortableJson(factureDeTest()), avec(apparenceDeTest())), 'appearance'],
+  ];
+  for (const [nom, texte, chemin] of cas) {
+    const reponse = await appelerTexte('emettre', compte.jwt, texte);
+    assertEquals(reponse.status, 422, nom);
+    const erreur = await reponse.json();
+    assertEquals(erreur.code, 'ANOMALIES', nom);
+    assertEquals(erreur.details[0].code, 'CORPS', nom);
+    assert(['', chemin].includes(erreur.details[0].path), `${nom} : ${erreur.details[0].path}`);
+  }
+  assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
+  assertEquals(await nombreDeFactures(compte.entrepriseId), 0);
+  assertEquals(await brouillonExiste(brouillon.id), true);
+  const { data } = await admin().storage.from('factures').list(compte.entrepriseId);
+  assertEquals(data?.length, 0);
 });

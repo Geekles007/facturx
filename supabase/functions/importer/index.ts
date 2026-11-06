@@ -36,12 +36,17 @@
 import { FacturXParseError, type Invoice, isValidIsoDate } from 'facturx-sdk';
 import { extractInvoice, FacturXPdfError } from 'facturx-sdk/pdf';
 import { contexte } from '../_shared/contexte.ts';
-import { estObjet, exigerAdmissible, lireObjetPortable, lireTexte } from '../_shared/corps.ts';
+import {
+  estObjet,
+  exigerAdmissible,
+  lireObjetPortable,
+  lireTexte,
+  serialiser,
+} from '../_shared/corps.ts';
 import { dateAdmise } from '../_shared/dates.ts';
 import { admin, sql } from '../_shared/db.ts';
 import { type Anomalie, anomalies, erreur, json, traiter } from '../_shared/erreurs.ts';
 import { enregistrerFacture, reessayerApres } from '../_shared/factures.ts';
-import { toPortableJson } from '../_vendor/shared/portable.ts';
 
 const SANS_IMPORT = 'rien n’a été importé';
 
@@ -54,13 +59,17 @@ const NUMERO_MAX = 35;
 /** Au-delà, un message du SDK est tronqué : il peut citer la valeur fautive, de toute longueur. */
 const MESSAGE_MAX = 300;
 
+/** Le corps de la requête : le formulaire et l'apparence en texte JSON portable, le PDF en octets. */
 interface Corps {
-  form: Record<string, unknown>;
-  appearance: Record<string, unknown>;
+  form: string;
+  appearance: string;
   pdf: Uint8Array;
 }
 
-/** Le corps de la requête, vérifié dans sa forme ; la facture l'est dans le PDF. */
+/**
+ * Le corps de la requête, vérifié dans sa forme ; la facture l'est dans le PDF. `form` et `appearance`
+ * sont sérialisés ici, une fois : le texte est celui que la transaction enregistre.
+ */
 function lireCorps(texte: string): Corps {
   const message = `La demande d’import est illisible : ${SANS_IMPORT}.`;
   const refus = (path: string, detail: string) =>
@@ -69,25 +78,31 @@ function lireCorps(texte: string): Corps {
   if (!estObjet(corps.form)) throw refus('form', 'Formulaire (objet) attendu.');
   if (!estObjet(corps.appearance)) throw refus('appearance', 'Apparence (objet) attendue.');
   if (!(corps.pdf instanceof Uint8Array)) throw refus('pdf', 'PDF (octets) attendu.');
-  // Ce que `jsonb` refuserait (caractère nul, demi-substitut isolé) : `form` et `appearance` ne sont
-  // pas lus, mais ils iront en base.
+  // Ce que `jsonb` refuserait (caractère nul, demi-substitut isolé, imbrication que `toPortableJson`
+  // ne sait pas écrire) : `form` et `appearance` ne sont pas lus, mais ils iront en base, et un refus
+  // ne doit venir ni après le verrou ni après le dépôt du PDF.
   exigerAdmissible(corps.form, 'form', 'CORPS', message);
   exigerAdmissible(corps.appearance, 'appearance', 'CORPS', message);
-  return { form: corps.form, appearance: corps.appearance, pdf: corps.pdf };
+  return {
+    form: serialiser(corps.form, 'form', 'CORPS', message),
+    appearance: serialiser(corps.appearance, 'appearance', 'CORPS', message),
+    pdf: corps.pdf,
+  };
 }
 
 /** Une date lue, valide et enregistrable (l'an 0 se lit 1900 et la base le refuse). */
 const dateLisible = (date: string): boolean => isValidIsoDate(date) && dateAdmise(date);
 
 /**
- * La facture embarquée dans le PDF, lue sans validation ; sinon lève 422 `ANOMALIES` (`Issue` de
- * code `FACTURX`). Le SDK lit sans valider : la lecture laisse passer ce que la base refuserait ensuite,
- * et ce serait un 500 après le dépôt du PDF (type, devise ou numéro mal formés ; date vide ou de l'an 0 ;
+ * La facture embarquée dans le PDF, lue sans validation, et son texte JSON portable ; sinon lève 422
+ * `ANOMALIES` (`Issue` de code `FACTURX`). Le SDK lit sans valider : la lecture laisse passer ce que
+ * la base refuserait ensuite, et ce serait un 500 après le dépôt du PDF (type, devise ou numéro mal
+ * formés ; date vide ou de l'an 0 ;
  * caractère nul ou demi-substitut isolé, que le XML porte en `&#0;` ou `&#xD800;`). Ces valeurs-là sont
  * donc contrôlées ici, et elles seules : de quoi ranger la facture, sans juger de son contenu. Le
  * lecteur garantit déjà la présence et la forme du reste (acheteur, montants entiers en centimes).
  */
-async function lireFacture(pdf: Uint8Array): Promise<Invoice> {
+async function lireFacture(pdf: Uint8Array): Promise<{ invoice: Invoice; json: string }> {
   const message = `Le PDF n’est pas une facture Factur-X lisible : ${SANS_IMPORT}.`;
   const refus = (liste: Anomalie[]) => anomalies(liste, message);
   let lue: Awaited<ReturnType<typeof extractInvoice>>;
@@ -132,7 +147,7 @@ async function lireFacture(pdf: Uint8Array): Promise<Invoice> {
     probleme('currency', 'Code devise (BT-5) de trois lettres majuscules attendu.');
   }
   if (problemes.length > 0) throw refus(problemes);
-  return invoice;
+  return { invoice, json: serialiser(invoice, 'invoice', 'FACTURX', message) };
 }
 
 Deno.serve(
@@ -154,7 +169,7 @@ Deno.serve(
     const e = ctx.entrepriseId;
 
     // 2. Lire la facture dans le PDF, avant de prendre le verrou : la lecture est la partie longue.
-    const facture = await lireFacture(pdf);
+    const { invoice: facture, json: factureJson } = await lireFacture(pdf);
 
     // 3. La transaction, sur la connexion directe.
     const importee = await sql.begin(async (tx) => {
@@ -216,8 +231,9 @@ Deno.serve(
         entrepriseId: e,
         facture,
         clientId: null,
-        form: toPortableJson(form),
-        appearance: toPortableJson(appearance),
+        invoice: factureJson,
+        form,
+        appearance,
         pdfChemin,
         factureOrigineId: origine,
         brouillonId: null,

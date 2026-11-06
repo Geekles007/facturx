@@ -126,13 +126,26 @@ export function appeler(
   corps: unknown,
   enTetes: Record<string, string> = {},
 ): Promise<Response> {
+  return appelerTexte(fonction, jwt, toPortableJson(corps), enTetes);
+}
+
+/**
+ * Comme `appeler`, avec le texte du corps tel quel : de quoi envoyer ce que `toPortableJson` ne sait
+ * pas écrire (une imbrication de milliers de niveaux le fait lever).
+ */
+export function appelerTexte(
+  fonction: string,
+  jwt: string,
+  texte: string,
+  enTetes: Record<string, string> = {},
+): Promise<Response> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     apikey: env('SUPABASE_ANON_KEY'),
     ...enTetes,
   };
   if (jwt) headers.authorization = `Bearer ${jwt}`;
-  return fetch(urlFonction(fonction), { method: 'POST', headers, body: toPortableJson(corps) });
+  return fetch(urlFonction(fonction), { method: 'POST', headers, body: texte });
 }
 
 /** `iso` décalée de `jours` jours (dates d'affaires, sans heure). */

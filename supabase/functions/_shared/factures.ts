@@ -9,7 +9,6 @@
 import type { Invoice } from 'facturx-sdk';
 import type postgres from 'postgres';
 import { SDK_VERSION } from '../_vendor/sdk-version.ts';
-import { toPortableJson } from '../_vendor/shared/portable.ts';
 
 /** `sql` ou la transaction ouverte par `sql.begin`. */
 type Requetes = postgres.ISql;
@@ -22,7 +21,11 @@ export interface FactureAEnregistrer {
   facture: Invoice;
   /** Le client de la bibliothèque, s'il est de l'entreprise. */
   clientId: string | null;
-  /** Le formulaire et l'apparence, en texte JSON portable : le texte de la base, ou `toPortableJson`. */
+  /**
+   * La facture, le formulaire et l'apparence en texte JSON portable (le texte de la base pour le
+   * formulaire d'un brouillon, sinon `serialiser`) : sérialisés une fois par l'appelant, avant son dépôt.
+   */
+  invoice: string;
   form: string;
   appearance: string;
   pdfChemin: string;
@@ -36,8 +39,9 @@ export interface FactureAEnregistrer {
 /**
  * Enregistre la facture (la version du SDK est celle des fonctions, `emise_le` l'heure de la base). Les
  * JSON passent en `text` avant `jsonb` : un paramètre que Postgres annonce en `jsonb`, postgres.js le
- * sérialise encore, et la colonne recevrait une chaîne au lieu d'un objet. Ni les textes ni les dates ne
- * sont contrôlés ici : l'appelant l'a fait avant son verrou (`exigerAdmissible`, `dateAdmise`).
+ * sérialise encore, et la colonne recevrait une chaîne au lieu d'un objet. Ni les textes, ni les dates,
+ * ni la sérialisation ne sont contrôlés ici : l'appelant l'a fait avant son dépôt de fichier
+ * (`exigerAdmissible`, `dateAdmise`, `serialiser`).
  */
 export async function enregistrerFacture(q: Requetes, f: FactureAEnregistrer): Promise<void> {
   const { facture } = f;
@@ -51,7 +55,7 @@ export async function enregistrerFacture(q: Requetes, f: FactureAEnregistrer): P
       ${facture.paymentTerms?.dueDate ?? null}, ${f.clientId}, ${facture.buyer.name},
       ${facture.buyer.contact?.email || null}, ${facture.currency},
       ${facture.totals.taxExclusiveAmount}, ${facture.totals.taxInclusiveAmount},
-      ${facture.totals.amountDueForPayment}, ${toPortableJson(facture)}::text::jsonb,
+      ${facture.totals.amountDueForPayment}, ${f.invoice}::text::jsonb,
       ${f.form}::text::jsonb, ${f.appearance}::text::jsonb, ${f.pdfChemin},
       ${SDK_VERSION}, ${f.factureOrigineId}, ${f.brouillonId}, ${f.origine}, ${f.emisePar}
     )`;

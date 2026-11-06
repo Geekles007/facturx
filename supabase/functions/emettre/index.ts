@@ -30,6 +30,7 @@ import {
   exigerAdmissible,
   lireObjetPortable,
   lireTexte,
+  serialiser,
   UUID,
 } from '../_shared/corps.ts';
 import { dateAdmise } from '../_shared/dates.ts';
@@ -44,7 +45,6 @@ import {
   nextRank,
   numberProblems,
 } from '../_vendor/shared/numerotation.ts';
-import { toPortableJson } from '../_vendor/shared/portable.ts';
 import { controlerDate } from './regles.ts';
 
 /** Émissions par heure et par compte (spec § 11), comptées sur `factures.emise_le`. */
@@ -60,6 +60,8 @@ interface Corps {
   version: number;
   invoice: Invoice;
   appearance: ApparenceEmise;
+  /** L'apparence en texte JSON portable : sérialisée une fois, à la lecture du corps. */
+  appearanceJson: string;
   clientId: string | undefined;
 }
 
@@ -84,11 +86,14 @@ function lireCorps(texte: string): Corps {
   if (corps.clientId != null && typeof corps.clientId !== 'string') {
     throw refus({ code: 'CORPS', path: 'clientId', message: 'Identifiant de client attendu.' });
   }
+  // Le client est cherché par ce texte, après le dépôt du PDF : un caractère nul ferait lever la requête.
+  exigerAdmissible(corps.clientId, 'clientId', 'CORPS', message);
   // Les textes que `jsonb` refuserait (caractère nul, demi-substitut isolé) : un 500 à l'étape 10,
   // après le dépôt du PDF. La facture se lit depuis sa racine, comme les `Issue` du SDK.
   exigerAdmissible(corps.invoice, '', 'CORPS', message);
   const appearance = lireApparence(corps.appearance);
   exigerAdmissible(appearance, 'appearance', 'CORPS', message);
+  const appearanceJson = serialiser(appearance, 'appearance', 'CORPS', message);
   // La date est lue avant la validation (étapes 5 et 6) : elle doit déjà être une date, de l'an 1
   // au moins (Postgres refuse l'an 0, que `isValidIsoDate` admet) ; l'échéance de même, que la
   // validation laisse passer.
@@ -110,6 +115,7 @@ function lireCorps(texte: string): Corps {
     version: corps.version as number,
     invoice: corps.invoice as unknown as Invoice,
     appearance,
+    appearanceJson,
     clientId: corps.clientId ?? undefined,
   };
 }
@@ -168,7 +174,9 @@ Deno.serve(
         'Confirmez l’adresse e-mail du compte avant d’émettre une facture.',
       );
     }
-    const { brouillonId, version, invoice, appearance, clientId } = lireCorps(await lireTexte(req));
+    const { brouillonId, version, invoice, appearance, appearanceJson, clientId } = lireCorps(
+      await lireTexte(req),
+    );
     const e = ctx.entrepriseId;
 
     // 2. Rejouer sans dupliquer : un double clic, ou un réseau qui coupe, rend la même facture.
@@ -286,6 +294,14 @@ Deno.serve(
         throw anomalies(resultat.issues, `La facture comporte des anomalies : ${SANS_NUMERO}.`);
       }
       const facture = resultat.invoice;
+      // Sérialisée ici, avant le dépôt du PDF : le SDK laisse passer une propriété inconnue, et une
+      // imbrication que `toPortableJson` ne sait pas écrire le ferait lever à l'étape 10, PDF déposé.
+      const factureJson = serialiser(
+        facture,
+        'invoice',
+        'CORPS',
+        `La facture est trop imbriquée : ${SANS_NUMERO}.`,
+      );
 
       // 8. Un avoir cite des factures de l'entreprise, et la première devient son origine. La liste
       // des types d'avoir est celle de la base, que la vue de suivi applique aussi.
@@ -334,8 +350,9 @@ Deno.serve(
         entrepriseId: e,
         facture,
         clientId: client?.id ?? null,
+        invoice: factureJson,
         form,
-        appearance: toPortableJson(appearance),
+        appearance: appearanceJson,
         pdfChemin,
         factureOrigineId: origine,
         brouillonId,
