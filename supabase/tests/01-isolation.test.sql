@@ -4,7 +4,7 @@
 -- psql n'interpole pas `:a` dans une chaîne `$$ … $$` : les requêtes qui portent un identifiant
 -- s'écrivent `format($$ … %L … $$, :'a')`.
 begin;
-select plan(82);
+select plan(87);
 
 -- Deux comptes, A et B, chacun avec son entreprise (créée par le déclencheur d'inscription).
 select tests.creer_utilisateur('a@test') as a \gset
@@ -66,6 +66,11 @@ select throws_ok($$ insert into auth.users (id, email, raw_user_meta_data) value
 select throws_ok($$ insert into auth.users (id, email, raw_user_meta_data) values (gen_random_uuid(), 'x@test', '{"cgu":1}') $$, 'P0001', 'CGU_ABSENTES', 'CGU : un nombre n''est pas une version');
 select throws_ok($$ insert into auth.users (id, email, raw_user_meta_data) values (gen_random_uuid(), 'x@test', '{"cgu":" "}') $$, 'P0001', 'CGU_ABSENTES', 'CGU : une espace n''est pas une version');
 
+-- La contrainte de `membres` vaut seule, sans le déclencheur : `service_role` et les connexions
+-- directes écrivent dans la table sans passer par l'inscription.
+select throws_ok(format($$ insert into membres (entreprise_id, user_id, cgu_version) values (%L, %L, 'x') $$, :'entreprise_a', :'b'), '23514', null, 'membres : une version de CGU mal formée est refusée à l''insertion');
+select throws_ok(format($$ update membres set cgu_version = 'x' where user_id = %L $$, :'a'), '23514', null, 'membres : ... et à la mise à jour');
+
 -- ---------------------------------------------------------------------------------------------
 -- En tant que A
 -- ---------------------------------------------------------------------------------------------
@@ -109,10 +114,13 @@ select lives_ok(format($$ insert into clients (id, entreprise_id, party, nom) va
 select lives_ok(format($$ insert into produits (id, entreprise_id, fiche, nom) values ('p2', %L, '{}', 'nouveau A') $$, :'entreprise_a'), 'produit de A : insert');
 select lives_ok(format($$ insert into brouillons (entreprise_id, form) values (%L, '{"de":"A2"}') $$, :'entreprise_a'), 'brouillon de A : insert');
 
--- Passer une ligne de A chez B : refusé (`with check`), lignes dont l'`id` n'existe pas chez B.
-select throws_ok(format($$ update clients set entreprise_id = %L where id = 'c2' $$, :'entreprise_b'), '42501', null, 'passer un client de A chez B : refusé');
-select throws_ok(format($$ update produits set entreprise_id = %L where id = 'p2' $$, :'entreprise_b'), '42501', null, 'passer un produit de A chez B : refusé');
-select throws_ok(format($$ update brouillons set entreprise_id = %L $$, :'entreprise_b'), '42501', null, 'passer un brouillon de A chez B : refusé');
+-- Passer les lignes de A chez B : refusé (`with check` de la règle d'écriture). Pas de `where` : avec
+-- un `where`, la règle `select` s'appliquerait aussi à la nouvelle ligne et refuserait à sa place.
+-- A porte ici `c` et `p`, que B a aussi : une vérification relâchée se verrait en `23505` (unicité)
+-- au lieu de `42501`, et un `with check` qui laisserait passer ne dirait rien d'une ligne de B.
+select throws_ok(format($$ update clients set entreprise_id = %L $$, :'entreprise_b'), '42501', null, 'passer des clients de A chez B : refusé');
+select throws_ok(format($$ update produits set entreprise_id = %L $$, :'entreprise_b'), '42501', null, 'passer des produits de A chez B : refusé');
+select throws_ok(format($$ update brouillons set entreprise_id = %L $$, :'entreprise_b'), '42501', null, 'passer des brouillons de A chez B : refusé');
 
 -- Modifier et supprimer chez soi, y compris sous un `id` que B porte aussi (`c` et `p`).
 select lives_ok($$ update clients set nom = 'client A modifié' where id = 'c' $$, 'client de A : update');
@@ -129,8 +137,11 @@ select lives_ok($$ delete from brouillons $$, 'brouillons de A : delete');
 
 -- entreprises : seules `profil` et `apparence_defaut` se modifient, et seulement chez soi.
 select throws_ok($$ update entreprises set suppression_demandee_le = now() $$, '42501');
--- Sans `where` : la RLS limite la mise à jour à l'entreprise de A (vérifié plus bas).
-select lives_ok($$ update entreprises set profil = profil, apparence_defaut = '{"modifie":true}' $$, 'entreprises : profil et apparence_defaut modifiables');
+-- Des constantes et pas de `where` : la lecture d'une colonne mettrait la règle `select` en jeu, qui
+-- masquerait la règle d'écriture. Seule celle-ci limite la mise à jour à l'entreprise de A (B relit
+-- sa ligne plus bas).
+select lives_ok($$ update entreprises set apparence_defaut = '{"modifie":true}'::jsonb $$, 'entreprises : apparence_defaut modifiable');
+select lives_ok($$ update entreprises set profil = '{"modifie":true}'::jsonb $$, 'entreprises : profil modifiable');
 select throws_ok($$ delete from entreprises $$, '42501', null, 'entreprises : aucune suppression');
 select throws_ok($$ insert into entreprises (profil) values ('{}') $$, '42501', null, 'entreprises : aucune création');
 
@@ -158,6 +169,8 @@ select lives_ok(format($$ insert into produits (id, entreprise_id, fiche, nom) v
 select results_eq($$ select id, nom from clients order by id $$, $$ values ('c', 'client B'), ('c2', 'nouveau B') $$, 'B : ses clients, intacts, sans ceux de A');
 select results_eq($$ select id, nom from produits order by id $$, $$ values ('p', 'produit B'), ('p2', 'nouveau B') $$, 'B : ses produits, intacts, sans ceux de A');
 select results_eq($$ select form ->> 'de' from brouillons $$, $$ values ('B') $$, 'B : son brouillon, intact');
+-- B relit sa propre ligne : les mises à jour de A ne l'ont pas atteinte.
+select results_eq($$ select apparence_defaut::text, profil #>> '{defaults,vat}' from entreprises $$, $$ values (null, 'S:20') $$, 'B : son entreprise, intacte');
 -- Le même `id` existe bien chez les deux (relu en propriétaire, avant les suppressions de B).
 reset role;
 select is((select count(*) from clients where id = 'c2'), 2::bigint, 'le même id existe chez A et chez B');
@@ -215,6 +228,10 @@ select is(has_function_privilege('authenticated', 'public.creer_entreprise_a_l_i
 
 delete from auth.users where id = :'b';
 select is_empty(format($$ select 1 from membres where user_id = %L $$, :'b'), 'supprimer le compte efface son appartenance');
+-- La suppression d'une entreprise efface factures, relances et paiements en cascade, que les
+-- déclencheurs refusent hors d'une transaction de purge (`set local facturx.purge = 'on'`).
+select throws_ok(format($$ delete from entreprises where id = %L $$, :'entreprise_b'), 'P0001', 'FACTURE_FIGEE', 'supprimer une entreprise qui a des factures : refusé hors purge');
+set local facturx.purge = 'on';
 delete from entreprises where id = :'entreprise_b';
 select is(
   (select count(*) from (
