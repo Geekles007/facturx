@@ -11,7 +11,7 @@
 -- `reset role` : `auth.uid()` répondrait encore, d'où `select set_config('request.jwt.claims', '', true)`
 -- avant les écritures sans compte.
 begin;
-select plan(111);
+select plan(126);
 
 -- Deux comptes, A et B, chacun avec son entreprise (créée par le déclencheur d'inscription).
 select tests.creer_utilisateur('a@test') as a \gset
@@ -29,6 +29,8 @@ select (now() at time zone 'Europe/Paris')::date as paris,
 \set f_jetable 00000000-0000-0000-0000-00000000fa04
 \set f_verrou 00000000-0000-0000-0000-00000000fa05
 \set f_cree 00000000-0000-0000-0000-00000000fa06
+\set f_261 00000000-0000-0000-0000-00000000fa07
+\set f_262 00000000-0000-0000-0000-00000000fa08
 \set avoir 00000000-0000-0000-0000-00000000fa81
 \set avoir_f2 00000000-0000-0000-0000-00000000fa82
 \set avoir_261 00000000-0000-0000-0000-00000000fa83
@@ -44,7 +46,8 @@ select (now() at time zone 'Europe/Paris')::date as paris,
 --   f_acompte : une facture d'acompte (386), qui se paie comme une autre ;
 --   f_jetable : celle que la purge supprime ; f_verrou : celle dont on observe le verrou ; f_cree : celle
 --   des essais sur `cree_par` ;
---   avoir_261 et avoir_262 : des avoirs sans facture citée.
+--   f_261 et f_262 : 4 000 chacune, l'une avec un avoir 261 de 1 500 (reste 2 500), l'autre avec un avoir 262
+--   de 700 (reste 3 300), de sorte que chaque code d'avoir pèse seul dans le reste dû.
 insert into factures (id, entreprise_id, numero, type_code, date_emission, client_nom, devise,
                       ht, ttc, net_a_payer, invoice, form, appearance, pdf_chemin, sdk_version,
                       origine, emise_par) values
@@ -54,14 +57,16 @@ insert into factures (id, entreprise_id, numero, type_code, date_emission, clien
   (:'f_jetable', :'entreprise_a', 'F-2026-0004', '380', '2026-11-01', 'client A', 'EUR', 100, 120, 120, '{}', '{}', '{}', 'a4.pdf', '0.0.0', 'emise', :'a'),
   (:'f_verrou', :'entreprise_a', 'F-2026-0005', '380', '2026-11-01', 'client A', 'EUR', 1000, 1200, 1200, '{}', '{}', '{}', 'a5.pdf', '0.0.0', 'emise', :'a'),
   (:'f_cree', :'entreprise_a', 'F-2026-0006', '380', '2026-11-01', 'client A', 'EUR', 100, 120, 120, '{}', '{}', '{}', 'a6.pdf', '0.0.0', 'emise', :'a'),
+  (:'f_261', :'entreprise_a', 'F-2026-0007', '380', '2026-11-01', 'client A', 'EUR', 3334, 4000, 4000, '{}', '{}', '{}', 'a7.pdf', '0.0.0', 'emise', :'a'),
+  (:'f_262', :'entreprise_a', 'F-2026-0008', '380', '2026-11-01', 'client A', 'EUR', 3334, 4000, 4000, '{}', '{}', '{}', 'a8.pdf', '0.0.0', 'emise', :'a'),
   (:'fb', :'entreprise_b', 'F-2026-0001', '380', '2026-11-01', 'client B', 'EUR', 10000, 12000, 12000, '{}', '{}', '{}', 'b1.pdf', '0.0.0', 'emise', :'b');
 insert into factures (id, entreprise_id, numero, type_code, date_emission, client_nom, devise,
                       ht, ttc, net_a_payer, invoice, form, appearance, pdf_chemin, sdk_version,
                       facture_origine_id, origine, emise_par) values
   (:'avoir', :'entreprise_a', 'A-2026-0001', '381', '2026-11-02', 'client A', 'EUR', 1667, 2000, 2000, '{}', '{}', '{}', 'a81.pdf', '0.0.0', :'f', 'emise', :'a'),
   (:'avoir_f2', :'entreprise_a', 'A-2026-0002', '396', '2026-11-02', 'client A', 'EUR', 833, 1000, 1000, '{}', '{}', '{}', 'a82.pdf', '0.0.0', :'f2', 'emise', :'a'),
-  (:'avoir_261', :'entreprise_a', 'A-2026-0003', '261', '2026-11-02', 'client A', 'EUR', 100, 120, 120, '{}', '{}', '{}', 'a83.pdf', '0.0.0', null, 'emise', :'a'),
-  (:'avoir_262', :'entreprise_a', 'A-2026-0004', '262', '2026-11-02', 'client A', 'EUR', 100, 120, 120, '{}', '{}', '{}', 'a84.pdf', '0.0.0', null, 'emise', :'a');
+  (:'avoir_261', :'entreprise_a', 'A-2026-0003', '261', '2026-11-02', 'client A', 'EUR', 1250, 1500, 1500, '{}', '{}', '{}', 'a83.pdf', '0.0.0', :'f_261', 'emise', :'a'),
+  (:'avoir_262', :'entreprise_a', 'A-2026-0004', '262', '2026-11-02', 'client A', 'EUR', 583, 700, 700, '{}', '{}', '{}', 'a84.pdf', '0.0.0', :'f_262', 'emise', :'a');
 insert into brouillons (id, entreprise_id, form, modifie_le) values
   (:'b1', :'entreprise_a', '{}', '2000-01-01'),
   (:'b2', :'entreprise_a', '{}', '2000-01-01'),
@@ -136,6 +141,8 @@ select throws_ok($$ update numerotation set prochain = 0 $$, 'P0001', 'NUMEROTAT
 select lives_ok($$ update numerotation set prochain = 138 $$, 'reprendre une suite existante');
 select throws_ok($$ update numerotation set prochain = 137 $$, 'P0001', 'NUMEROTATION_RECUL', 'une suite reprise ne recule pas');
 select lives_ok($$ update numerotation set prochain = 138 $$, 'rester au même rang n''est pas reculer');
+-- Un compte ne se fait pas passer pour l'émission, même si un `set` lui devenait possible.
+select throws_ok($$ set local facturx.emission = 'on'; update numerotation set prochain = 1 $$, 'P0001', 'NUMEROTATION_RECUL', 'le drapeau d''émission est sans effet pour un compte');
 select results_eq($$ select prochain from numerotation $$, $$ values (138) $$, 'prochain de A : 138');
 -- Le gabarit, `annuelle` et `prochain` se règlent depuis le Studio, mais `annee` n'appartient qu'à
 -- l'émission : le privilège de colonne l'arrête avant le déclencheur.
@@ -220,6 +227,20 @@ select lives_ok(
 select throws_ok(
   format($$ insert into paiements (facture_id, entreprise_id, date, montant, moyen) values (%L, %L, current_date, 1, 'virement') $$, :'f2', :'entreprise_a'),
   'P0001', 'PAIEMENT_EXCESSIF', 'paiement : un centime de plus est refusé');
+-- Chaque code d'avoir pèse seul sur sa facture, au centime près : f_261 (4 000 − 1 500 d'avoir 261) et
+-- f_262 (4 000 − 700 d'avoir 262).
+select throws_ok(
+  format($$ insert into paiements (facture_id, entreprise_id, date, montant, moyen) values (%L, %L, current_date, 2501, 'virement') $$, :'f_261', :'entreprise_a'),
+  'P0001', 'PAIEMENT_EXCESSIF', 'paiement : un centime au-dessus du reste dû, avoir 261 déduit');
+select lives_ok(
+  format($$ insert into paiements (facture_id, entreprise_id, date, montant, moyen) values (%L, %L, current_date, 2500, 'virement') $$, :'f_261', :'entreprise_a'),
+  'paiement : jusqu''au reste dû, avoir 261 déduit');
+select throws_ok(
+  format($$ insert into paiements (facture_id, entreprise_id, date, montant, moyen) values (%L, %L, current_date, 3301, 'virement') $$, :'f_262', :'entreprise_a'),
+  'P0001', 'PAIEMENT_EXCESSIF', 'paiement : un centime au-dessus du reste dû, avoir 262 déduit');
+select lives_ok(
+  format($$ insert into paiements (facture_id, entreprise_id, date, montant, moyen) values (%L, %L, current_date, 3300, 'virement') $$, :'f_262', :'entreprise_a'),
+  'paiement : jusqu''au reste dû, avoir 262 déduit');
 -- Annuler un paiement le retire du total encaissé.
 select lives_ok(format($$ update paiements set annule_le = now() where id = %L $$, :'p1'), 'annuler un paiement');
 select lives_ok(
@@ -234,6 +255,18 @@ select throws_ok(
 select throws_ok(format($$ update paiements set montant = 1 where id = %L $$, :'p3'), '42501', null, 'paiement : montant hors privilège');
 select throws_ok(format($$ update paiements set annule_le = null where id = %L $$, :'p1'), 'P0001', 'PAIEMENT_ANNULATION', 'paiement : une annulation ne se défait pas');
 select throws_ok($$ update paiements set annule_le = null $$, 'P0001', 'PAIEMENT_ANNULATION', 'paiements : une annulation ne se défait pas, sans where');
+-- La date d'annulation est l'heure du serveur, quoi que le client envoie (ici dans le futur, puis dans le
+-- passé), et elle ne bouge plus une fois posée.
+select id as p2 from paiements where facture_id = :'f2' and montant = 1 \gset
+select id as p4 from paiements where facture_id = :'f2' and montant = 3999 \gset
+select lives_ok(format($$ update paiements set annule_le = '2099-01-01' where id = %L $$, :'p2'), 'annulation : date future proposée');
+select lives_ok(format($$ update paiements set annule_le = '2000-01-01' where id = %L $$, :'p4'), 'annulation : date passée proposée');
+select results_eq(
+  format($$ select annule_le = now() from paiements where id in (%L, %L) $$, :'p2', :'p4'),
+  $$ values (true), (true) $$,
+  'annulation : la date envoyée est remplacée par l''heure du serveur');
+select throws_ok(format($$ update paiements set annule_le = '2000-01-01' where id = %L $$, :'p2'), 'P0001', 'PAIEMENT_ANNULATION', 'annulation : une date posée ne se redate pas');
+select throws_ok(format($$ update paiements set annule_le = now() + interval '1 day' where id = %L $$, :'p1'), 'P0001', 'PAIEMENT_ANNULATION', 'annulation : ni plus tard');
 select throws_ok(
   format($$ insert into paiements (facture_id, entreprise_id, date, montant, moyen, annule_le) values (%L, %L, current_date, 1, 'virement', now()) $$, :'f_cree', :'entreprise_a'),
   '42501', null, 'paiement : un paiement ne naît pas annulé');
@@ -302,7 +335,7 @@ select is(
   'A : tous ses paiements sont annulés');
 select is(
   (select count(*) from paiements where entreprise_id = :'entreprise_a'),
-  6::bigint,
+  8::bigint,
   'A : aucun paiement n''a disparu');
 select is(
   (select version from brouillons where id = :'b3'),
@@ -317,6 +350,28 @@ select throws_ok(
   '42501', 'new row violates row-level security policy for table "paiements"', 'règle RLS : A n''insère pas chez B, même sans le déclencheur');
 reset role;
 alter table paiements enable trigger paiements_avant_insertion;
+
+-- Fermé par défaut : un rôle d'API dont le jeton n'a pas de `sub` n'est pas « sans compte » (comme
+-- service_role), il n'est personne. Le déclencheur répond 42501, non la date ou le montant de B.
+select set_config('request.jwt.claims', json_build_object('role', 'authenticated')::text, true);
+set local role authenticated;
+select is((select auth.uid()), null, 'jeton sans sub : auth.uid() est nul');
+select throws_ok(
+  format($$ insert into paiements (facture_id, entreprise_id, date, montant, moyen) values (%L, %L, current_date + 5, 99999999, 'virement') $$, :'fb', :'entreprise_b'),
+  '42501', 'new row violates row-level security policy for table "paiements"', 'authenticated sans sub : 42501 sur la facture de B');
+select throws_ok(
+  format($$ insert into paiements (facture_id, entreprise_id, date, montant, moyen) values (%L, %L, current_date + 5, 99999999, 'virement') $$, :'f', :'entreprise_a'),
+  '42501', 'new row violates row-level security policy for table "paiements"', 'authenticated sans sub : 42501 sur la facture de A aussi');
+-- Même chose pour `anon`, à qui on prête le privilège d'insertion le temps de l'essai.
+reset role;
+grant insert (entreprise_id, facture_id, date, montant, moyen) on paiements to anon;
+set local role anon;
+select throws_ok(
+  format($$ insert into paiements (facture_id, entreprise_id, date, montant, moyen) values (%L, %L, current_date + 5, 99999999, 'virement') $$, :'fb', :'entreprise_b'),
+  '42501', 'new row violates row-level security policy for table "paiements"', 'anon : 42501 sur la facture de B');
+reset role;
+revoke all on paiements from anon;
+select set_config('request.jwt.claims', '', true);
 
 -- cree_par : le compte connecté, quoi qu'on propose. Sans compte, la valeur donnée est conservée
 -- (fixtures ci-dessus, et service_role).
@@ -364,7 +419,7 @@ select lives_ok(format($$ update paiements set montant = montant where id = %L $
 -- Le verrou de la facture pendant le contrôle (deux paiements simultanés se suivent)
 -- ---------------------------------------------------------------------------------------------
 reset role;
-create extension pgrowlocks with schema extensions;
+create extension if not exists pgrowlocks with schema extensions;
 select is_empty(
   format($$ select 1 from extensions.pgrowlocks('public.factures') r join public.factures f on f.ctid = r.locked_row where f.id = %L $$, :'f_verrou'),
   'aucun verrou sur la facture avant le paiement');
@@ -421,6 +476,18 @@ select matches(
   'now\(\) at time zone ''Europe/Paris''',
   'la date du jour d''un paiement est celle de Paris');
 
+-- Le drapeau de purge est sans effet pour un rôle d'API. Un compte n'a ni le droit ni la règle RLS pour
+-- supprimer une facture : on les lui prête ici, le temps d'un essai, pour que le déclencheur seul réponde.
+grant delete on factures to authenticated;
+alter table factures disable row level security;
+select tests.agir_comme(:'a');
+select throws_ok(
+  format($$ set local facturx.purge = 'on'; delete from factures where id = %L $$, :'f_cree'),
+  'P0001', 'FACTURE_FIGEE', 'le drapeau de purge est sans effet pour un compte');
+reset role;
+alter table factures enable row level security;
+revoke delete on factures from authenticated;
+
 -- ---------------------------------------------------------------------------------------------
 -- Purge d'une entreprise : factures, relances et paiements partent avec elle
 -- ---------------------------------------------------------------------------------------------
@@ -436,7 +503,7 @@ select is(
   'purge : plus aucune facture, relance ni paiement de B');
 select is(
   (select count(*) from factures where entreprise_id = :'entreprise_a'),
-  9::bigint,
+  11::bigint,
   'purge : celles de A sont intactes');
 -- Et le gel est revenu avec la fin de la purge.
 select throws_ok(

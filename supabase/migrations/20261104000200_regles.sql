@@ -16,12 +16,16 @@
 -- Le message à lever est l'argument du déclencheur (`FACTURE_FIGEE`, `RELANCE_FIGEE`, `PAIEMENT_FIGE`).
 -- La suppression d'une entreprise efface ses lignes en cascade par ces mêmes déclencheurs : sans
 -- `facturx.purge`, elle est refusée tant qu'elle a une facture, une relance ou un paiement.
+-- Le drapeau est ignoré des rôles de l'API (`anon`, `authenticated`) : aucune route ne leur permet de
+-- poser un `set`, mais si une fonction SQL dynamique devenait un jour atteignable, la règle doit tenir
+-- seule. Le déclencheur s'exécute avec les droits de l'appelant : `current_user` est son rôle.
 create function public.refuser_hors_purge() returns trigger
 language plpgsql
 set search_path = ''
 as $corps$
 begin
-  if current_setting('facturx.purge', true) = 'on' then
+  if current_setting('facturx.purge', true) = 'on'
+     and current_user not in ('anon', 'authenticated') then
     -- Un déclencheur de ligne rend la ligne qu'on lui a donnée (`new` pour un update, `old` pour un
     -- delete : rendre `null` annulerait l'opération) ; celui d'une instruction rend `null`.
     if tg_op = 'DELETE' then
@@ -66,13 +70,15 @@ create trigger paiements_figes_vidage
 -- Hors émission, `prochain` ne diminue pas et `annee` ne change pas. L'émission (Edge Function) a le
 -- droit de faire les deux : à la première facture de janvier, l'année avance et le rang repart à 1.
 -- Un compte n'a de toute façon pas le privilège d'écrire `annee` ; ce garde-fou vise les écritures
--- faites hors de ce rôle.
+-- faites hors de ce rôle. Comme pour la purge, le drapeau d'émission est ignoré des rôles de l'API :
+-- sans cela, un `set` qui deviendrait atteignable laisserait un compte faire reculer `prochain`.
 create function public.tenir_numerotation() returns trigger
 language plpgsql
 set search_path = ''
 as $corps$
 begin
-  if current_setting('facturx.emission', true) is distinct from 'on' then
+  if current_setting('facturx.emission', true) is distinct from 'on'
+     or current_user in ('anon', 'authenticated') then
     if new.prochain < old.prochain then
       raise exception 'NUMEROTATION_RECUL';
     end if;
@@ -93,7 +99,8 @@ create trigger numerotation_ne_recule_pas
 -- ---------------------------------------------------------------------------------------------
 
 -- Le Studio compare la version qu'il a lue à celle de la base pour repérer un enregistrement fait
--- depuis un autre onglet ; le client ne choisit donc ni la version ni l'heure.
+-- depuis un autre onglet ; à chaque `update`, le client ne choisit donc ni la version ni l'heure (à
+-- l'insertion, les valeurs par défaut s'appliquent et rien ne l'empêche d'en proposer d'autres).
 create function public.versionner_brouillon() returns trigger
 language plpgsql
 set search_path = ''
@@ -137,15 +144,20 @@ create policy paiements_annulation on public.paiements
 -- entreprise, il dirait à un compte que cette facture existe et ce qu'elle est. Il commence donc par
 -- ce que la RLS aurait refusé : pour un compte connecté, l'entreprise déclarée doit être l'une des
 -- siennes et la facture visée doit lui appartenir, sinon 42501 avec le texte de la RLS, que la facture
--- existe ailleurs ou non. Sans compte (`service_role`, connexion directe), pas de RLS : une facture
--- introuvable est laissée à la clé étrangère.
+-- existe ailleurs ou non. Ce contrôle est fermé par défaut : il vaut pour tout rôle de l'API
+-- (`authenticated`, `anon`), même sans `sub` dans le jeton (alors `mes_entreprises()` est vide : refus).
+-- Sans compte ni rôle d'API (`service_role`, connexion directe), pas de RLS : une facture introuvable
+-- est laissée à la clé étrangère. Le déclencheur est `security definer` : `current_user` y est son
+-- propriétaire, d'où la lecture du rôle de l'appelant dans `role`, que `set role` fixe.
 --
 -- Ensuite, dans cet ordre : un avoir ne se paie pas, la date n'est pas dans le futur à Paris (le serveur
 -- tourne en UTC : à 00 h 30 à Paris, `current_date` est encore la veille), et le total encaissé non
 -- annulé ne dépasse pas le net à payer moins le TTC des avoirs qui citent la facture (spec § 8). Le
 -- verrou fait se suivre deux paiements simultanés sur la même facture : le second recompte une fois le
 -- premier validé. Les avoirs émis à ce moment-là attendent aussi, par la clé étrangère de
--- `facture_origine_id`.
+-- `facture_origine_id`. Cette sérialisation suppose le niveau d'isolation READ COMMITTED, celui de
+-- PostgREST : chaque requête du déclencheur y prend un instantané neuf, après l'attente du verrou ; sous
+-- REPEATABLE READ ou SERIALIZABLE, le recomptage ne verrait pas le paiement validé entre-temps.
 create function public.controler_paiement() returns trigger
 language plpgsql
 security definer
@@ -154,13 +166,13 @@ as $corps$
 declare
   c_refus constant text := 'new row violates row-level security policy for table "paiements"';
   v_compte uuid := (select auth.uid());
+  v_api boolean := v_compte is not null or current_setting('role', true) in ('anon', 'authenticated');
   v_type text;
   v_net bigint;
   v_encaisse bigint;
   v_avoirs bigint;
 begin
-  if v_compte is not null
-     and not coalesce(new.entreprise_id in (select public.mes_entreprises()), false) then
+  if v_api and not coalesce(new.entreprise_id in (select public.mes_entreprises()), false) then
     raise exception '%', c_refus using errcode = '42501';
   end if;
 
@@ -169,7 +181,7 @@ begin
    where f.id = new.facture_id and f.entreprise_id = new.entreprise_id
      for update;
   if not found then
-    if v_compte is not null then
+    if v_api then
       raise exception '%', c_refus using errcode = '42501';
     end if;
     return new;
@@ -204,19 +216,29 @@ create trigger paiements_avant_insertion
   before insert on public.paiements
   for each row execute function public.controler_paiement();
 
--- Un paiement ne change que par son annulation : `annule_le` passe de `null` à une date, jamais
--- l'inverse, et aucune autre colonne ne bouge. La comparaison porte sur toute la ligne sauf
--- `annule_le`, de sorte qu'une colonne ajoutée plus tard est protégée sans qu'on y pense. Un compte
--- n'a le privilège que sur `annule_le` : ce garde-fou vise le retour à `null` et les écritures hors
--- de ce rôle.
+-- Un paiement ne change que par son annulation, et celle-ci est datée par le serveur, puis figée :
+--   - aucune colonne autre que `annule_le` ne bouge. La comparaison porte sur toute la ligne sauf
+--     `annule_le`, de sorte qu'une colonne ajoutée plus tard est protégée sans qu'on y pense ;
+--   - au passage de `null` à une date, la date est l'heure du serveur, quelle que soit celle que le
+--     client envoie : il ne choisit pas quand une annulation a eu lieu ;
+--   - une fois posée, elle ne change plus et ne revient pas à `null` : réannuler un paiement déjà annulé
+--     est une modification, donc refusé.
+-- Un compte n'a le privilège que sur `annule_le` : ce garde-fou vise la date et les écritures hors de ce
+-- rôle.
 create function public.controler_annulation_paiement() returns trigger
 language plpgsql
 set search_path = ''
 as $corps$
 begin
-  if to_jsonb(new) - 'annule_le' is distinct from to_jsonb(old) - 'annule_le'
-     or (old.annule_le is not null and new.annule_le is null) then
+  if to_jsonb(new) - 'annule_le' is distinct from to_jsonb(old) - 'annule_le' then
     raise exception 'PAIEMENT_ANNULATION';
+  end if;
+  if old.annule_le is not null then
+    if new.annule_le is distinct from old.annule_le then
+      raise exception 'PAIEMENT_ANNULATION';
+    end if;
+  elsif new.annule_le is not null then
+    new.annule_le := now();
   end if;
   return new;
 end;
