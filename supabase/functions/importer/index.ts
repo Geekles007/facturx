@@ -10,8 +10,8 @@
  * (elle n'exige que des objets), comme le PDF, déposé tel quel. La facture, son numéro, sa date et ses
  * montants viennent du seul PDF (`extractInvoice`) : ce que le formulaire en dit ne compte pas.
  * Réponse 201 `{ id, numero }`. Erreurs (§ 13) : 401 `SESSION`, 403 `DROITS` ou `NON_CONFIRME`,
- * 409 `DOUBLON`, 413, 422 `ANOMALIES` et 500 `INTERNE`. Le refus pendant le délai de suppression du
- * compte (403 `SUPPRESSION`) viendra avec la tâche 12, comme pour `emettre`.
+ * 409 `DOUBLON`, 413, 422 `ANOMALIES`, 429 `LIMITE` et 500 `INTERNE`. Le refus pendant le délai de
+ * suppression du compte (403 `SUPPRESSION`) viendra avec la tâche 12, comme pour `emettre`.
  *
  * Le numéro n'a pas été attribué par le serveur : il est celui de la numérotation locale. L'import est
  * donc idempotent par numéro, dans l'entreprise du compte et dans elle seule : un numéro déjà là donne
@@ -21,8 +21,14 @@
  * l'affaire de l'import des données locales (tâche 20).
  *
  * Aucune validation EN 16931 : une facture émise en local est importée telle quelle (le SDK la lit sans
- * la valider) ; seule une facture Factur-X illisible, ou à laquelle manque de quoi la ranger dans
- * `factures`, est refusée (422). Ni date bornée, ni limite de débit : l'import reprend un historique.
+ * la valider) ; seule une facture Factur-X illisible, ou que la base ne saurait enregistrer (date de
+ * l'an 0, caractère nul, type ou devise mal formés), est refusée (422). Ces refus, comme ceux du corps,
+ * précèdent le verrou et le dépôt. Pas de borne de date : l'import reprend un historique.
+ *
+ * Plafond (Ruling 34) : 500 imports par heure et par entreprise, comptés sous le verrou ; au-delà,
+ * 429 `LIMITE` (`details.reessayerApres`). Une facture importée est figée, et son PDF ne part qu'avec
+ * la purge du compte : c'est la seule écriture irréversible sans plafond. Le doublon (409) passe
+ * avant le plafond : reprendre un import interrompu ne compte pas ce qui est déjà là.
  *
  * Tout refus survient avant le dépôt du PDF ; seul un PDF déposé dont l'enregistrement échoue peut
  * rester sans facture : l'Edge Function `purger` efface ces orphelins au bout d'un jour.
@@ -30,16 +36,23 @@
 import { FacturXParseError, type Invoice, isValidIsoDate } from 'facturx-sdk';
 import { extractInvoice, FacturXPdfError } from 'facturx-sdk/pdf';
 import { contexte } from '../_shared/contexte.ts';
-import { estObjet, lireObjetPortable, lireTexte } from '../_shared/corps.ts';
+import { estObjet, exigerAdmissible, lireObjetPortable, lireTexte } from '../_shared/corps.ts';
+import { dateAdmise } from '../_shared/dates.ts';
 import { admin, sql } from '../_shared/db.ts';
 import { type Anomalie, anomalies, erreur, json, traiter } from '../_shared/erreurs.ts';
-import { SDK_VERSION } from '../_vendor/sdk-version.ts';
+import { enregistrerFacture, reessayerApres } from '../_shared/factures.ts';
 import { toPortableJson } from '../_vendor/shared/portable.ts';
 
 const SANS_IMPORT = 'rien n’a été importé';
 
+/** Imports par heure et par entreprise (Ruling 34), comptés sur `factures.emise_le`. */
+const LIMITE_PAR_HEURE = 500;
+
 /** Longueur d'un numéro de facture (BR-FR-01) : celle de la numérotation du Studio, au plus. */
 const NUMERO_MAX = 35;
+
+/** Au-delà, un message du SDK est tronqué : il peut citer la valeur fautive, de toute longueur. */
+const MESSAGE_MAX = 300;
 
 interface Corps {
   form: Record<string, unknown>;
@@ -56,26 +69,39 @@ function lireCorps(texte: string): Corps {
   if (!estObjet(corps.form)) throw refus('form', 'Formulaire (objet) attendu.');
   if (!estObjet(corps.appearance)) throw refus('appearance', 'Apparence (objet) attendue.');
   if (!(corps.pdf instanceof Uint8Array)) throw refus('pdf', 'PDF (octets) attendu.');
+  // Ce que `jsonb` refuserait (caractère nul, demi-substitut isolé) : `form` et `appearance` ne sont
+  // pas lus, mais ils iront en base.
+  exigerAdmissible(corps.form, 'form', 'CORPS', message);
+  exigerAdmissible(corps.appearance, 'appearance', 'CORPS', message);
   return { form: corps.form, appearance: corps.appearance, pdf: corps.pdf };
 }
 
+/** Une date lue, valide et enregistrable (l'an 0 se lit 1900 et la base le refuse). */
+const dateLisible = (date: string): boolean => isValidIsoDate(date) && dateAdmise(date);
+
 /**
  * La facture embarquée dans le PDF, lue sans validation ; sinon lève 422 `ANOMALIES` (`Issue` de
- * code `FACTURX`). Le SDK lit sans valider : la lecture laisse passer ce que la base refuserait ensuite
- * (type, devise ou numéro mal formés, montants absents), et ce serait un 500. Ces valeurs-là sont donc
- * contrôlées ici, et elles seules : de quoi ranger la facture, sans juger de son contenu.
+ * code `FACTURX`). Le SDK lit sans valider : la lecture laisse passer ce que la base refuserait ensuite,
+ * et ce serait un 500 après le dépôt du PDF (type, devise ou numéro mal formés ; date vide ou de l'an 0 ;
+ * caractère nul ou demi-substitut isolé, que le XML porte en `&#0;` ou `&#xD800;`). Ces valeurs-là sont
+ * donc contrôlées ici, et elles seules : de quoi ranger la facture, sans juger de son contenu. Le
+ * lecteur garantit déjà la présence et la forme du reste (acheteur, montants entiers en centimes).
  */
 async function lireFacture(pdf: Uint8Array): Promise<Invoice> {
-  const refus = (liste: Anomalie[]) =>
-    anomalies(liste, `Le PDF n’est pas une facture Factur-X lisible : ${SANS_IMPORT}.`);
+  const message = `Le PDF n’est pas une facture Factur-X lisible : ${SANS_IMPORT}.`;
+  const refus = (liste: Anomalie[]) => anomalies(liste, message);
   let lue: Awaited<ReturnType<typeof extractInvoice>>;
   try {
     lue = await extractInvoice(pdf, { validate: false });
   } catch (e) {
     // Un PDF illisible ou chiffré, un XML qui n'est pas du CII : le fait du fichier reçu, pas une
-    // panne. Les messages du SDK décrivent l'anomalie sans citer la facture.
+    // panne. Le message du SDK cite parfois la valeur fautive (« Nombre invalide « … » ») : il ne va
+    // qu'à l'expéditeur du PDF, dans cette réponse 422, jamais aux journaux (`traiter` ne journalise
+    // que les exceptions imprévues) ; une valeur citée démesurée est tronquée.
     if (e instanceof FacturXPdfError || e instanceof FacturXParseError) {
-      throw refus([{ code: 'FACTURX', path: 'pdf', message: e.message }]);
+      const detail =
+        e.message.length > MESSAGE_MAX ? `${e.message.slice(0, MESSAGE_MAX)}…` : e.message;
+      throw refus([{ code: 'FACTURX', path: 'pdf', message: detail }]);
     }
     throw e;
   }
@@ -86,36 +112,24 @@ async function lireFacture(pdf: Uint8Array): Promise<Invoice> {
   }
 
   const { invoice } = lue;
+  exigerAdmissible(invoice, 'invoice', 'FACTURX', message);
   const problemes: Anomalie[] = [];
-  const probleme = (path: string, message: string) =>
-    problemes.push({ code: 'FACTURX', path: `invoice.${path}`, message });
-  if (typeof invoice.id !== 'string' || invoice.id === '' || invoice.id.length > NUMERO_MAX) {
+  const probleme = (path: string, detail: string) =>
+    problemes.push({ code: 'FACTURX', path: `invoice.${path}`, message: detail });
+  if (invoice.id === '' || invoice.id.length > NUMERO_MAX) {
     probleme('id', `Numéro de facture (BT-1) attendu, de ${NUMERO_MAX} caractères au plus.`);
   }
-  if (!/^[0-9]{3}$/.test(String(invoice.typeCode))) {
+  if (!/^[0-9]{3}$/.test(invoice.typeCode)) {
     probleme('typeCode', 'Code type de document (BT-3) de trois chiffres attendu.');
   }
-  if (typeof invoice.issueDate !== 'string' || !isValidIsoDate(invoice.issueDate)) {
-    probleme('issueDate', 'Date d’émission (BT-2) invalide.');
-  }
+  // Un `IssueDateTime` absent donne une date vide.
+  if (!dateLisible(invoice.issueDate)) probleme('issueDate', 'Date d’émission (BT-2) invalide.');
   const echeance = invoice.paymentTerms?.dueDate;
-  if (echeance !== undefined && (typeof echeance !== 'string' || !isValidIsoDate(echeance))) {
+  if (echeance !== undefined && !dateLisible(echeance)) {
     probleme('paymentTerms.dueDate', 'Date d’échéance (BT-9) invalide.');
   }
-  if (!/^[A-Z]{3}$/.test(String(invoice.currency))) {
+  if (!/^[A-Z]{3}$/.test(invoice.currency)) {
     probleme('currency', 'Code devise (BT-5) de trois lettres majuscules attendu.');
-  }
-  if (typeof invoice.buyer?.name !== 'string') {
-    probleme('buyer.name', 'Nom de l’acheteur (BT-44) attendu.');
-  }
-  for (const montant of [
-    'taxExclusiveAmount',
-    'taxInclusiveAmount',
-    'amountDueForPayment',
-  ] as const) {
-    if (!Number.isSafeInteger(invoice.totals?.[montant])) {
-      probleme(`totals.${montant}`, 'Montant en centimes attendu.');
-    }
   }
   if (problemes.length > 0) throw refus(problemes);
   return invoice;
@@ -161,7 +175,19 @@ Deno.serve(
         });
       }
 
-      // 5. Un avoir cite la facture qu'il corrige : la première des références, si l'entreprise l'a
+      // 5. Le plafond horaire, exact sous le verrou : le 500e import de l'heure, s'il y en a un, dit
+      // quand la fenêtre se libère.
+      const libre = await reessayerApres(tx, e, 'importee', LIMITE_PAR_HEURE);
+      if (libre) {
+        throw erreur(
+          429,
+          'LIMITE',
+          `${LIMITE_PAR_HEURE} factures importées dans l’heure : réessayez plus tard. ${SANS_IMPORT}.`,
+          { reessayerApres: libre.toISOString() },
+        );
+      }
+
+      // 6. Un avoir cite la facture qu'il corrige : la première des références, si l'entreprise l'a
       // déjà (l'import se fait dans l'ordre des dates, factures avant avoirs), sinon aucune origine,
       // et jamais d'erreur. La liste des types d'avoir est celle de la base, que la vue de suivi
       // applique aussi.
@@ -175,7 +201,7 @@ Deno.serve(
         origine = trouvee?.id ?? null;
       }
 
-      // 6. Déposer le PDF reçu, sous un chemin que le serveur construit, avant d'enregistrer la
+      // 7. Déposer le PDF reçu, sous un chemin que le serveur construit, avant d'enregistrer la
       // facture qui le désigne.
       const pdfChemin = `${e}/${factureId}.pdf`;
       const depot = await admin()
@@ -183,23 +209,21 @@ Deno.serve(
         .upload(pdfChemin, pdf, { contentType: 'application/pdf', upsert: false });
       if (depot.error) throw depot.error;
 
-      // 7. Enregistrer la facture : montants et date de la facture lue, `emise_le` à l'heure de
-      // l'import, ni brouillon ni client de la bibliothèque. Les JSON passent en `text` avant `jsonb`
-      // (voir `emettre`), et la colonne reçoit des objets.
-      await tx`
-        insert into public.factures (
-          id, entreprise_id, numero, type_code, date_emission, date_echeance, client_id, client_nom,
-          client_email, devise, ht, ttc, net_a_payer, invoice, form, appearance, pdf_chemin,
-          sdk_version, facture_origine_id, brouillon_id, origine, emise_par
-        ) values (
-          ${factureId}, ${e}, ${facture.id}, ${facture.typeCode}, ${facture.issueDate},
-          ${facture.paymentTerms?.dueDate ?? null}, null, ${facture.buyer.name},
-          ${facture.buyer.contact?.email || null}, ${facture.currency},
-          ${facture.totals.taxExclusiveAmount}, ${facture.totals.taxInclusiveAmount},
-          ${facture.totals.amountDueForPayment}, ${toPortableJson(facture)}::text::jsonb,
-          ${toPortableJson(form)}::text::jsonb, ${toPortableJson(appearance)}::text::jsonb,
-          ${pdfChemin}, ${SDK_VERSION}, ${origine}, null, 'importee', ${ctx.userId}
-        )`;
+      // 8. Enregistrer la facture : montants et date de la facture lue, `emise_le` à l'heure de
+      // l'import, ni brouillon ni client de la bibliothèque.
+      await enregistrerFacture(tx, {
+        id: factureId,
+        entrepriseId: e,
+        facture,
+        clientId: null,
+        form: toPortableJson(form),
+        appearance: toPortableJson(appearance),
+        pdfChemin,
+        factureOrigineId: origine,
+        brouillonId: null,
+        origine: 'importee',
+        emisePar: ctx.userId,
+      });
       return { id: factureId, numero: facture.id };
     });
 

@@ -686,3 +686,56 @@ Deno.test('logo de plus de 1 Mo : le bucket l’accepte, l’émission le refuse
   assert(corps.details[0].message.includes('1 Mo'), corps.details[0].message);
   assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
 });
+
+Deno.test('texte que jsonb refuse (caractère nul, demi-substitut isolé) : 422 CORPS, rien d’émis ni déposé', async () => {
+  const compte = await creerCompte();
+  const brouillon = await brouillonDeTest(compte.entrepriseId);
+  const nul = factureDeTest();
+  nul.buyer = { ...nul.buyer, name: 'Client \u0000 SARL' };
+  const cas: [string, Invoice, Record<string, unknown>, string][] = [
+    ['caractère nul dans la facture', nul, apparenceDeTest(), 'buyer.name'],
+    [
+      'demi-substitut dans l’apparence',
+      factureDeTest(),
+      { ...apparenceDeTest(), footer: 'a\ud800' },
+      'appearance.footer',
+    ],
+  ];
+  for (const [nom, facture, appearance, chemin] of cas) {
+    const { status, corps } = await emettre(compte, facture, { brouillon, appearance });
+    assertEquals(status, 422, nom);
+    assertEquals(corps.code, 'ANOMALIES', nom);
+    assertEquals(corps.details[0].code, 'CORPS', nom);
+    assertEquals(corps.details[0].path, chemin, nom);
+  }
+  assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
+  assertEquals(await nombreDeFactures(compte.entrepriseId), 0);
+  assertEquals(await brouillonExiste(brouillon.id), true);
+  const { data, error } = await admin().storage.from('factures').list(compte.entrepriseId);
+  assertEquals(error, null);
+  assertEquals(
+    data?.map((objet) => objet.name),
+    [],
+  );
+});
+
+Deno.test('date de l’an 0 (émission ou échéance) : 422 FORMAT-DATE, et non une erreur du serveur', async () => {
+  const compte = await creerCompte();
+  const brouillon = await brouillonDeTest(compte.entrepriseId);
+  // `isValidIsoDate` lit l'an 0 comme 1900 ; Postgres refuse `0000-01-01`.
+  const echeance = factureDeTest();
+  echeance.paymentTerms = { ...echeance.paymentTerms, dueDate: '0000-01-01' as IsoDate };
+  const emission = { ...factureDeTest(), issueDate: '0000-01-01' as IsoDate };
+  for (const [nom, facture, chemin] of [
+    ['échéance', echeance, 'paymentTerms.dueDate'],
+    ['émission', emission, 'issueDate'],
+  ] as const) {
+    const { status, corps } = await emettre(compte, facture, { brouillon });
+    assertEquals(status, 422, nom);
+    assertEquals(corps.code, 'ANOMALIES', nom);
+    assertEquals(corps.details[0].code, 'FORMAT-DATE', nom);
+    assertEquals(corps.details[0].path, chemin, nom);
+  }
+  assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
+  assertEquals(await brouillonExiste(brouillon.id), true);
+});

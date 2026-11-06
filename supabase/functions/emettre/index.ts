@@ -25,11 +25,18 @@
 import { type Invoice, isValidIsoDate, validateInvoice } from 'facturx-sdk';
 import type postgres from 'postgres';
 import { aujourdhui, contexte } from '../_shared/contexte.ts';
-import { estObjet, lireObjetPortable, lireTexte, UUID } from '../_shared/corps.ts';
+import {
+  estObjet,
+  exigerAdmissible,
+  lireObjetPortable,
+  lireTexte,
+  UUID,
+} from '../_shared/corps.ts';
+import { dateAdmise } from '../_shared/dates.ts';
 import { admin, sql } from '../_shared/db.ts';
 import { type Anomalie, anomalies, erreur, json, traiter } from '../_shared/erreurs.ts';
+import { enregistrerFacture, reessayerApres } from '../_shared/factures.ts';
 import { type ApparenceEmise, lireApparence, produirePdf } from '../_shared/pdf.ts';
-import { SDK_VERSION } from '../_vendor/sdk-version.ts';
 import {
   advance,
   formatNumber,
@@ -77,19 +84,32 @@ function lireCorps(texte: string): Corps {
   if (corps.clientId != null && typeof corps.clientId !== 'string') {
     throw refus({ code: 'CORPS', path: 'clientId', message: 'Identifiant de client attendu.' });
   }
-  // La date est lue avant la validation (étapes 5 et 6) : elle doit déjà être une date.
-  const { issueDate } = corps.invoice;
-  if (typeof issueDate !== 'string' || !isValidIsoDate(issueDate)) {
-    throw anomalies(
-      [{ code: 'FORMAT-DATE', path: 'issueDate', message: 'Date d’émission (BT-2) invalide.' }],
+  // Les textes que `jsonb` refuserait (caractère nul, demi-substitut isolé) : un 500 à l'étape 10,
+  // après le dépôt du PDF. La facture se lit depuis sa racine, comme les `Issue` du SDK.
+  exigerAdmissible(corps.invoice, '', 'CORPS', message);
+  const appearance = lireApparence(corps.appearance);
+  exigerAdmissible(appearance, 'appearance', 'CORPS', message);
+  // La date est lue avant la validation (étapes 5 et 6) : elle doit déjà être une date, de l'an 1
+  // au moins (Postgres refuse l'an 0, que `isValidIsoDate` admet) ; l'échéance de même, que la
+  // validation laisse passer.
+  const refusDate = (path: string, detail: string) =>
+    anomalies(
+      [{ code: 'FORMAT-DATE', path, message: detail }],
       `La facture comporte des anomalies : ${SANS_NUMERO}.`,
     );
+  const { issueDate, paymentTerms } = corps.invoice;
+  if (typeof issueDate !== 'string' || !isValidIsoDate(issueDate) || !dateAdmise(issueDate)) {
+    throw refusDate('issueDate', 'Date d’émission (BT-2) invalide.');
+  }
+  const echeance = estObjet(paymentTerms) ? paymentTerms.dueDate : undefined;
+  if (typeof echeance === 'string' && isValidIsoDate(echeance) && !dateAdmise(echeance)) {
+    throw refusDate('paymentTerms.dueDate', 'Date d’échéance (BT-9) invalide.');
   }
   return {
     brouillonId: corps.brouillonId,
     version: corps.version as number,
     invoice: corps.invoice as unknown as Invoice,
-    appearance: lireApparence(corps.appearance),
+    appearance,
     clientId: corps.clientId ?? undefined,
   };
 }
@@ -178,18 +198,13 @@ Deno.serve(
 
       // La limite de débit, exacte sous le verrou : la 60e émission de l'heure, s'il y en a une, dit
       // quand la fenêtre se libère.
-      const [pleine] = await tx<{ reessayer_apres: Date }[]>`
-        select emise_le + interval '1 hour' as reessayer_apres from public.factures
-         where entreprise_id = ${e} and origine = 'emise'
-           and emise_le > now() - interval '1 hour'
-         order by emise_le desc
-        offset ${LIMITE_PAR_HEURE - 1} limit 1`;
-      if (pleine) {
+      const libre = await reessayerApres(tx, e, 'emise', LIMITE_PAR_HEURE);
+      if (libre) {
         throw erreur(
           429,
           'LIMITE',
           `${LIMITE_PAR_HEURE} factures émises dans l’heure : réessayez plus tard. ${SANS_NUMERO}.`,
-          { reessayerApres: pleine.reessayer_apres.toISOString() },
+          { reessayerApres: libre.toISOString() },
         );
       }
       const form = await formulaireDuBrouillon(tx, e, brouillonId, version, true);
@@ -306,30 +321,27 @@ Deno.serve(
       if (depot.error) throw depot.error;
 
       // 10. Enregistrer la facture (montants de `invoice.totals`, facture sous sa forme portable),
-      // avancer la numérotation, supprimer le brouillon ; `sql.begin` valide en sortant. Les JSON
-      // passent en `text` avant `jsonb` : un paramètre que Postgres annonce en `jsonb`, postgres.js
-      // le sérialise encore, et la colonne recevrait une chaîne au lieu d'un objet. Le client de la
-      // bibliothèque n'est retenu que s'il est de l'entreprise (Ruling 29) ; sinon `null`, sans
+      // avancer la numérotation, supprimer le brouillon ; `sql.begin` valide en sortant. Le client de
+      // la bibliothèque n'est retenu que s'il est de l'entreprise (Ruling 29) ; sinon `null`, sans
       // erreur : un uid d'une autre entreprise ne se distingue pas d'un uid inconnu.
       const [client] =
         clientId === undefined
           ? []
           : await tx<{ id: string }[]>`
               select id from public.clients where entreprise_id = ${e} and id = ${clientId}`;
-      await tx`
-        insert into public.factures (
-          id, entreprise_id, numero, type_code, date_emission, date_echeance, client_id, client_nom,
-          client_email, devise, ht, ttc, net_a_payer, invoice, form, appearance, pdf_chemin,
-          sdk_version, facture_origine_id, brouillon_id, origine, emise_par
-        ) values (
-          ${factureId}, ${e}, ${numero}, ${facture.typeCode}, ${facture.issueDate},
-          ${facture.paymentTerms?.dueDate ?? null}, ${client?.id ?? null}, ${facture.buyer.name},
-          ${facture.buyer.contact?.email || null}, ${facture.currency},
-          ${facture.totals.taxExclusiveAmount}, ${facture.totals.taxInclusiveAmount},
-          ${facture.totals.amountDueForPayment}, ${toPortableJson(facture)}::text::jsonb,
-          ${form}::text::jsonb, ${toPortableJson(appearance)}::text::jsonb, ${pdfChemin},
-          ${SDK_VERSION}, ${origine}, ${brouillonId}, 'emise', ${ctx.userId}
-        )`;
+      await enregistrerFacture(tx, {
+        id: factureId,
+        entrepriseId: e,
+        facture,
+        clientId: client?.id ?? null,
+        form,
+        appearance: toPortableJson(appearance),
+        pdfChemin,
+        factureOrigineId: origine,
+        brouillonId,
+        origine: 'emise',
+        emisePar: ctx.userId,
+      });
       const suivante = advance(numbering, facture.issueDate, numero);
       await tx`
         update public.numerotation set prochain = ${suivante.next}, annee = ${suivante.year}

@@ -3,8 +3,8 @@
  * avec un plafond, que `content-length` l'annonce ou non, puis lu en JSON portable. Le refus par
  * l'en-tête est aussi éprouvé de bout en bout dans emettre.test.ts.
  */
-import { assertEquals } from '@std/assert';
-import { lireObjetPortable, lireTexte } from '../_shared/corps.ts';
+import { assert, assertEquals } from '@std/assert';
+import { cheminInadmissible, lireObjetPortable, lireTexte } from '../_shared/corps.ts';
 import { toPortableJson } from '../_vendor/shared/portable.ts';
 
 /** Un corps envoyé par morceaux, sans `content-length`. */
@@ -70,4 +70,40 @@ Deno.test('lireObjetPortable : ni du JSON ni un objet, 422 ANOMALIES sous le mes
     assertEquals(corps.details[0].code, 'CORPS', texte);
     assertEquals(corps.details[0].path, '', texte);
   }
+});
+
+Deno.test('cheminInadmissible : un texte propre, des paires de substituts valides, des octets', () => {
+  assertEquals(
+    cheminInadmissible({ a: ['é', '🙂', { b: 'x' }], '🙂': 1, n: 3, v: null }),
+    undefined,
+  );
+  assertEquals(cheminInadmissible({ pdf: Uint8Array.of(0, 1, 2) }), undefined);
+  assertEquals(cheminInadmissible('texte'), undefined);
+});
+
+Deno.test('cheminInadmissible : le chemin du premier caractère nul ou demi-substitut isolé', () => {
+  assertEquals(cheminInadmissible({ a: 'x\u0000' }), '.a');
+  assertEquals(
+    cheminInadmissible({ lignes: [{ ok: 1 }, { b: ['x', 'y\ud800z'] }] }),
+    '.lignes[1].b[1]',
+  );
+  // Moitié haute en fin de texte, moitié basse seule.
+  assertEquals(cheminInadmissible(['\ud83d']), '[0]');
+  assertEquals(cheminInadmissible(['\ude00 ']), '[0]');
+  // Le premier dans l'ordre du document.
+  assertEquals(cheminInadmissible({ a: '\u0000', b: { c: '\u0000' } }), '.a');
+  // Une clé fautive : le chemin est celui de l'objet qui la porte, la clé n'est pas rendue.
+  assertEquals(cheminInadmissible({ x: { 'k\u0000': 1 } }), '.x');
+  // Un chemin démesuré est tronqué.
+  const cle = 'k'.repeat(1000);
+  assert((cheminInadmissible({ [cle]: '\u0000' }) ?? '').length <= 201);
+});
+
+Deno.test('cheminInadmissible : une imbrication très profonde ne fait pas déborder la pile', () => {
+  let profond: unknown = 'x';
+  for (let i = 0; i < 100_000; i++) profond = [profond];
+  assertEquals(cheminInadmissible(profond), undefined);
+  let fautif: unknown = '\u0000';
+  for (let i = 0; i < 100_000; i++) fautif = { a: fautif };
+  assert((cheminInadmissible(fautif) ?? '').length <= 201);
 });

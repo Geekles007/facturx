@@ -110,34 +110,49 @@ async function telecharger(chemin: string): Promise<Uint8Array> {
 }
 
 /**
- * Une facture émise par le compte sous ce numéro, écrite directement en base (sans PDF déposé) : un
- * numéro déjà pris. `q` est `sql` ou une transaction ouverte.
+ * Des factures du compte écrites directement en base sous ces numéros (sans PDF déposé) : de quoi
+ * occuper un numéro ou remplir l'heure. `origine` : `emise` par défaut ; `ilYA` : leur âge (un
+ * intervalle SQL), nul par défaut. `q` est `sql` ou une transaction ouverte.
  */
-async function ecrireFacture(q: postgres.ISql, compte: Compte, numero: string): Promise<void> {
+async function ecrireFactures(
+  q: postgres.ISql,
+  compte: Compte,
+  numeros: string[],
+  options: { origine?: 'emise' | 'importee'; ilYA?: string } = {},
+): Promise<void> {
   await q`
     insert into factures (entreprise_id, numero, type_code, date_emission, client_nom, devise, ht,
                           ttc, net_a_payer, invoice, form, appearance, pdf_chemin, sdk_version,
-                          origine, emise_par)
-    values (${compte.entrepriseId}, ${numero}, '380', '2025-03-01', 'Client', 'EUR', 100, 120, 120,
-            '{}', '{}', '{}', ${compte.entrepriseId}::text || '/ecrite-' || ${numero} || '.pdf', '0',
-            'emise', ${compte.userId})`;
+                          origine, emise_le, emise_par)
+    select ${compte.entrepriseId}, n, '380', '2025-03-01', 'Client', 'EUR', 100, 120, 120,
+           '{}', '{}', '{}', ${compte.entrepriseId}::text || '/ecrite-' || n || '.pdf', '0',
+           ${options.origine ?? 'emise'}, now() - ${options.ilYA ?? '0 seconds'}::interval,
+           ${compte.userId}
+      from jsonb_array_elements_text(${JSON.stringify(numeros)}::text::jsonb) n`;
 }
 
+/** Les numéros `L-1` à `L-<nombre>`, de quoi remplir une heure d'imports. */
+const numerosDeRemplissage = (nombre: number): string[] =>
+  Array.from({ length: nombre }, (_, i) => `L-${i + 1}`);
+
 /**
- * Attend qu'une requête sur `numerotation` soit en attente d'un verrou (l'import qui patiente derrière
- * celui que le test tient) ; échoue au bout de dix secondes.
+ * Attend que l'import soit en attente d'un verrou que tient la transaction du test (le processus
+ * `pid`, celui de `pg_backend_pid()` dans cette transaction) ; échoue au bout de trente secondes. Une
+ * attente sur la numérotation d'un autre compte ne compte pas : seul `pg_blocking_pids` compte.
  */
-async function attendreLeVerrou(): Promise<void> {
-  for (let essai = 0; essai < 100; essai++) {
+async function attendreLeVerrou(pid: number): Promise<void> {
+  for (let essai = 0; essai < 300; essai++) {
     const [{ attente }] = await base(
       (sql) => sql<{ attente: number }[]>`
       select count(*)::int as attente from pg_stat_activity
-       where wait_event_type = 'Lock' and query ilike '%public.numerotation%'`,
+       where wait_event_type = 'Lock' and pg_blocking_pids(pid) @> array[${pid}]::int[]`,
     );
     if (attente > 0) return;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  throw new Error('l’import n’attend pas le verrou de la numérotation');
+  throw new Error(
+    `l’import n’attend pas, après 30 s, le verrou de la numérotation que tient la transaction ${pid}`,
+  );
 }
 
 Deno.test('nominal : 201, facture lue dans le PDF, origine importee, numérotation intouchée', async () => {
@@ -245,7 +260,7 @@ Deno.test('numéro déjà importé : 409 DOUBLON, une seule ligne, un seul PDF',
 
 Deno.test('numéro déjà pris par une facture émise : 409 DOUBLON aussi', async () => {
   const compte = await creerCompte();
-  await base((sql) => ecrireFacture(sql, compte, 'F-2025-0042'));
+  await base((sql) => ecrireFactures(sql, compte, ['F-2025-0042']));
 
   const { status, corps } = await importerFacture(compte, factureLocale('F-2025-0042'));
   assertEquals(status, 409);
@@ -263,10 +278,11 @@ Deno.test('l’import attend le verrou de la numérotation, puis voit le numéro
         // Une émission, ou un autre import, tient le verrou de l'entreprise : l'import doit patienter,
         // et non contrôler le numéro sur ce que la base montre déjà.
         await tx`select 1 from numerotation where entreprise_id = ${compte.entrepriseId} for update`;
+        const [{ pid }] = await tx<{ pid: number }[]>`select pg_backend_pid() as pid`;
         enCours = importer(compte, pdf);
-        await attendreLeVerrou();
+        await attendreLeVerrou(pid);
         // Elle valide la facture de ce numéro, puis rend le verrou.
-        await ecrireFacture(tx, compte, 'F-2025-0042');
+        await ecrireFactures(tx, compte, ['F-2025-0042']);
       }),
     );
   } finally {
@@ -346,10 +362,13 @@ Deno.test('PDF sans Factur-X, qui n’en est pas un, ou au XML illisible : 422 A
   assertEquals(await pdfDeposes(compte.entrepriseId), []);
 });
 
-Deno.test('facture lue sans de quoi la ranger (numéro, type, devise) : 422, et non une erreur du serveur', async () => {
+Deno.test('facture lue sans de quoi la ranger (numéro, type, devise, dates, textes) : 422, et non une erreur du serveur', async () => {
   const compte = await creerCompte();
-  const xml = toCiiXml(factureLocale('F-2025-0042'));
+  const xml = toCiiXml(factureLocale('F-2025-0042', '2025-03-14'));
   const numero = '<ram:ID>F-2025-0042</ram:ID><ram:TypeCode>';
+  const emission = '<udt:DateTimeString format="102">20250314<';
+  const echeance = '<udt:DateTimeString format="102">20250413<';
+  const acheteur = '<ram:Name>Client Démo SARL</ram:Name>';
   // Le SDK lit sans valider : ces valeurs iraient jusqu'à la base, qui les refuserait (500).
   const cas = [
     { nom: 'sans numéro', de: numero, vers: '<ram:ID></ram:ID><ram:TypeCode>', champ: 'id' },
@@ -371,6 +390,39 @@ Deno.test('facture lue sans de quoi la ranger (numéro, type, devise) : 422, et 
       vers: '<ram:TypeCode>abc<',
       champ: 'typeCode',
     },
+    {
+      // Le lecteur rend alors une date vide.
+      nom: 'sans date d’émission',
+      de: `<ram:IssueDateTime>${emission.slice(0, -1)}</udt:DateTimeString></ram:IssueDateTime>`,
+      vers: '',
+      champ: 'issueDate',
+    },
+    // Le lecteur et `isValidIsoDate` lisent l'an 0 comme 1900 ; Postgres refuse `0000-01-01`.
+    {
+      nom: 'date d’émission de l’an 0',
+      de: emission,
+      vers: emission.replace('20250314', '00000101'),
+      champ: 'issueDate',
+    },
+    {
+      nom: 'échéance de l’an 0',
+      de: echeance,
+      vers: echeance.replace('20250413', '00000101'),
+      champ: 'paymentTerms.dueDate',
+    },
+    // `&#0;` et `&#xD800;` : le XML les rend, ni `jsonb` ni `text` ne les admettent.
+    {
+      nom: 'nom de l’acheteur avec un caractère nul',
+      de: acheteur,
+      vers: '<ram:Name>Client &#0; SARL</ram:Name>',
+      champ: 'buyer.name',
+    },
+    {
+      nom: 'nom de l’acheteur avec un demi-substitut isolé',
+      de: acheteur,
+      vers: '<ram:Name>Client &#xD800; SARL</ram:Name>',
+      champ: 'buyer.name',
+    },
   ];
   for (const { nom, de, vers, champ } of cas) {
     assert(xml.includes(de), `${nom} : le XML de test n’a pas la forme attendue`);
@@ -382,6 +434,58 @@ Deno.test('facture lue sans de quoi la ranger (numéro, type, devise) : 422, et 
   }
   assertEquals(await nombreDeFactures(compte.entrepriseId), 0);
   assertEquals(await pdfDeposes(compte.entrepriseId), []);
+});
+
+Deno.test('form avec des caractères hors du plan de base (paire de substituts valide) : accepté tel quel', async () => {
+  const compte = await creerCompte();
+  const form = { note: 'Merci 🙂 — é', 'clé 🙂': ['😀'] };
+  const { status, corps } = await importer(compte, await pdfDe(factureLocale('F-2025-0001')), {
+    form,
+  });
+  assertEquals(status, 201);
+  const [ligne] = await base((sql) => sql`select form from factures where id = ${corps.id}`);
+  assertEquals(ligne.form, form);
+});
+
+Deno.test('plafond : la 501e importation de l’heure rend 429 LIMITE, un doublon rend toujours 409', async () => {
+  const compte = await creerCompte();
+  // 500 imports dans l'heure, écrits directement : bien plus rapide que 500 appels.
+  await base((sql) =>
+    ecrireFactures(sql, compte, numerosDeRemplissage(500), { origine: 'importee' }),
+  );
+  const pdf = await pdfDe(factureLocale('F-2025-0042'));
+
+  const { status, corps } = await importer(compte, pdf);
+  assertEquals(status, 429);
+  assertEquals(corps.code, 'LIMITE');
+  const reessayer = Date.parse(corps.details.reessayerApres);
+  assert(reessayer > Date.now() && reessayer <= Date.now() + 3_600_000);
+  assertEquals(await nombreDeFactures(compte.entrepriseId), 500);
+  assertEquals(await pdfDeposes(compte.entrepriseId), []);
+
+  // Le doublon passe avant le plafond : reprendre un import interrompu ne compte pas ce qui est là.
+  const doublon = await importerFacture(compte, factureLocale('L-1'));
+  assertEquals(doublon.status, 409);
+  assertEquals(doublon.corps.code, 'DOUBLON');
+  assertEquals(await nombreDeFactures(compte.entrepriseId), 500);
+});
+
+Deno.test('plafond : ni les factures émises, ni les imports plus anciens qu’une heure ne comptent', async () => {
+  const compte = await creerCompte();
+  await base(async (sql) => {
+    // 500 émises dans l'heure : le plafond de l'émission est le leur.
+    await ecrireFactures(sql, compte, numerosDeRemplissage(500), { origine: 'emise' });
+    // 500 importées il y a deux heures.
+    await ecrireFactures(
+      sql,
+      compte,
+      numerosDeRemplissage(500).map((n) => `A-${n}`),
+      { origine: 'importee', ilYA: '2 hours' },
+    );
+  });
+
+  const { status } = await importerFacture(compte, factureLocale('F-2025-0042'));
+  assertEquals(status, 201);
 });
 
 Deno.test('avoir importé : rattaché à la facture de l’entreprise qui porte le numéro cité, sinon null', async () => {
@@ -512,6 +616,27 @@ Deno.test('corps illisible : 422 ANOMALIES, Issue CORPS, rien d’importé', asy
     ['form en liste', { form: [FORM], appearance: apparenceDeTest(), pdf }, 'form'],
     ['appearance absente', { form: FORM, pdf }, 'appearance'],
     ['appearance en texte', { form: FORM, appearance: 'classic', pdf }, 'appearance'],
+    // Ce que `jsonb` refuserait (500) : un caractère nul, un demi-substitut isolé, à toute profondeur.
+    [
+      'form avec un caractère nul',
+      { form: { note: 'a\u0000b' }, appearance: apparenceDeTest(), pdf },
+      'form.note',
+    ],
+    [
+      'form avec un caractère nul, dans des listes imbriquées',
+      { form: { lignes: [{ a: 1 }, { b: ['x', '\u0000'] }] }, appearance: apparenceDeTest(), pdf },
+      'form.lignes[1].b[1]',
+    ],
+    [
+      'form avec une clé nulle',
+      { form: { 'k\u0000': 1 }, appearance: apparenceDeTest(), pdf },
+      'form',
+    ],
+    [
+      'appearance avec un demi-substitut isolé',
+      { form: FORM, appearance: { ...apparenceDeTest(), footer: 'a\ud800' }, pdf },
+      'appearance.footer',
+    ],
   ];
   for (const [nom, corps, champ] of cas) {
     const reponse = await appeler('importer', compte.jwt, corps);
@@ -522,6 +647,7 @@ Deno.test('corps illisible : 422 ANOMALIES, Issue CORPS, rien d’importé', asy
     assertEquals(erreur.details[0].path, champ, nom);
   }
   assertEquals(await nombreDeFactures(compte.entrepriseId), 0);
+  assertEquals(await pdfDeposes(compte.entrepriseId), []);
 });
 
 Deno.test('corps de plus de 10 Mio : 413 ANOMALIES, Issue CORPS', async () => {

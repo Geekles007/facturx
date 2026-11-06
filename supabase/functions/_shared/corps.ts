@@ -68,3 +68,83 @@ export function lireObjetPortable(texte: string, message: string): Record<string
   if (!estObjet(corps)) throw refus('Objet attendu.');
   return corps;
 }
+
+/** Longueur au-delà de laquelle un chemin rendu à l'expéditeur est tronqué. */
+const CHEMIN_MAX = 200;
+
+/** Un texte que `jsonb` et `text` de Postgres enregistrent : ni caractère nul, ni demi-substitut isolé. */
+const admissible = (texte: string): boolean => !texte.includes('\u0000') && texte.isWellFormed();
+
+/** Un nœud de la valeur parcourue ; le chemin ne se construit que si on en a besoin. */
+interface Noeud {
+  valeur: unknown;
+  parent: Noeud | undefined;
+  segment: string;
+}
+
+function cheminDe(noeud: Noeud): string {
+  const segments: string[] = [];
+  for (let n: Noeud | undefined = noeud; n; n = n.parent) segments.push(n.segment);
+  const chemin = segments.reverse().join('');
+  return chemin.length > CHEMIN_MAX ? `${chemin.slice(0, CHEMIN_MAX)}…` : chemin;
+}
+
+/**
+ * Le chemin (`.acheteur.noms[1]`) du premier texte de `valeur`, valeur ou clé, que Postgres ne
+ * saurait enregistrer en `jsonb` : un caractère nul (`\u0000`) ou un demi-substitut isolé. Le JSON
+ * les porte sans broncher (`&#0;` d'un XML, `\u0000` d'un corps), la base les refuse : une erreur du
+ * serveur (500) pour une demande qu'un refus 422 explique. Pour une clé fautive, le chemin est celui
+ * de l'objet qui la porte. Les octets (`Uint8Array`, rendus en base64) sont sans objet.
+ *
+ * Le parcours est itératif : un corps de 10 Mio peut imbriquer des milliers de niveaux, qu'une récursion
+ * ne tiendrait pas. `undefined` : rien à refuser.
+ */
+export function cheminInadmissible(racine: unknown): string | undefined {
+  const pile: Noeud[] = [{ valeur: racine, parent: undefined, segment: '' }];
+  for (let noeud = pile.pop(); noeud; noeud = pile.pop()) {
+    const { valeur } = noeud;
+    if (typeof valeur === 'string') {
+      if (!admissible(valeur)) return cheminDe(noeud);
+    } else if (Array.isArray(valeur)) {
+      // Empilés à rebours : le premier élément sort le premier.
+      for (let i = valeur.length - 1; i >= 0; i--) {
+        pile.push({ valeur: valeur[i], parent: noeud, segment: `[${i}]` });
+      }
+    } else if (estObjet(valeur) && !(valeur instanceof Uint8Array)) {
+      const entrees = Object.entries(valeur);
+      if (entrees.some(([cle]) => !admissible(cle))) return cheminDe(noeud);
+      for (let i = entrees.length - 1; i >= 0; i--) {
+        pile.push({ valeur: entrees[i][1], parent: noeud, segment: `.${entrees[i][0]}` });
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Lève 422 `ANOMALIES` (`Issue` de code `code`, sous `message`) si `valeur` porte un texte que
+ * `cheminInadmissible` refuse. `prefixe` précède le chemin dans `path` (`form` donne `form.note`) ; il
+ * est vide pour une valeur dont les chemins se lisent depuis sa racine (la facture : `buyer.name`).
+ * À appeler sur tout ce qui ira en `jsonb` ou en `text`, avant de prendre un verrou ou de déposer un
+ * fichier.
+ */
+export function exigerAdmissible(
+  valeur: unknown,
+  prefixe: string,
+  code: string,
+  message: string,
+): void {
+  const chemin = cheminInadmissible(valeur);
+  if (chemin === undefined) return;
+  throw anomalies(
+    [
+      {
+        code,
+        path: `${prefixe}${chemin}`.replace(/^\./, ''),
+        message:
+          'Le texte contient un caractère nul ou un demi-substitut isolé, que la base refuse.',
+      },
+    ],
+    message,
+  );
+}
