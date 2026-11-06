@@ -667,15 +667,25 @@ describe('après un rechargement', () => {
 });
 
 describe('focusField', () => {
-  const vers = (path: string, tab?: Parameters<typeof focusField>[1]) => {
+  /** L'onglet et le chemin visé après `focusField`, avec un compte (défaut) ou sans. */
+  const vers = (path: string, tab?: Parameters<typeof focusField>[1], avecCompte = true) => {
     store.set((s) => ({
       form: blankForm('2026-11-04'),
-      ui: { ...s.ui, tab: 'content', focus: undefined },
+      ui: { ...s.ui, compte: avecCompte ? COMPTE : undefined, tab: 'content', focus: undefined },
     }));
     focusField(path, tab);
     const { tab: onglet, focus } = store.get().ui;
+    store.set((s) => ({ ui: { ...s.ui, compte: undefined } }));
     return [onglet, focus?.path];
   };
+
+  it('sans compte : exactement comme avant, quel que soit le chemin', () => {
+    expect(vers('', undefined, false)).toEqual(['content', '']);
+    expect(vers('brouillonId', undefined, false)).toEqual(['content', 'brouillonId']);
+    expect(vers('appearance.font', undefined, false)).toEqual(['content', 'appearance.font']);
+    expect(vers('lines[0].name', undefined, false)).toEqual(['content', 'lines[0].name']);
+    expect(vers('', 'check', false)).toEqual(['check', '']);
+  });
 
   it('un champ du formulaire : l’onglet Contenu, sur ce champ, comme avant', () => {
     expect(vers('lines[0].name')).toEqual(['content', 'lines[0].name']);

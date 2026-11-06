@@ -9,7 +9,7 @@ import { frenchVatKey, isValidSiren, isValidSiret } from 'facturx-sdk';
 import { useState } from 'preact/hooks';
 import { ADDRESS_SCHEMES, COUNTRIES } from '../catalog.js';
 import { t } from '../i18n.js';
-import type { ClientRecord } from '../library.js';
+import { type ClientRecord, cleClient } from '../library.js';
 import { type FormAddress, type FormParty, uid } from '../model.js';
 import { storage } from '../storage.js';
 import { conserver, setForm, store, toast, useStudio } from '../store.js';
@@ -439,8 +439,7 @@ export function SellerSection() {
 /** Enregistre (ou met à jour) le client courant dans le carnet. */
 export function saveClient(party: FormParty): void {
   const { clients } = store.get();
-  const key = (p: FormParty) => digits(p.siren) || p.name.trim().toLowerCase();
-  const existing = clients.find((c) => key(c.party) === key(party));
+  const existing = clients.find((c) => cleClient(c.party) === cleClient(party));
   const record: ClientRecord = {
     uid: existing?.uid ?? uid(),
     party: structuredClone(party),

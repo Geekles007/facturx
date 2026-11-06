@@ -185,6 +185,19 @@ export async function connecter(email: string, motDePasse: string): Promise<void
   location.reload();
 }
 
+/**
+ * Renvoie l'e-mail de confirmation de l'adresse du compte (spec § 13, `NON_CONFIRME`), avec le même
+ * lien de retour que l'inscription.
+ */
+export async function renvoyerConfirmation(email: string): Promise<void> {
+  const { error } = await client().auth.resend({
+    type: 'signup',
+    email,
+    options: { emailRedirectTo: adresseDeRetour() },
+  });
+  if (error) throw erreur(error);
+}
+
 /** Envoie le lien de réinitialisation ; la réponse est la même que l'adresse ait un compte ou non. */
 export async function reinitialiser(email: string): Promise<void> {
   const { error } = await client().auth.resetPasswordForEmail(email, {

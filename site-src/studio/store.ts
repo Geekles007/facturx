@@ -33,6 +33,8 @@ export interface Toast {
   id: number;
   kind: 'ok' | 'error' | 'info';
   text: string;
+  /** Ce que le message propose de faire (renvoyer la confirmation, par exemple). */
+  action?: { label: string; run: () => Promise<void> } | undefined;
 }
 
 /** Le compte connecté, tel que `compte/demarrer` l'a relevé sur le serveur. */
@@ -96,6 +98,11 @@ export interface UiState {
    * envoyés : l'onglet Contrôle les montre tant que l'écran montre ces objets-là, pas au-delà.
    */
   refusServeur: RefusServeur | undefined;
+  /**
+   * Une émission est en cours (mode compte) : le document affiché part au serveur tel quel. Rien
+   * ne s'y tape, et l'éditeur est inerte, jusqu'à la réponse.
+   */
+  emissionEnCours: boolean;
 }
 
 /** Ce que le serveur a refusé d'émettre, et pourquoi (des `Issue` du SDK, et les siennes). */
@@ -181,6 +188,7 @@ const initialUi = (): UiState => ({
   brouillonRefuse: undefined,
   connexion: undefined,
   refusServeur: undefined,
+  emissionEnCours: false,
 });
 
 let state: StudioState = {
@@ -243,7 +251,14 @@ function avantDeTaper(): void {
   if (state.ui.sample && !state.ui.issued && estDuCompte(storage)) storage.saisieSurLExemple();
 }
 
+/**
+ * Pendant une émission, le document ne change pas : ce que le serveur numérote est ce qui était à
+ * l'écran au moment de confirmer, et une frappe partie entre-temps viserait un brouillon supprimé.
+ */
+const figee = (): boolean => state.ui.emissionEnCours;
+
 export const setForm = (path: string, value: unknown): void => {
+  if (figee()) return;
   avantDeTaper();
   store.set((s) =>
     s.ui.issued ? {} : { form: setIn(s.form, path, value), ui: { ...s.ui, sample: false } },
@@ -251,14 +266,17 @@ export const setForm = (path: string, value: unknown): void => {
 };
 
 export function updateForm<V>(path: string, fn: (current: V) => V): void {
+  if (figee()) return;
   avantDeTaper();
   store.set((s) =>
     s.ui.issued ? {} : { form: updateIn(s.form, path, fn), ui: { ...s.ui, sample: false } },
   );
 }
 
-export const setAppearance = (patch: Partial<Appearance>): void =>
+export const setAppearance = (patch: Partial<Appearance>): void => {
+  if (figee()) return;
   store.set((s) => ({ appearance: { ...s.appearance, ...patch } }));
+};
 
 /**
  * Les réglages de l'onglet Apparence qu'atteint un chemin `appearance.*` des anomalies du serveur :
@@ -279,12 +297,18 @@ export function estUnChamp(path: string): boolean {
 
 let focusNonce = 0;
 /**
- * Conduit l'éditeur jusqu'à un champ (depuis l'aperçu, une anomalie, un raccourci). Un chemin de
- * l'apparence (`appearance.font`, comme le serveur les nomme) mène à l'onglet Apparence ; un chemin
- * vide, ou qui ne désigne aucun champ du formulaire (`brouillonId`, `invoice`), à l'onglet Contrôle,
- * sans rien viser. Vers l'onglet Contrôle, `path` désigne l'anomalie de ce chemin.
+ * Conduit l'éditeur jusqu'à un champ (depuis l'aperçu, une anomalie, un raccourci). En mode compte,
+ * les anomalies du serveur s'y ajoutent : un chemin de l'apparence (`appearance.font`) mène à
+ * l'onglet Apparence ; un chemin vide, ou qui ne désigne aucun champ du formulaire (`brouillonId`,
+ * `invoice`), à l'onglet Contrôle, sans rien viser. Vers l'onglet Contrôle, `path` désigne
+ * l'anomalie de ce chemin.
  */
 export function focusField(path: string, tab: Tab = 'content'): void {
+  // Sans compte, aucun chemin ne vient du serveur : rien ne change.
+  if (!state.ui.compte) {
+    ui({ focus: { path, nonce: ++focusNonce }, tab, mobile: 'edit' });
+    return;
+  }
   const apparence = /^appearance(?:\.([^.[]+))?/.exec(path);
   const [onglet, cible]: [Tab, string | undefined] =
     tab === 'check' || path === ''
@@ -302,10 +326,18 @@ export function focusField(path: string, tab: Tab = 'content'): void {
 }
 
 let toastId = 0;
-/** Affiche un message ; `duration` (ms) prolonge celui d'un texte long, qui ne se lit pas en 3 s. */
-export function toast(text: string, kind: Toast['kind'] = 'ok', duration?: number): void {
+/**
+ * Affiche un message ; `duration` (ms) prolonge celui d'un texte long, qui ne se lit pas en 3 s.
+ * `action` : un bouton dans le message, qui le ferme et fait ce qu'il dit.
+ */
+export function toast(
+  text: string,
+  kind: Toast['kind'] = 'ok',
+  duration?: number,
+  action?: Toast['action'],
+): void {
   const id = ++toastId;
-  ui({ toast: { id, kind, text } });
+  ui({ toast: { id, kind, text, action } });
   setTimeout(
     () => {
       if (store.get().ui.toast?.id === id) ui({ toast: undefined });

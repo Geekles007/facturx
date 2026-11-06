@@ -739,7 +739,7 @@ const fr = {
       nonConfirme:
         "Confirmez d'abord l'adresse e-mail du compte : ouvrez le lien de l'e-mail de confirmation, puis réessayez.",
       suppression:
-        'La suppression de votre compte est demandée : annulez-la pour reprendre. Vous pouvez toujours exporter vos données.',
+        'La suppression de votre compte est demandée : annulez-la depuis « Mon compte » pour reprendre. Vous pouvez toujours exporter vos données.',
       droits:
         "Ce compte n'a accès à aucune entreprise : reconnectez-vous ; si cela persiste, écrivez-nous.",
       brouillonModifie:
@@ -776,8 +776,8 @@ const fr = {
       incertain:
         "La réponse du serveur n'est pas arrivée : la facture est peut-être émise. Réessayez : si elle l'a été, le nouvel essai la retrouve, sans émettre de seconde facture ni consommer d'autre numéro.",
       session: 'Votre session a expiré : reconnectez-vous, puis émettez de nouveau.',
-      saisieChangee:
-        "Votre saisie a changé pendant l'émission : vérifiez le brouillon, puis émettez de nouveau.",
+      refusSansDetail:
+        'Le serveur refuse cette facture sans dire pourquoi : vérifiez-la, puis émettez de nouveau.',
       refus: (n: number) =>
         n > 1
           ? `Le serveur refuse cette facture (${n} anomalies) : voyez l'onglet Contrôle.`
@@ -788,6 +788,17 @@ const fr = {
           : `La date d'émission ne peut pas dépasser le ${max}.`,
       chargement:
         "Le module du compte n'a pas pu être chargé : vérifiez votre connexion. La facture n'est pas émise.",
+      indisponible:
+        "Le compte n'est pas chargé dans cette page : rechargez-la, puis émettez de nouveau. La facture n'est pas émise.",
+      dejaEmise:
+        'Cette facture est déjà émise : pour en faire une autre, dupliquez-la ; pour la corriger, émettez un avoir.',
+      erreurLocale:
+        "Le Studio n'a pas pu préparer l'émission : rien n'est parti. Rechargez la page, puis émettez de nouveau.",
+      renvoyer: "Renvoyer l'e-mail de confirmation",
+      confirmationRenvoyee: (email: string) =>
+        `Un nouvel e-mail de confirmation est parti vers ${email} : ouvrez le lien qu'il contient, puis émettez de nouveau.`,
+      dejaEmis: (numero: string) =>
+        `Ce brouillon a déjà été émis (facture ${numero}) : la facture s'ouvre. Ce qui a été tapé depuis n'est pas repris, et aucune seconde facture n'est émise.`,
     },
   },
 };
@@ -1505,7 +1516,7 @@ const en: Strings = {
       nonConfirme:
         'First confirm the email address of your account: open the link in the confirmation email, then try again.',
       suppression:
-        'Deletion of your account has been requested: cancel it to resume. You can still export your data.',
+        'Deletion of your account has been requested: cancel it from “My account” to resume. You can still export your data.',
       droits:
         'This account has no access to any company: sign in again; if this persists, write to us.',
       brouillonModifie:
@@ -1540,7 +1551,8 @@ const en: Strings = {
       incertain:
         'The server’s answer did not arrive: the invoice may have been issued. Try again: if it was, the new attempt finds it, without issuing a second invoice or using another number.',
       session: 'Your session has expired: sign in again, then issue again.',
-      saisieChangee: 'Your input changed while issuing: check the draft, then issue again.',
+      refusSansDetail:
+        'The server refuses this invoice without saying why: check it, then issue again.',
       refus: (n: number) =>
         n > 1
           ? `The server refuses this invoice (${n} issues): see the Check tab.`
@@ -1551,6 +1563,17 @@ const en: Strings = {
           : `The issue date cannot be later than ${max}.`,
       chargement:
         'The account module could not be loaded: check your connection. The invoice is not issued.',
+      indisponible:
+        'The account is not loaded in this page: reload it, then issue again. The invoice is not issued.',
+      dejaEmise:
+        'This invoice is already issued: to make another one, duplicate it; to correct it, issue a credit note.',
+      erreurLocale:
+        'The Studio could not prepare the issue: nothing was sent. Reload the page, then issue again.',
+      renvoyer: 'Resend the confirmation email',
+      confirmationRenvoyee: (email: string) =>
+        `A new confirmation email was sent to ${email}: open the link it contains, then issue again.`,
+      dejaEmis: (numero: string) =>
+        `This draft was already issued (invoice ${numero}): the invoice opens. What was typed since is not kept, and no second invoice is issued.`,
     },
   },
 };

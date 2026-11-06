@@ -21,7 +21,8 @@ export type Issue = Pick<IssueDuSdk, 'path' | 'message'> & { code: string };
 
 export type Reaction =
   | { kind: 'connexion' }
-  | { kind: 'message'; texte: string }
+  /** `action` : ce que le message propose de faire (§ 13 : renvoyer la confirmation). */
+  | { kind: 'message'; texte: string; action?: 'renvoyerConfirmation' }
   | { kind: 'recharger'; texte: string }
   | { kind: 'controle'; issues: Issue[] }
   | { kind: 'date'; min?: string; max: string };
@@ -74,7 +75,7 @@ export function reaction(
   if (statut === 413) return message(phrases.tropGros);
   switch (code) {
     case 'NON_CONFIRME':
-      return message(phrases.nonConfirme);
+      return { kind: 'message', texte: phrases.nonConfirme, action: 'renvoyerConfirmation' };
     case 'SUPPRESSION':
       return message(phrases.suppression);
     case 'DROITS':

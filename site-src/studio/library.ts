@@ -122,6 +122,15 @@ export interface ProductRecord {
   updatedAt: string;
 }
 
+/**
+ * Ce qui reconnaît un client dans le carnet : son SIREN, chiffres seuls (tapé avec espaces, points
+ * ou tirets, c'est le même), sinon son nom, sans casse. Le carnet (`saveClient`) et l'émission
+ * (`clientId`) s'en servent tous deux.
+ */
+export function cleClient(p: FormParty): string {
+  return p.siren.replace(/\D/g, '') || p.name.trim().toLowerCase();
+}
+
 export function productToLine(product: ProductRecord): FormLine {
   return {
     ...blankLine(product.vat),

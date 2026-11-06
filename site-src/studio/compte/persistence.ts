@@ -111,11 +111,18 @@ export interface PersistenceCompte extends Persistence, ConservationDuCompte {
   /**
    * Le brouillon `id` vient d'être émis : le serveur l'a supprimé avec l'émission. S'il est ouvert,
    * il devient un document supprimé, tout de suite et sans requête — ce que l'éditeur en montre
-   * encore (frappe, minuterie, écriture en route) ne part plus nulle part et ne signale aucun
+   * encore (frappe, minuterie, écriture en file) ne part plus nulle part et ne signale aucun
    * conflit —, et ni son identifiant ni son miroir ne restent dans ce navigateur. Rien ne le fait
-   * revenir ; le prochain document en est un nouveau.
+   * revenir ; le prochain document en est un nouveau. Vrai si c'était le brouillon ouvert.
    */
-  brouillonEmis(id: string): Promise<void>;
+  brouillonEmis(id: string): Promise<boolean>;
+  /**
+   * `operation`, dans la file des envois du brouillon : les écritures en route finissent avant
+   * qu'elle commence, celles qui arrivent pendant attendent qu'elle finisse. L'émission y passe,
+   * avec `brouillonEmis` : aucune écriture du brouillon n'est en vol pendant qu'`emettre` le lit, le
+   * verrouille et le supprime, et celles qui attendaient trouvent ensuite un document supprimé.
+   */
+  dansLaFile<T>(operation: () => Promise<T>): Promise<T>;
   /** La facture émise depuis le brouillon `id`, s'il y en a une : une réponse d'émission perdue. */
   factureDuBrouillon(id: string): Promise<{ id: string; numero: string } | undefined>;
 }
@@ -712,7 +719,10 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
 
   async function ecrireNumerotation(n: Numbering): Promise<void> {
     // Ce que le serveur a déjà (la numérotation relue après une émission) ne repart pas : récrire
-    // le gabarit lu pourrait défaire un changement fait ailleurs entre-temps.
+    // le gabarit lu pourrait défaire un changement fait ailleurs entre-temps. Avec plusieurs
+    // onglets, chacun compare à ce que lui-même a lu ou écrit en dernier : un onglet qui n'a rien
+    // changé n'écrit rien ; celui qui a changé quelque chose écrit sa valeur, et la dernière écriture
+    // l'emporte, comme pour l'entreprise.
     const m = numerotation;
     if (m && n.pattern === m.pattern && n.yearly === m.yearly && n.next === m.next) return;
     const colonnes: Partial<LigneNumerotation> = { gabarit: n.pattern, annuelle: n.yearly };
@@ -1175,12 +1185,15 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
     async brouillonEmis(id) {
       const d = doc;
       // Le brouillon émis n'est plus l'ouvert (on en a changé pendant l'émission) : rien à quitter.
-      if (d.id !== id) return;
+      if (d.id !== id) return false;
       // Tout de suite : une écriture qui suivrait ne part plus (`enregistrer`, `envoyer`).
       d.supprime = true;
       await auMieux(local.remove('kv', cleCourant));
       await auMieux(local.remove('kv', cleMiroir));
+      return true;
     },
+
+    dansLaFile: (operation) => enFile(operation),
 
     async factureDuBrouillon(id) {
       const r = await sb

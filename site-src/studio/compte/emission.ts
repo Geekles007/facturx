@@ -7,11 +7,16 @@
  * exactement cette version (`brouillonAEmettre`), et le corps est construit dans le même temps. Une
  * saisie qui ne part pas n'est pas émise ; une frappe pendant l'enregistrement le fait recommencer.
  *
- * Après l'émission, le brouillon (que le serveur a supprimé) est quitté sans retour possible, ni par
- * le miroir, ni par une écriture tardive ; l'historique et la numérotation sont relus, et la facture
- * émise s'ouvre. Un refus laisse le brouillon intact, et le dit : aucun numéro n'a été consommé.
- * Une réponse perdue (réseau, passerelle) laisse l'issue incertaine : on cherche d'abord la facture
- * par son brouillon, et le Studio ne promet rien qu'il ne sache.
+ * Pendant l'émission, le document est figé (`ui.emissionEnCours` : rien ne s'y tape, l'éditeur est
+ * inerte), et l'appel passe dans la file des envois de la conservation (`dansLaFile`) : aucune
+ * écriture du brouillon n'est en vol pendant qu'`emettre` le lit, le verrouille et le supprime. Après
+ * l'émission, le brouillon est quitté dans la même file (`brouillonEmis`) : une écriture qui
+ * attendait trouve un document supprimé et ne part pas, ni ne signale de conflit. Puis l'historique
+ * et la numérotation sont relus, et la facture émise s'ouvre.
+ *
+ * Un refus laisse le brouillon intact, et le dit : aucun numéro n'a été consommé. Une réponse perdue
+ * (réseau, passerelle) laisse l'issue incertaine : on cherche d'abord la facture par son brouillon,
+ * et le Studio ne promet rien qu'il ne sache.
  *
  * Chargé par `import()` depuis `workflows.ts`, avec le reste du compte.
  */
@@ -21,6 +26,7 @@ import { toPortableJson } from '../../shared/portable.js';
 import { formatDate, t } from '../i18n.js';
 import {
   type ClientRecord,
+  cleClient,
   defaultNumbering,
   fill,
   type Numbering,
@@ -32,6 +38,7 @@ import {
   brouillonAffiche,
   enregistrerMaintenant,
   focusField,
+  oublierLeBrouillonRefuse,
   type StudioState,
   store,
   toast,
@@ -40,6 +47,7 @@ import {
 import { openIssued } from '../workflows.js';
 import { client } from './client.js';
 import { type Reaction, reaction } from './erreurs.js';
+import { renvoyerConfirmation } from './index.js';
 import { estPersistenceCompte, formulaireNumerote, type PersistenceCompte } from './persistence.js';
 
 /** Le plus gros corps qu'`emettre` accepte (`PLAFOND_CORPS`, `_shared/corps.ts`) : au-delà, 413. */
@@ -61,6 +69,18 @@ interface Envoi {
   invoice: ReturnType<typeof buildInvoice>['invoice'];
 }
 
+/** Une facture émise : son identifiant et le numéro que le serveur lui a attribué. */
+interface Emise {
+  id: string;
+  numero: string;
+}
+
+/** Ce que l'échange avec le serveur a donné. `ouvert` : le brouillon émis était l'ouvert. */
+type Resultat =
+  | { kind: 'emise'; emise: Emise; ouvert?: boolean }
+  | { kind: 'refus'; reaction: Reaction }
+  | { kind: 'incertaine' };
+
 /** L'émission en cours : un second clic l'attend, sans rien émettre ni afficher de plus. */
 let enCours: Promise<boolean> | undefined;
 
@@ -73,10 +93,16 @@ export async function emettreSurServeur(): Promise<boolean> {
     await enCours;
     return false;
   }
-  const emission = emettre().catch(() => {
-    toast(t.compte.erreurs.inconnue, 'error', DUREE_MS);
-    return false;
-  });
+  // Une exception du Studio avant l'envoi n'a rien consommé ; après, l'issue est incertaine.
+  const etape = { envoye: false };
+  ui({ emissionEnCours: true });
+  const emission = emettre(etape)
+    .catch(() => {
+      if (!etape.envoye) return refus(t.compte.emission.erreurLocale);
+      toast(t.compte.emission.incertain, 'error', 12_000);
+      return false;
+    })
+    .finally(() => ui({ emissionEnCours: false }));
   enCours = emission;
   try {
     return await emission;
@@ -84,10 +110,6 @@ export async function emettreSurServeur(): Promise<boolean> {
     enCours = undefined;
   }
 }
-
-/** La clé d'un client dans la bibliothèque, comme `saveClient` : le SIREN, sinon le nom. */
-const cleClient = (p: FormParty): string =>
-  p.siren.replace(/\s+/g, '') || p.name.trim().toLowerCase();
 
 /** L'uid du client de la bibliothèque que l'acheteur désigne, s'il y en a un (Ruling 29). */
 function clientDuBrouillon(acheteur: FormParty, clients: ClientRecord[]): string | undefined {
@@ -133,16 +155,25 @@ function refus(texte: string): false {
 
 /**
  * La saisie part, puis l'écran doit être ce que le serveur a : sinon on recommence (frappe pendant
- * l'enregistrement), ou l'on s'arrête, en le disant (le brouillon ne part pas).
+ * l'enregistrement), ou l'on s'arrête, en le disant (le brouillon ne part pas). Quand l'écran est
+ * bien la version enregistrée, l'échange prend sa place dans la file des envois dans le même temps
+ * que la vérification : aucune écriture ne passe entre les deux.
  */
-async function enregistrerPuisPreparer(p: PersistenceCompte): Promise<Envoi | false> {
+async function enregistrerPuisEnvoyer(
+  p: PersistenceCompte,
+  etape: { envoye: boolean },
+): Promise<{ envoi: Envoi; resultat: Promise<Resultat> } | false> {
   const phrases = t.compte.emission;
   for (let essai = 1; ; essai++) {
     const avant = store.get();
     if (!(await enregistrerMaintenant())) return refus(phrases.nonEnregistre);
     await p.envoisTermines();
     const envoi = preparer(p);
-    if (envoi) return envoi;
+    if (envoi) {
+      // Au-delà du plafond du serveur, rien ne part : le message dit quoi réduire.
+      if (envoi.corps.size > PLAFOND_CORPS) return refus(phrases.tropGros);
+      return { envoi, resultat: p.dansLaFile(() => echanger(p, envoi, etape)) };
+    }
     const apres = store.get();
     if (apres.form === avant.form && apres.appearance === avant.appearance) {
       return refus(phrases.nonEnregistre);
@@ -151,33 +182,73 @@ async function enregistrerPuisPreparer(p: PersistenceCompte): Promise<Envoi | fa
   }
 }
 
-async function emettre(): Promise<boolean> {
+async function emettre(etape: { envoye: boolean }): Promise<boolean> {
   const phrases = t.compte.emission;
   const p = storage;
+  if (!estPersistenceCompte(p)) {
+    toast(phrases.indisponible, 'error', DUREE_MS);
+    return false;
+  }
   const { ui: etat } = store.get();
-  if (!estPersistenceCompte(p) || etat.issued !== undefined) return false;
+  if (etat.issued !== undefined) {
+    toast(phrases.dejaEmise, 'info', DUREE_MS);
+    return false;
+  }
   if (etat.sample) {
     toast(phrases.exemple, 'error', DUREE_MS);
     return false;
   }
 
-  // 1. Ce que le serveur a, à sa version.
-  const envoi = await enregistrerPuisPreparer(p);
-  if (!envoi) return false;
+  const lancee = await enregistrerPuisEnvoyer(p, etape);
+  if (!lancee) return false;
+  const { envoi } = lancee;
+  const resultat = await lancee.resultat;
+  switch (resultat.kind) {
+    case 'emise':
+      await ouvrirLaFactureEmise(p, resultat.emise, {
+        brouillonOuvert: resultat.ouvert === true,
+        secours: envoi,
+        message: phrases.emise(resultat.emise.numero),
+      });
+      return true;
+    case 'refus':
+      return reagir(resultat.reaction, envoi);
+    case 'incertaine':
+      toast(phrases.incertain, 'error', 12_000);
+      return false;
+  }
+}
 
-  // 2. Au-delà du plafond du serveur, rien ne part : le message dit quoi réduire.
-  if (envoi.corps.size > PLAFOND_CORPS) return refus(phrases.tropGros);
+/**
+ * L'échange avec le serveur, dans la file des envois : l'appel, l'issue, et, si la facture est
+ * émise, le brouillon quitté avant que la file ne reprenne (`brouillonEmis`).
+ */
+async function echanger(
+  p: PersistenceCompte,
+  envoi: Envoi,
+  etape: { envoye: boolean },
+): Promise<Resultat> {
+  etape.envoye = true;
+  let resultat = await interroger(envoi);
+  if (resultat.kind === 'incertaine') {
+    // La réponse n'est pas arrivée, ou ne se lit pas : la facture est-elle émise ?
+    const emise = await p.factureDuBrouillon(envoi.brouillonId).catch(() => undefined);
+    if (emise) resultat = { kind: 'emise', emise };
+  }
+  if (resultat.kind !== 'emise') return resultat;
+  return { ...resultat, ouvert: await p.brouillonEmis(envoi.brouillonId) };
+}
 
-  // 3. L'émission.
+/** L'appel à `emettre`, et ce que sa réponse dit. */
+async function interroger(envoi: Envoi): Promise<Resultat> {
   const { data, error } = await client().functions.invoke('emettre', { body: envoi.corps });
   if (!error) {
     const emise = data as { id?: unknown; numero?: unknown } | null;
-    if (typeof emise?.id === 'string' && typeof emise.numero === 'string') {
-      return succes(p, { id: emise.id, numero: emise.numero }, envoi);
-    }
-    return incertain(p, envoi);
+    return typeof emise?.id === 'string' && typeof emise.numero === 'string'
+      ? { kind: 'emise', emise: { id: emise.id, numero: emise.numero } }
+      : { kind: 'incertaine' };
   }
-  if (!(error instanceof FunctionsHttpError)) return incertain(p, envoi);
+  if (!(error instanceof FunctionsHttpError)) return { kind: 'incertaine' };
   const reponse = error.context as Response;
   const corps = await reponse.json().catch(() => undefined);
   const lisible =
@@ -187,26 +258,36 @@ async function emettre(): Promise<boolean> {
   // Une panne hors de la fonction (passerelle, worker arrêté) ou qu'elle ne nomme pas : la
   // transaction a pu aboutir. `INTERNE` vient de la fonction, qui a tout annulé.
   if (reponse.status >= 500 && (!lisible || (corps as { code: string }).code !== 'INTERNE')) {
-    return incertain(p, envoi);
+    return { kind: 'incertaine' };
   }
   const { code, message, details } = (lisible ? corps : {}) as {
     code?: string;
     message?: unknown;
     details?: unknown;
   };
-  return reagir(
-    p,
-    reaction(reponse.status, {
+  return {
+    kind: 'refus',
+    reaction: reaction(reponse.status, {
       code: code ?? '',
       message: typeof message === 'string' ? message : '',
       details,
     }),
-    envoi,
-  );
+  };
+}
+
+/** Renvoie l'e-mail de confirmation de l'adresse du compte, et dit ce qu'il en est. */
+async function renvoyerLaConfirmation(): Promise<void> {
+  const email = store.get().ui.compte?.email ?? '';
+  try {
+    await renvoyerConfirmation(email);
+    toast(t.compte.emission.confirmationRenvoyee(email), 'ok', DUREE_MS);
+  } catch (erreur) {
+    toast(erreur instanceof Error ? erreur.message : t.compte.errors.other, 'error', DUREE_MS);
+  }
 }
 
 /** Le refus du serveur, dit à l'utilisateur ; le brouillon reste tel quel. */
-function reagir(p: PersistenceCompte, r: Reaction, envoi: Envoi): false {
+function reagir(r: Reaction, envoi: Envoi): false {
   const phrases = t.compte.emission;
   switch (r.kind) {
     case 'connexion': {
@@ -215,20 +296,16 @@ function reagir(p: PersistenceCompte, r: Reaction, envoi: Envoi): false {
       if (compte) ui({ compte: { ...compte, session: 'expiree' }, connexion: 'connexion' });
       return refus(phrases.session);
     }
-    case 'recharger': {
-      // Sa propre frappe, partie pendant l'émission, a fait avancer la version : rien d'autre
-      // n'a changé le brouillon. Sinon il a changé ailleurs : le Studio propose de trancher.
-      const courant = p.brouillonCourant();
-      if (courant?.id === envoi.brouillonId && courant.version !== envoi.version) {
-        return refus(phrases.saisieChangee);
-      }
+    case 'recharger':
+      // Aucune écriture d'ici n'était en vol (file des envois) : le brouillon a changé ailleurs.
       ui({ conflit: true });
       return refus(r.texte);
-    }
     case 'date':
       focusField('issueDate');
       return refus(phrases.date(r.min ? formatDate(r.min) : undefined, formatDate(r.max)));
     case 'controle':
+      // Sans anomalie lisible, l'onglet Contrôle n'aurait rien à montrer.
+      if (r.issues.length === 0) return refus(phrases.refusSansDetail);
       ui({
         refusServeur: { form: envoi.form, appearance: envoi.appearance, issues: r.issues },
         tab: 'check',
@@ -236,41 +313,38 @@ function reagir(p: PersistenceCompte, r: Reaction, envoi: Envoi): false {
       focusField(r.issues[0]?.path ?? '', 'check');
       return refus(phrases.refus(r.issues.length));
     case 'message':
+      if (r.action === 'renvoyerConfirmation') {
+        toast(`${r.texte} ${phrases.aucunNumero}`, 'error', 15_000, {
+          label: phrases.renvoyer,
+          run: renvoyerLaConfirmation,
+        });
+        return false;
+      }
       return refus(r.texte);
   }
 }
 
 /**
- * La réponse n'est pas arrivée, ou ne se lit pas : la facture est-elle émise ? On la cherche par son
- * brouillon. Trouvée, c'est un succès ; sinon (ou si l'on ne peut pas savoir), le Studio dit de
- * réessayer : le serveur rejoue une émission déjà faite, sans en faire une seconde.
+ * La facture est émise : ce que le magasin attendait encore du brouillon émis (conflit, écriture en
+ * échec) ne vaut plus s'il était l'ouvert ; l'historique et la numérotation sont relus (le numéro
+ * proposé du brouillon suivant en dépend), et la facture émise s'ouvre. Relire peut échouer sans
+ * rien défaire : la facture est alors reconstituée de ce qui a été envoyé (`secours`), s'il est là.
+ * Sert aussi quand on découvre après coup qu'un brouillon a été émis (réponse perdue).
  */
-async function incertain(p: PersistenceCompte, envoi: Envoi): Promise<boolean> {
-  const emise = await p.factureDuBrouillon(envoi.brouillonId).catch(() => undefined);
-  if (emise) return succes(p, emise, envoi);
-  toast(t.compte.emission.incertain, 'error', 12_000);
-  return false;
-}
-
-/**
- * La facture est émise : le brouillon est quitté pour de bon, l'historique et la numérotation sont
- * relus (le numéro proposé du brouillon suivant en dépend), et la facture émise s'ouvre. Relire
- * peut échouer sans rien défaire : la facture est alors reconstituée de ce qui a été envoyé.
- */
-async function succes(
+export async function ouvrirLaFactureEmise(
   p: PersistenceCompte,
-  emise: { id: string; numero: string },
-  envoi: Envoi,
-): Promise<true> {
-  await p.brouillonEmis(envoi.brouillonId);
+  emise: Emise,
+  options: { brouillonOuvert: boolean; secours?: Envoi; message: string },
+): Promise<void> {
+  if (options.brouillonOuvert) oublierLeBrouillonRefuse();
   const [lues, numerotation] = await Promise.allSettled([
     p.list<SavedInvoice>('invoices'),
     p.get<Numbering>('numbering'),
   ]);
   let history = lues.status === 'fulfilled' ? lues.value : store.get().history;
   let saved = history.find((h) => h.uid === emise.id);
-  if (!saved) {
-    saved = reconstituer(emise, envoi);
+  if (!saved && options.secours) {
+    saved = reconstituer(emise, options.secours);
     history = [...history.filter((h) => h.uid !== emise.id), saved];
   }
   const numbering =
@@ -282,13 +356,12 @@ async function succes(
     ...(numbering ? { numbering } : {}),
     ui: { ...s.ui, refusServeur: undefined },
   }));
-  openIssued(saved);
-  toast(t.compte.emission.emise(emise.numero));
-  return true;
+  if (saved) openIssued(saved);
+  toast(options.message);
 }
 
 /** La facture émise, telle que l'historique la rendra, d'après ce qui a été envoyé. */
-function reconstituer(emise: { id: string; numero: string }, envoi: Envoi): SavedInvoice {
+function reconstituer(emise: Emise, envoi: Envoi): SavedInvoice {
   const { invoice } = envoi;
   return {
     uid: emise.id,

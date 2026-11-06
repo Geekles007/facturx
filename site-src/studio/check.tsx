@@ -19,7 +19,9 @@ function useRefusServeur(): RefusServeur['issues'] | undefined {
   const refus = useStudio((s) => s.ui.refusServeur);
   const form = useStudio((s) => s.form);
   const appearance = useStudio((s) => s.appearance);
-  return refus && refus.form === form && refus.appearance === appearance ? refus.issues : undefined;
+  const affichees = refus && refus.form === form && refus.appearance === appearance;
+  // Sans anomalie lisible, il n'y a rien à montrer ici : l'émission l'a dit par un message.
+  return affichees && refus.issues.length > 0 ? refus.issues : undefined;
 }
 
 /**

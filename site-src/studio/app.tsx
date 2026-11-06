@@ -470,10 +470,12 @@ function TopBar({ derived, onIssue }: { derived: Derived; onIssue: () => void })
   const form = useStudio((s) => s.form);
   const appearance = useStudio((s) => s.appearance);
   const issued = useStudio((s) => s.ui.issued);
+  // Pendant une émission, rien ne change de document ni ne s'ouvre par-dessus.
+  const emission = useStudio((s) => s.ui.emissionEnCours);
   const ok = derived.issues.length === 0;
   const title = form.id.trim() || t.app.untitled;
   return (
-    <header class="topbar">
+    <header class="topbar" inert={emission}>
       <a class="brand" href="../" aria-label="facturx-sdk">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path
@@ -665,10 +667,12 @@ function IssueDialog({
     <Dialog
       open={open}
       onClose={onClose}
+      // Une émission partie ne s'annule pas : le dialogue reste jusqu'à la réponse.
+      fermable={!busy}
       title={phrases ? phrases.title : t.issueDialog.title(form.id)}
       actions={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
             {t.app.cancel}
           </Button>
           <Button
@@ -807,9 +811,10 @@ function Banners() {
   const storageState = useStudio((s) => s.ui.storage);
   const history = useStudio((s) => s.history);
   const saved = issued ? history.find((h) => h.uid === issued) : undefined;
+  const emission = useStudio((s) => s.ui.emissionEnCours);
   // Un seul conteneur, toujours présent : la grille de l'application a une rangée pour lui.
   return (
-    <div class="banners">
+    <div class="banners" inert={emission}>
       {storageState === 'memory' && (
         <p class="banner warn">
           <Icon name="alert" /> {t.app.storageMemory}
@@ -884,6 +889,19 @@ function Toasts() {
         name={toastState.kind === 'error' ? 'alert' : toastState.kind === 'info' ? 'info' : 'check'}
       />
       <span>{toastState.text}</span>
+      {toastState.action && (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            const action = toastState.action;
+            ui({ toast: undefined });
+            void action?.run();
+          }}
+        >
+          {toastState.action.label}
+        </Button>
+      )}
       <IconButton icon="x" label={t.app.close} onClick={() => ui({ toast: undefined })} />
     </div>
   );
@@ -905,6 +923,8 @@ export function App() {
   const mobile = useStudio((s) => s.ui.mobile);
   const issued = useStudio((s) => s.ui.issued);
   const history = useStudio((s) => s.history);
+  // Une émission en cours fige le document : l'éditeur, l'aperçu et la navigation sont inertes.
+  const emission = useStudio((s) => s.ui.emissionEnCours);
   const { assets, fonts, logoUrl, error: assetError } = useAssets();
   const scroller = useRef<HTMLDivElement>(null);
   const [issueOpen, setIssueOpen] = useState(false);
@@ -1020,6 +1040,7 @@ export function App() {
         <div
           class={`studio mobile-${mobile}${dragging ? ' dragging' : ''}`}
           onDragOver={(e) => {
+            if (store.get().ui.emissionEnCours) return;
             if (e.dataTransfer?.types.includes('Files')) {
               e.preventDefault();
               setDragging(true);
@@ -1032,12 +1053,12 @@ export function App() {
             e.preventDefault();
             setDragging(false);
             const file = e.dataTransfer?.files?.[0];
-            if (file) void openFile(file);
+            if (file && !store.get().ui.emissionEnCours) void openFile(file);
           }}
         >
           <TopBar derived={derived} onIssue={onIssue} />
           <Banners />
-          <main class="workspace" id="contenu">
+          <main class="workspace" id="contenu" inert={emission}>
             <div class="editor-pane">
               <div class="tabs-ui" role="tablist" aria-label={t.app.studio}>
                 {TABS.map((item) => {
@@ -1079,7 +1100,7 @@ export function App() {
               <Preview />
             </div>
           </main>
-          <nav class="mobile-nav" aria-label={t.app.studio}>
+          <nav class="mobile-nav" aria-label={t.app.studio} inert={emission}>
             <button
               type="button"
               class={mobile === 'edit' ? 'on' : ''}

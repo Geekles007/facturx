@@ -642,6 +642,7 @@ export function Dialog({
   children,
   actions,
   wide,
+  fermable = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -649,6 +650,12 @@ export function Dialog({
   children: ComponentChildren;
   actions?: ComponentChildren;
   wide?: boolean;
+  /**
+   * Faux pendant une opération qui ne s'interrompt pas (l'émission) : ni Échap, ni la croix, ni un
+   * clic sur le fond ne ferment le dialogue ; s'il est fermé quand même (Échap répété, que le
+   * navigateur finit par imposer), il se rouvre.
+   */
+  fermable?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -662,16 +669,22 @@ export function Dialog({
     <dialog
       ref={ref}
       class={`dialog${wide ? ' wide' : ''}`}
-      onClose={onClose}
+      onCancel={(event) => {
+        if (!fermable) event.preventDefault();
+      }}
+      onClose={() => {
+        if (fermable) onClose();
+        else if (open) ref.current?.showModal();
+      }}
       onClick={(event) => {
-        if (event.target === ref.current) onClose();
+        if (fermable && event.target === ref.current) onClose();
       }}
     >
       {open && (
         <div class="dialog-inner">
           <header>
             <h2>{title}</h2>
-            <IconButton icon="x" label={t.app.close} onClick={onClose} />
+            <IconButton icon="x" label={t.app.close} onClick={onClose} disabled={!fermable} />
           </header>
           <div class="dialog-body">{children}</div>
           {actions && <footer>{actions}</footer>}

@@ -36,6 +36,14 @@ describe('reaction', () => {
     expect(reaction(statut, { code, message: '' }).kind).toBe(kind),
   );
 
+  test('NON_CONFIRME : le message propose de renvoyer la confirmation (§ 13)', () => {
+    expect(reaction(403, { code: 'NON_CONFIRME', message: '' })).toEqual({
+      kind: 'message',
+      texte: t.compte.erreurs.nonConfirme,
+      action: 'renvoyerConfirmation',
+    });
+  });
+
   test('401, quel que soit le code : la connexion', () => {
     expect(reaction(401, { code: 'AUTRE', message: '' })).toEqual({ kind: 'connexion' });
   });

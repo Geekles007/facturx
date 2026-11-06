@@ -20,17 +20,21 @@ import {
   type CompteUi,
   enregistrerMaintenant,
   type Loaded,
+  setAppearance,
   setForm,
   startPersistence,
   store,
+  updateForm,
 } from '../store.js';
 import { issueInvoice } from '../workflows.js';
 import { emettreSurServeur, PLAFOND_CORPS } from './emission.js';
 import type { PersistenceCompte } from './persistence.js';
 
-/** Le client Supabase simulé : seul `functions.invoke` sert à l'émission. */
-const faux = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('./client.js', () => ({ client: () => ({ functions: { invoke: faux.invoke } }) }));
+/** Le client Supabase simulé : `functions.invoke` pour l'émission, `auth.resend` pour la confirmation. */
+const faux = vi.hoisted(() => ({ invoke: vi.fn(), resend: vi.fn() }));
+vi.mock('./client.js', () => ({
+  client: () => ({ functions: { invoke: faux.invoke }, auth: { resend: faux.resend } }),
+}));
 
 type Brouillon = NonNullable<Loaded['draft']>;
 
@@ -59,6 +63,11 @@ function fausseConservation() {
     numerotation: Numbering;
     factureDuBrouillon: { id: string; numero: string } | undefined;
     pendantEcriture: (() => void) | undefined;
+    /** Une opération passe dans la file des envois (`dansLaFile`). */
+    enFile: boolean;
+    /** Ce qui s'est passé dans la file : l'appel à `emettre`, le brouillon quitté. */
+    dansLaFile: string[];
+    preparationLeve: boolean;
   } = {
     refus: undefined,
     version: 1,
@@ -68,6 +77,9 @@ function fausseConservation() {
     numerotation: { ...defaultNumbering(), next: 8, year: 2026 },
     factureDuBrouillon: undefined,
     pendantEcriture: undefined,
+    enFile: false,
+    dansLaFile: [],
+    preparationLeve: false,
   };
   const memes = (b: Brouillon) =>
     etat.recu !== undefined && b.form === etat.recu.form && b.appearance === etat.recu.appearance;
@@ -111,14 +123,25 @@ function fausseConservation() {
     rechargerBrouillon: async () => undefined,
     imposerBrouillon: async () => undefined,
     brouillonAEmettre(affiche: unknown) {
+      if (etat.preparationLeve) throw new Error('préparation');
       const b = affiche as Brouillon;
       if (b.issued !== undefined || b.sample || !memes(b)) return undefined;
       return { id: 'b-1', version: etat.version };
     },
     async brouillonEmis(id: string) {
       etat.emis.push(id);
+      if (etat.enFile) etat.dansLaFile.push(`brouillonEmis ${id}`);
+      return id === 'b-1';
     },
     factureDuBrouillon: async () => etat.factureDuBrouillon,
+    async dansLaFile<T>(operation: () => Promise<T>): Promise<T> {
+      etat.enFile = true;
+      try {
+        return await operation();
+      } finally {
+        etat.enFile = false;
+      }
+    },
   };
   return { p: p as unknown as PersistenceCompte, etat };
 }
@@ -212,6 +235,7 @@ const texteDuMessage = () => store.get().ui.toast?.text ?? '';
 
 beforeEach(() => {
   faux.invoke.mockReset();
+  faux.resend.mockReset();
 });
 
 afterEach(() => {
@@ -229,7 +253,10 @@ describe('emettreSurServeur', () => {
     setForm('buyer.name', 'Client émis');
     const { form, appearance } = store.get();
     etat.historique = [emise('f-1', 'F-2026-0007', form, appearance)];
-    faux.invoke.mockResolvedValue(succes({ id: 'f-1', numero: 'F-2026-0007' }));
+    faux.invoke.mockImplementation(async () => {
+      if (etat.enFile) etat.dansLaFile.push('emettre');
+      return succes({ id: 'f-1', numero: 'F-2026-0007' });
+    });
 
     expect(await emettreSurServeur()).toBe(true);
 
@@ -249,6 +276,47 @@ describe('emettreSurServeur', () => {
     expect(s.history.map((h) => h.uid)).toEqual(['f-1']);
     expect(s.numbering.next).toBe(8);
     expect(texteDuMessage()).toBe(t.compte.emission.emise('F-2026-0007'));
+    // L'appel et l'abandon du brouillon émis passent dans la file des envois : aucune écriture du
+    // brouillon n'est en vol pendant qu'`emettre` le lit, le verrouille et le supprime.
+    expect(etat.dansLaFile).toEqual(['emettre', 'brouillonEmis b-1']);
+    expect(s.ui.emissionEnCours).toBe(false);
+  });
+
+  test('pendant l’émission, l’éditeur n’accepte rien ; après, il reprend', async () => {
+    const { p } = fausseConservation();
+    demarrer(p);
+    const avant = store.get();
+    // Relevé pendant l'appel, vérifié après : une assertion levée dans l'appel simulé serait prise
+    // pour une issue incertaine.
+    const pendant: { enCours?: boolean; formeInchangee?: boolean; apparenceInchangee?: boolean } =
+      {};
+    faux.invoke.mockImplementation(async () => {
+      pendant.enCours = store.get().ui.emissionEnCours;
+      setForm('lines[0].quantity', '99');
+      updateForm<string>('buyer.name', (n) => `${n}, modifié`);
+      setAppearance({ accent: '#ff0000' });
+      pendant.formeInchangee = store.get().form === avant.form;
+      pendant.apparenceInchangee = store.get().appearance === avant.appearance;
+      return erreurHttp(409, { code: 'BROUILLON_MODIFIE', message: '' });
+    });
+    expect(await emettreSurServeur()).toBe(false);
+    expect(pendant).toEqual({ enCours: true, formeInchangee: true, apparenceInchangee: true });
+    expect(store.get().ui.emissionEnCours).toBe(false);
+    setForm('lines[0].quantity', '99');
+    expect(store.get().form.lines[0]?.quantity).toBe('99');
+  });
+
+  test('succès : un conflit posé sur le brouillon émis pendant l’émission est effacé', async () => {
+    const { p, etat } = fausseConservation();
+    demarrer(p);
+    const { form, appearance } = store.get();
+    etat.historique = [emise('f-1', 'F-2026-0007', form, appearance)];
+    faux.invoke.mockImplementation(async () => {
+      store.set((s) => ({ ui: { ...s.ui, conflit: 'supprime' } }));
+      return succes({ id: 'f-1', numero: 'F-2026-0007' });
+    });
+    expect(await emettreSurServeur()).toBe(true);
+    expect(store.get().ui.conflit).toBe(false);
   });
 
   test('le client choisi dans la bibliothèque part avec son uid (clientId)', async () => {
@@ -260,6 +328,19 @@ describe('emettreSurServeur', () => {
     faux.invoke.mockResolvedValue(coupure());
     await emettreSurServeur();
     expect((await corpsEnvoye()).clientId).toBe('client-7');
+  });
+
+  test('clientId : le SIREN tapé avec points, tirets ou espaces désigne le même client', async () => {
+    const { p } = fausseConservation();
+    demarrer(p);
+    const party = { ...structuredClone(store.get().form.buyer), siren: '732829320' };
+    store.set({ clients: [{ uid: 'client-8', party, updatedAt: '2026-11-01T00:00:00.000Z' }] });
+    faux.invoke.mockResolvedValue(coupure());
+    for (const [n, siren] of ['732.829.320', '732-829-320', '732 829 320'].entries()) {
+      setForm('buyer.siren', siren);
+      await emettreSurServeur();
+      expect((await corpsEnvoye(n)).clientId).toBe('client-8');
+    }
   });
 
   test('double clic : une seule émission, un seul message, la facture ouverte une fois', async () => {
@@ -334,19 +415,73 @@ describe('emettreSurServeur', () => {
     );
   });
 
-  test('BROUILLON_MODIFIE par sa propre frappe pendant l’émission : pas de conflit, le Studio le dit', async () => {
+  test('ANOMALIES sans anomalie lisible : un message, pas d’onglet Contrôle vide', async () => {
+    const { p } = fausseConservation();
+    demarrer(p);
+    faux.invoke.mockResolvedValue(
+      erreurHttp(422, { code: 'ANOMALIES', message: '', details: [{ code: 1 }] }),
+    );
+    expect(await emettreSurServeur()).toBe(false);
+    const ui = store.get().ui;
+    expect(ui.tab).toBe('content');
+    expect(ui.refusServeur).toBeUndefined();
+    expect(texteDuMessage()).toBe(
+      `${t.compte.emission.refusSansDetail} ${t.compte.emission.aucunNumero}`,
+    );
+  });
+
+  test('NON_CONFIRME : le message propose de renvoyer la confirmation, et la renvoie', async () => {
+    const { p } = fausseConservation();
+    demarrer(p);
+    vi.stubGlobal('location', { origin: 'http://localhost:8080' });
+    faux.invoke.mockResolvedValue(erreurHttp(403, { code: 'NON_CONFIRME', message: '' }));
+    expect(await emettreSurServeur()).toBe(false);
+    const message = store.get().ui.toast;
+    expect(message?.text).toBe(`${t.compte.erreurs.nonConfirme} ${t.compte.emission.aucunNumero}`);
+    expect(message?.action?.label).toBe(t.compte.emission.renvoyer);
+    faux.resend.mockResolvedValue({ data: {}, error: null });
+    await message?.action?.run();
+    expect(faux.resend).toHaveBeenCalledWith({
+      type: 'signup',
+      email: COMPTE.email,
+      options: { emailRedirectTo: 'http://localhost:8080/studio/' },
+    });
+    expect(texteDuMessage()).toBe(t.compte.emission.confirmationRenvoyee(COMPTE.email));
+  });
+
+  test('une erreur du Studio avant l’envoi : dite comme telle, aucun numéro consommé', async () => {
+    const { p, etat } = fausseConservation();
+    demarrer(p);
+    etat.preparationLeve = true;
+    expect(await emettreSurServeur()).toBe(false);
+    expect(faux.invoke).not.toHaveBeenCalled();
+    expect(texteDuMessage()).toBe(
+      `${t.compte.emission.erreurLocale} ${t.compte.emission.aucunNumero}`,
+    );
+    expect(store.get().ui.emissionEnCours).toBe(false);
+  });
+
+  test('une erreur du Studio après l’envoi : l’issue est dite incertaine', async () => {
     const { p } = fausseConservation();
     demarrer(p);
     faux.invoke.mockImplementation(async () => {
-      setForm('buyer.name', 'Tapé pendant l’émission');
-      await enregistrerMaintenant();
-      return erreurHttp(409, { code: 'BROUILLON_MODIFIE', message: '' });
+      throw new Error('après l’envoi');
     });
     expect(await emettreSurServeur()).toBe(false);
-    expect(store.get().ui.conflit).toBe(false);
-    expect(texteDuMessage()).toBe(
-      `${t.compte.emission.saisieChangee} ${t.compte.emission.aucunNumero}`,
-    );
+    expect(texteDuMessage()).toBe(t.compte.emission.incertain);
+  });
+
+  test('ni la conservation du compte, ni une facture émise affichée : le Studio dit pourquoi', async () => {
+    const { p } = fausseConservation();
+    demarrer(p);
+    store.set((s) => ({ ui: { ...s.ui, issued: 'f-1' } }));
+    expect(await emettreSurServeur()).toBe(false);
+    expect(texteDuMessage()).toBe(t.compte.emission.dejaEmise);
+    store.set((s) => ({ ui: { ...s.ui, issued: undefined } }));
+    utiliser(indexedDbPersistence);
+    expect(await emettreSurServeur()).toBe(false);
+    expect(texteDuMessage()).toBe(t.compte.emission.indisponible);
+    expect(faux.invoke).not.toHaveBeenCalled();
   });
 
   test('ANOMALIES : l’onglet Contrôle s’ouvre sur le champ en cause (focusField), anomalies gardées', async () => {
@@ -453,21 +588,20 @@ describe('emettreSurServeur', () => {
     expect(faux.invoke).not.toHaveBeenCalled();
   });
 
-  test('frappe pendant l’enregistrement : on enregistre de nouveau, et la dernière saisie part', async () => {
+  test('le document change pendant l’enregistrement (autre que la frappe) : on enregistre de nouveau', async () => {
     const { p, etat } = fausseConservation();
     demarrer(p);
     setForm('buyer.name', 'Avant');
-    etat.pendantEcriture = () => setForm('buyer.name', 'Tapé pendant l’enregistrement');
+    // La frappe est refusée pendant l'émission ; un autre changement du document (un brouillon
+    // rechargé, par exemple) fait recommencer l'enregistrement, et c'est lui qui part.
+    etat.pendantEcriture = () =>
+      store.set((s) => ({ form: { ...s.form, buyer: { ...s.form.buyer, name: 'Rechargé' } } }));
     faux.invoke.mockResolvedValue(coupure());
     await emettreSurServeur();
     const corps = await corpsEnvoye();
-    expect((corps.invoice as { buyer: { name: string } }).buyer.name).toBe(
-      'Tapé pendant l’enregistrement',
-    );
+    expect((corps.invoice as { buyer: { name: string } }).buyer.name).toBe('Rechargé');
     // Ce qui part est ce que le serveur a reçu, à la version qu'il a.
-    expect((etat.recu?.form as InvoiceForm | undefined)?.buyer.name).toBe(
-      'Tapé pendant l’enregistrement',
-    );
+    expect((etat.recu?.form as InvoiceForm | undefined)?.buyer.name).toBe('Rechargé');
     expect(corps.version).toBe(etat.version);
     expect(etat.version).toBe(2);
   });

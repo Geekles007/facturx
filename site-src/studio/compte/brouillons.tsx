@@ -38,6 +38,7 @@ import {
   remplacer,
   startDraft,
 } from '../workflows.js';
+import { ouvrirLaFactureEmise } from './emission.js';
 import {
   type Brouillon,
   estPersistenceCompte,
@@ -109,8 +110,25 @@ function contenuEnConflit(p: PersistenceCompte): Brouillon | undefined {
   return vueAffichee() ? (p.saisieEnAttente() as Brouillon | undefined) : affiche();
 }
 
+/**
+ * Le brouillon ouvert a-t-il été émis, la réponse s'étant perdue ? Le recréer ferait une seconde
+ * facture du même contenu : la facture s'ouvre à la place, et le Studio le dit.
+ */
+async function emisEntreTemps(p: PersistenceCompte): Promise<boolean> {
+  const id = p.brouillonCourant()?.id;
+  const emise = id ? await p.factureDuBrouillon(id) : undefined;
+  if (!id || !emise) return false;
+  const ouvert = await p.brouillonEmis(id);
+  await ouvrirLaFactureEmise(p, emise, {
+    brouillonOuvert: ouvert,
+    message: t.compte.emission.dejaEmis(emise.numero),
+  });
+  return true;
+}
+
 /** Le contenu du brouillon en conflit remplace la version du serveur (ou la recrée), et le dit. */
 async function imposer(p: PersistenceCompte, message: string, genre: 'ok' | 'info'): Promise<void> {
+  if (await emisEntreTemps(p)) return;
   const b = contenuEnConflit(p);
   // Sous une vue, plus aucune saisie n'attend : il n'y a plus rien à trancher.
   if (b) await p.imposerBrouillon(b);

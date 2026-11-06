@@ -15,6 +15,7 @@ import {
   store,
   updateForm,
 } from '../store.js';
+import { rechargerBrouillon, recreerBrouillon } from './brouillons.js';
 import { emettreSurServeur } from './emission.js';
 import { supabasePersistence } from './persistence.js';
 import { adminDeTest, compteDeTest } from './test-aide.js';
@@ -219,6 +220,98 @@ describe.skipIf(!process.env.SUPABASE_URL)('émettre : la conservation du compte
     expect(await lignes(entrepriseId)).toEqual([]);
   });
 
+  test('ordre réaliste : une écriture arrivée pendant l’émission attend la file, puis ne part pas', async () => {
+    const { sb, entrepriseId } = await compteDeTest();
+    const p = supabasePersistence(sb, entrepriseId);
+    await p.set('draft', brouillon('Version 1'));
+    const [ligne] = await lignes(entrepriseId);
+    if (!ligne) throw new Error('brouillon absent');
+
+    const ecritures: string[] = [];
+    const fetchOrigine = globalThis.fetch;
+    globalThis.fetch = async (entree, init) => {
+      if (init?.method === 'PATCH') ecritures.push('PATCH');
+      return fetchOrigine(entree, init);
+    };
+    let liberer: () => void = () => undefined;
+    const porte = new Promise<void>((r) => {
+      liberer = r;
+    });
+    try {
+      // L'émission, dans la file : `emettre` lit, verrouille et supprime le brouillon ; le Studio
+      // le quitte avant de rendre la file.
+      const emission = p.dansLaFile(async () => {
+        await porte;
+        await adminDeTest().from('brouillons').delete().eq('id', ligne.id);
+        await p.brouillonEmis(ligne.id);
+      });
+      // Pendant ce temps, une écriture du brouillon arrive (minuterie, rejeu au retour du réseau).
+      const ecriture = p.set('draft', brouillon('Version 2, pendant l’émission'));
+      await new Promise((r) => setTimeout(r, 150));
+      expect(ecritures).toEqual([]);
+      liberer();
+      await emission;
+      await ecriture;
+    } finally {
+      globalThis.fetch = fetchOrigine;
+    }
+    expect(ecritures).toEqual([]);
+    expect(await lignes(entrepriseId)).toEqual([]);
+  });
+
+  test('« Le recréer avec ma saisie » sur un brouillon émis (réponse perdue) : la facture, pas une seconde', async () => {
+    const { sb, entrepriseId } = await compteDeTest();
+    const p = supabasePersistence(sb, entrepriseId);
+    demarrer(p, entrepriseId);
+    setForm('buyer.name', 'Émis, réponse perdue');
+    expect(await enregistrerMaintenant()).toBe(true);
+    const [ligne] = await lignes(entrepriseId);
+    if (!ligne) throw new Error('brouillon absent');
+    // Le serveur a émis (la réponse s'est perdue) : la facture existe, le brouillon n'est plus.
+    const id = await insererFacture(entrepriseId, {
+      numero: 'F-2026-0031',
+      form: ligne.form,
+      brouillonId: ligne.id,
+    });
+    await adminDeTest().from('brouillons').delete().eq('id', ligne.id);
+    setForm('buyer.name', 'Tapé après');
+    expect(await enregistrerMaintenant()).toBe(false);
+    expect(store.get().ui.conflit).toBe('supprime');
+
+    await recreerBrouillon();
+    expect(await lignes(entrepriseId)).toEqual([]);
+    const s = store.get();
+    expect(s.ui.issued).toBe(id);
+    expect(s.ui.conflit).toBe(false);
+    expect(s.ui.toast?.text).toBe(t.compte.emission.dejaEmis('F-2026-0031'));
+    // Rien ne repart pour le brouillon émis.
+    expect(await enregistrerMaintenant()).toBe(true);
+    await p.envoisTermines();
+    expect(await lignes(entrepriseId)).toEqual([]);
+  });
+
+  test('« Recharger » sur un brouillon émis : la facture s’ouvre, rien n’est recréé', async () => {
+    const { sb, entrepriseId } = await compteDeTest();
+    const p = supabasePersistence(sb, entrepriseId);
+    demarrer(p, entrepriseId);
+    setForm('buyer.name', 'Émis ailleurs');
+    expect(await enregistrerMaintenant()).toBe(true);
+    const [ligne] = await lignes(entrepriseId);
+    if (!ligne) throw new Error('brouillon absent');
+    const id = await insererFacture(entrepriseId, {
+      numero: 'F-2026-0032',
+      form: ligne.form,
+      brouillonId: ligne.id,
+    });
+    await adminDeTest().from('brouillons').delete().eq('id', ligne.id);
+    setForm('buyer.name', 'Tapé après');
+    expect(await enregistrerMaintenant()).toBe(false);
+
+    await rechargerBrouillon();
+    expect(await lignes(entrepriseId)).toEqual([]);
+    expect(store.get().ui.issued).toBe(id);
+  });
+
   test('factureDuBrouillon : la facture émise depuis ce brouillon, ou rien', async () => {
     const { sb, entrepriseId } = await compteDeTest();
     const p = supabasePersistence(sb, entrepriseId);
@@ -347,5 +440,56 @@ describe.skipIf(!process.env.SUPABASE_URL || process.env.FACTURX_EMETTRE !== '1'
       expect(store.get().ui.focus?.path).toBe('issueDate');
       expect(store.get().ui.toast?.text).toContain(t.compte.emission.aucunNumero);
     }, 30_000);
+
+    // La reproduction de la relecture (boîte fermée, frappe 150 à 800 ms après l'envoi) : la frappe
+    // est refusée pendant l'envoi, une écriture qui arrive attend la file, et rien ne part ensuite
+    // pour le brouillon émis — ni conflit, ni bandeau, ni brouillon recréé.
+    for (const attente of [150, 400, 800]) {
+      test(`frappe et écriture ${attente} ms après l’envoi : refusée, mise en file, sans conflit`, async () => {
+        const { entrepriseId, p } = await studioConnecte();
+        setForm('buyer.name', 'Avant émission');
+        let envoye: () => void = () => undefined;
+        const enVol = new Promise<void>((r) => {
+          envoye = r;
+        });
+        const ordre: string[] = [];
+        const fetchOrigine = globalThis.fetch;
+        globalThis.fetch = async (entree, init) => {
+          const adresse = String(entree instanceof Request ? entree.url : entree);
+          const emettre = adresse.includes('/functions/v1/emettre');
+          if (emettre) envoye();
+          if (init?.method === 'PATCH') ordre.push('PATCH');
+          const r = await fetchOrigine(entree, init);
+          if (emettre) ordre.push(`emettre ${r.status}`);
+          return r;
+        };
+        try {
+          const emission = emettreSurServeur();
+          await enVol;
+          await new Promise((r) => setTimeout(r, attente));
+          setForm('lines[0].quantity', '99');
+          expect(store.get().form.lines[0]?.quantity).not.toBe('99');
+          const sauvegarde = enregistrerMaintenant();
+          // Une écriture directe du brouillon, d'un autre contenu, comme une minuterie partie avant :
+          // elle attend la file, puis trouve le brouillon émis et ne part pas.
+          const { form, appearance } = store.get();
+          const directe = p.set('draft', {
+            form: { ...form, buyer: { ...form.buyer, name: 'Écriture en route' } },
+            appearance,
+          });
+          expect(await emission).toBe(true);
+          expect(await sauvegarde).toBe(true);
+          await directe;
+        } finally {
+          globalThis.fetch = fetchOrigine;
+        }
+        expect(ordre).toEqual(['emettre 201']);
+        const s = store.get();
+        expect(s.ui.issued).toBeDefined();
+        expect(s.ui.conflit).toBe(false);
+        expect(s.ui.toast?.text).toMatch(/^Facture F-\d{4}-0001 émise\.$/);
+        expect(await lignes(entrepriseId)).toEqual([]);
+      }, 30_000);
+    }
   },
 );
