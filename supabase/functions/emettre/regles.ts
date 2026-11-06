@@ -1,43 +1,37 @@
 /**
  * Les règles de date de l'émission (spec § 7, étape 5) : « aujourd'hui » est le jour de Paris, et
  * une facture n'est datée ni après lui, ni avant la dernière facture de l'entreprise, pour que la
- * numérotation reste chronologique.
+ * numérotation reste chronologique. En numérotation annuelle, elle n'est pas non plus datée avant le
+ * 1er janvier de l'année de la numérotation (Ruling 30) : sans cette borne, une facture de décembre
+ * prendrait le rang 1 de la série courante, et celle de janvier commencerait à 2.
  *
- * Le module n'importe rien : `_shared/contexte.ts` en tire l'horloge de `emettre` et de `relancer`,
- * et les tests l'emploient sans la pile.
+ * Le module n'importe que `_shared/dates.ts`, sans dépendance : les tests l'emploient sans la pile.
  */
 
-const PARIS = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Europe/Paris',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
+// La fiche de la tâche 8 nomme `aujourdhuiParis` ici ; il vit dans `_shared/`, avec l'horloge des
+// fonctions qui l'emploie aussi.
+export { aujourdhuiParis } from '../_shared/dates.ts';
 
 /**
- * Le jour de `maintenant` à Paris, en ISO `AAAA-MM-JJ`. Le serveur tourne en UTC : à 00 h 30 à
- * Paris, la date UTC est encore celle de la veille.
- */
-export function aujourdhuiParis(maintenant: Date): string {
-  const parties = Object.fromEntries(
-    PARIS.formatToParts(maintenant).map((partie) => [partie.type, partie.value]),
-  );
-  return `${parties.year}-${parties.month}-${parties.day}`;
-}
-
-/**
- * Les bornes de la date d'émission si `issueDate` en sort, `undefined` si elle est admise : au plus
- * `aujourdhui`, au moins `derniere`, la date de la dernière facture de l'entreprise (sans borne
- * basse s'il n'y en a pas). Les bornes elles-mêmes sont admises. Des dates ISO se comparent comme des
- * chaînes.
+ * Les bornes de la date d'émission si `issueDate` en sort, `undefined` si elle est admise :
+ *   - au plus `aujourdhui` ;
+ *   - au moins `derniere`, la date de la dernière facture de l'entreprise (`undefined` s'il n'y en a
+ *     pas), et au moins `debutAnnee`, le 1er janvier de l'année de la numérotation quand elle est
+ *     annuelle (`undefined` sinon). La plus tardive des deux bornes basses est `min`.
+ * Les bornes elles-mêmes sont admises. Des dates ISO se comparent comme des chaînes.
  */
 export function controlerDate(
   issueDate: string,
   aujourdhui: string,
   derniere: string | undefined,
+  debutAnnee?: string,
 ): { min: string | undefined; max: string } | undefined {
-  if (issueDate > aujourdhui || (derniere !== undefined && issueDate < derniere)) {
-    return { min: derniere, max: aujourdhui };
+  const min =
+    derniere === undefined || (debutAnnee !== undefined && debutAnnee > derniere)
+      ? debutAnnee
+      : derniere;
+  if (issueDate > aujourdhui || (min !== undefined && issueDate < min)) {
+    return { min, max: aujourdhui };
   }
   return undefined;
 }

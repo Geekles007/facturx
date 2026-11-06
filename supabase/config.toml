@@ -384,7 +384,13 @@ enabled = true
 # Supported request policies: `oneshot`, `per_worker`.
 # `per_worker` (default) — enables hot reload during local development.
 # `oneshot` — fallback mode if hot reload causes issues (e.g. in large repos or with symlinks).
-policy = "per_worker"
+# facturx : `oneshot`, un worker par requête. Le runtime local compte le temps de CPU par worker
+# (1 s puis 2 s, valeurs fixées par le CLI) : en `per_worker`, les requêtes successives d'un worker
+# s'additionnent, et une émission tombait en 546 à mi-parcours dès que la machine était chargée.
+# Un worker par requête donne à chacune son budget, comme la limite documentée du projet hébergé
+# (2 s de CPU par requête) ; et chaque requête relit les fichiers, ce qui tient lieu de rechargement
+# à chaud.
+policy = "oneshot"
 # Port to attach the Chrome inspector for debugging edge functions.
 inspector_port = 8083
 # The Deno major version to use.

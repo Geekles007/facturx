@@ -7,6 +7,7 @@
 import { assert, assertEquals, assertExists } from '@std/assert';
 import type { Invoice, IsoDate } from 'facturx-sdk';
 import { extractInvoice } from 'facturx-sdk/pdf';
+import { PDFDict, PDFDocument, PDFName } from 'pdf-lib';
 import { aujourdhuiParis } from '../emettre/regles.ts';
 import {
   admin,
@@ -18,6 +19,7 @@ import {
   decaler,
   factureDeTest,
   NUMERO_PROPOSE,
+  urlFonction,
 } from './aide.ts';
 
 type Compte = Awaited<ReturnType<typeof creerCompte>>;
@@ -37,6 +39,7 @@ async function emettre(
     brouillon?: { id: string; version: number };
     appearance?: Record<string, unknown>;
     enTetes?: Record<string, string>;
+    clientId?: string;
   } = {},
 ): Promise<{ status: number; corps: Corps; brouillon: { id: string; version: number } }> {
   const brouillon = options.brouillon ?? (await brouillonDeTest(compte.entrepriseId));
@@ -48,6 +51,7 @@ async function emettre(
       version: brouillon.version,
       invoice: facture,
       appearance: options.appearance ?? apparenceDeTest(),
+      clientId: options.clientId,
     },
     options.enTetes,
   );
@@ -68,6 +72,35 @@ function nombreDeFactures(entrepriseId: string): Promise<number> {
       select count(*)::int as n from factures where entreprise_id = ${entrepriseId}`;
     return n.n;
   });
+}
+
+/**
+ * Des factures émises aujourd'hui, écrites directement en base sous ces numéros (sans PDF déposé) :
+ * de quoi remplir l'heure ou occuper un numéro.
+ */
+function insererFactures(compte: Compte, numeros: string[]): Promise<unknown> {
+  return base(
+    (sql) => sql`
+      insert into factures (entreprise_id, numero, type_code, date_emission, client_nom, devise, ht,
+                            ttc, net_a_payer, invoice, form, appearance, pdf_chemin, sdk_version,
+                            origine, emise_par)
+      select ${compte.entrepriseId}, n, '380', (now() at time zone 'Europe/Paris')::date, 'Client',
+             'EUR', 100, 120, 120, '{}', '{}', '{}',
+             ${compte.entrepriseId}::text || '/ecrite-' || n || '.pdf', '0', 'emise', ${compte.userId}
+        from jsonb_array_elements_text(${JSON.stringify(numeros)}::text::jsonb) n`,
+  );
+}
+
+/** Les noms (`BaseFont`) des polices embarquées dans un PDF. */
+async function policesDuPdf(pdf: Uint8Array): Promise<string[]> {
+  const document = await PDFDocument.load(pdf);
+  const noms: string[] = [];
+  for (const [, objet] of document.context.enumerateIndirectObjects()) {
+    if (objet instanceof PDFDict && objet.get(PDFName.of('Type')) === PDFName.of('Font')) {
+      noms.push(String(objet.get(PDFName.of('BaseFont'))));
+    }
+  }
+  return noms;
 }
 
 function brouillonExiste(id: string): Promise<boolean> {
@@ -234,8 +267,9 @@ Deno.test('date future : 409 DATE avec la borne admise, aucun numéro consommé'
   const { status, corps, brouillon } = await emettre(compte, factureDeTest(1, demain));
   assertEquals(status, 409);
   assertEquals(corps.code, 'DATE');
-  // Aucune facture encore : pas de borne basse.
-  assertEquals(corps.details, { max: aujourdhui() });
+  // Aucune facture encore : la borne basse est le 1er janvier de la numérotation (annuelle par
+  // défaut), l'année d'inscription.
+  assertEquals(corps.details, { min: `${aujourdhui().slice(0, 4)}-01-01`, max: aujourdhui() });
   assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
   assertEquals(await brouillonExiste(brouillon.id), true);
 });
@@ -313,6 +347,27 @@ Deno.test('première facture de l’année : F-2027-0001 après F-2026-0137', as
   assertEquals(janvier.status, 201);
   assertEquals(janvier.corps.numero, 'F-2027-0001');
   assertEquals(await numerotation(compte.entrepriseId), { prochain: 2, annee: 2027 });
+});
+
+Deno.test('numérotation annuelle : pas de facture datée avant le 1er janvier de son année', async () => {
+  const compte = await creerCompte();
+  // Un compte dont la numérotation est déjà en 2027, sans facture encore (Ruling 30). Admise, une
+  // facture du 30 décembre prendrait F-2026-0001, et la série 2027 commencerait à 0002.
+  await base((sql) =>
+    sql.begin(async (tx) => {
+      await tx`set local facturx.emission = 'on'`;
+      await tx`update numerotation set annee = 2027 where entreprise_id = ${compte.entrepriseId}`;
+    }),
+  );
+
+  const { status, corps, brouillon } = await emettre(compte, factureDeTest(1, '2026-12-30'), {
+    enTetes: { 'x-facturx-aujourdhui': '2027-01-03' },
+  });
+  assertEquals(status, 409);
+  assertEquals(corps.code, 'DATE');
+  assertEquals(corps.details, { min: '2027-01-01', max: '2027-01-03' });
+  assertEquals(await numerotation(compte.entrepriseId), { prochain: 1, annee: 2027 });
+  assertEquals(await brouillonExiste(brouillon.id), true);
 });
 
 Deno.test('avoir : la facture citée doit être de l’entreprise, puis facture_origine_id', async () => {
@@ -473,15 +528,9 @@ Deno.test('un caractère absent de la police : 422, et non une erreur du serveur
 Deno.test('limite : la 61e émission de l’heure rend 429 LIMITE sans consommer de numéro', async () => {
   const compte = await creerCompte();
   // 60 émissions dans l'heure, écrites directement : bien plus rapide que 60 appels.
-  await base(
-    (sql) => sql`
-    insert into factures (entreprise_id, numero, type_code, date_emission, client_nom, devise, ht,
-                          ttc, net_a_payer, invoice, form, appearance, pdf_chemin, sdk_version,
-                          origine, emise_par)
-    select ${compte.entrepriseId}, 'L-' || n, '380', (now() at time zone 'Europe/Paris')::date,
-           'Client', 'EUR', 100, 120, 120, '{}', '{}', '{}',
-           ${compte.entrepriseId}::text || '/limite-' || n || '.pdf', '0', 'emise', ${compte.userId}
-      from generate_series(1, 60) n`,
+  await insererFactures(
+    compte,
+    Array.from({ length: 60 }, (_, i) => `L-${i + 1}`),
   );
 
   const { status, corps, brouillon } = await emettre(compte);
@@ -492,4 +541,148 @@ Deno.test('limite : la 61e émission de l’heure rend 429 LIMITE sans consommer
   assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
   assertEquals(await nombreDeFactures(compte.entrepriseId), 60);
   assertEquals(await brouillonExiste(brouillon.id), true);
+});
+
+Deno.test('client de la facture : retenu s’il est de l’entreprise, null sinon, sans erreur', async () => {
+  const autre = await creerCompte();
+  const compte = await creerCompte();
+  for (const [entrepriseId, id] of [
+    [compte.entrepriseId, 'u-client-propre'],
+    [autre.entrepriseId, 'u-client-autre'],
+  ]) {
+    const { error } = await admin()
+      .from('clients')
+      .insert({ id, entreprise_id: entrepriseId, party: {}, nom: 'Client Démo SARL' });
+    assertEquals(error, null);
+  }
+
+  // Un client de l'entreprise, un uid inconnu, le client d'une autre entreprise.
+  const cas: [string, string | null][] = [
+    ['u-client-propre', 'u-client-propre'],
+    ['u-inconnu', null],
+    ['u-client-autre', null],
+  ];
+  for (const [clientId, attendu] of cas) {
+    const { status, corps } = await emettre(compte, factureDeTest(), { clientId });
+    assertEquals(status, 201);
+    const [ligne] = await base((sql) => sql`select client_id from factures where id = ${corps.id}`);
+    assertEquals(ligne.client_id, attendu);
+  }
+});
+
+Deno.test('jeton valide d’un compte qui n’est membre d’aucune entreprise : 403 DROITS', async () => {
+  const compte = await creerCompte();
+  await base((sql) => sql`delete from membres where user_id = ${compte.userId}`);
+
+  const { status, corps } = await emettre(compte);
+  assertEquals(status, 403);
+  assertEquals(corps.code, 'DROITS');
+  assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
+});
+
+Deno.test('numéro déjà présent dans l’entreprise : 409 DOUBLON, aucun numéro consommé', async () => {
+  const compte = await creerCompte();
+  // Le numéro que la numérotation attribuerait, déjà pris (import, gabarit changé).
+  const numero = `F-${aujourdhui().slice(0, 4)}-0001`;
+  await insererFactures(compte, [numero]);
+
+  const { status, corps, brouillon } = await emettre(compte);
+  assertEquals(status, 409);
+  assertEquals(corps.code, 'DOUBLON');
+  assertEquals(corps.details, { numero });
+  assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
+  assertEquals(await brouillonExiste(brouillon.id), true);
+});
+
+Deno.test('corps qui n’est pas du JSON : 422 ANOMALIES, Issue CORPS', async () => {
+  const compte = await creerCompte();
+  const reponse = await fetch(urlFonction('emettre'), {
+    method: 'POST',
+    headers: { authorization: `Bearer ${compte.jwt}`, 'content-type': 'application/json' },
+    body: 'pas du JSON',
+  });
+  assertEquals(reponse.status, 422);
+  const corps = await reponse.json();
+  assertEquals(corps.code, 'ANOMALIES');
+  assertEquals(corps.details[0].code, 'CORPS');
+});
+
+Deno.test('corps de plus de 10 Mio : 413 ANOMALIES, Issue CORPS', async () => {
+  const compte = await creerCompte();
+  const reponse = await fetch(urlFonction('emettre'), {
+    method: 'POST',
+    headers: { authorization: `Bearer ${compte.jwt}`, 'content-type': 'application/json' },
+    body: 'x'.repeat(10 * 1024 * 1024 + 1),
+  });
+  assertEquals(reponse.status, 413);
+  const corps = await reponse.json();
+  assertEquals(corps.code, 'ANOMALIES');
+  assertEquals(corps.details[0].code, 'CORPS');
+  assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
+});
+
+Deno.test('référence de paiement distincte du numéro proposé : laissée telle quelle', async () => {
+  const compte = await creerCompte();
+  const facture = { ...factureDeTest(), remittanceInformation: 'CLIENT-REF-42' };
+
+  const { status, corps } = await emettre(compte, facture);
+  assertEquals(status, 201);
+  const [ligne] = await base(
+    (sql) => sql`
+    select invoice ->> 'id' as numero, invoice ->> 'remittanceInformation' as reference
+      from factures where id = ${corps.id}`,
+  );
+  assertEquals(ligne, { numero: corps.numero, reference: 'CLIENT-REF-42' });
+});
+
+Deno.test('police importée : lue dans fichiers et embarquée ; absente, 422 FICHIER', async () => {
+  const compte = await creerCompte();
+  // Inter, que l'apparence ne désigne pas : la police du PDF ne peut venir que du fichier importé.
+  const inter = await telecharger('polices', 'inter-regular.ttf');
+  const { error } = await admin()
+    .storage.from('fichiers')
+    .upload(`${compte.entrepriseId}/font-importee`, inter, { contentType: 'font/ttf' });
+  assertEquals(error, null);
+  const appearance = {
+    ...apparenceDeTest(),
+    font: 'custom',
+    customFont: { regularKey: 'font-importee', name: 'Inter importée' },
+  };
+
+  const { status, corps } = await emettre(compte, factureDeTest(), { appearance });
+  assertEquals(status, 201);
+  const polices = await policesDuPdf(
+    await telecharger('factures', `${compte.entrepriseId}/${corps.id}.pdf`),
+  );
+  assert(polices.length > 0 && polices.every((nom) => nom.includes('Inter')), String(polices));
+
+  const absente = await emettre(compte, factureDeTest(), {
+    appearance: { ...appearance, customFont: { regularKey: 'font-absente', name: 'Absente' } },
+  });
+  assertEquals(absente.status, 422);
+  assertEquals(absente.corps.details[0].code, 'FICHIER');
+  assertEquals(absente.corps.details[0].path, 'appearance.customFont');
+  assertEquals((await numerotation(compte.entrepriseId)).prochain, 2);
+});
+
+Deno.test('logo de plus de 1 Mo : le bucket l’accepte, l’émission le refuse (422 FICHIER)', async () => {
+  const compte = await creerCompte();
+  // 1,5 Mio, signature PNG en tête : seul le plafond du logo le refuse (le bucket admet 2 Mio).
+  const lourd = new Uint8Array(1.5 * 1024 * 1024);
+  lourd.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const { error } = await admin()
+    .storage.from('fichiers')
+    .upload(`${compte.entrepriseId}/logo-lourd`, lourd, { contentType: 'image/png' });
+  assertEquals(error, null);
+  const appearance = {
+    ...apparenceDeTest(),
+    logo: { key: 'logo-lourd', type: 'png', position: 'left', height: 44, name: 'logo.png' },
+  };
+
+  const { status, corps } = await emettre(compte, factureDeTest(), { appearance });
+  assertEquals(status, 422);
+  assertEquals(corps.details[0].code, 'FICHIER');
+  assertEquals(corps.details[0].path, 'appearance.logo');
+  assert(corps.details[0].message.includes('1 Mo'), corps.details[0].message);
+  assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
 });

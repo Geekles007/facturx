@@ -7,7 +7,7 @@
  * `verify_jwt` pour ces fonctions : sans jeton, c'est ici que se répond le 401 `SESSION` du § 13.
  */
 import { isAuthApiError } from '@supabase/supabase-js';
-import { aujourdhuiParis } from '../emettre/regles.ts';
+import { aujourdhuiParis } from './dates.ts';
 import { admin, sql } from './db.ts';
 import { erreur } from './erreurs.ts';
 
@@ -56,12 +56,26 @@ export async function contexte(req: Request): Promise<Contexte> {
 }
 
 /**
- * « Aujourd'hui » pour la fonction : la date de Paris. Avec `FACTURX_TESTS` à `1` exactement (fichier
- * .env local et CI, jamais en production), l'en-tête `x-facturx-aujourdhui` la remplace, s'il porte
- * une date ISO : les tests y placent un 31 décembre ou un 2 janvier.
+ * Le projet est-il un projet hébergé par Supabase (`https://<ref>.supabase.co`) ? Une adresse absente
+ * ou illisible compte comme hébergée : la garde ferme par défaut.
+ */
+function projetHeberge(): boolean {
+  try {
+    const { hostname } = new URL(Deno.env.get('SUPABASE_URL') ?? '');
+    return hostname === 'supabase.co' || hostname.endsWith('.supabase.co');
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * « Aujourd'hui » pour la fonction : la date de Paris. L'en-tête `x-facturx-aujourdhui` la remplace,
+ * s'il porte une date ISO, à deux conditions : `FACTURX_TESTS` vaut `1` exactement (fichier .env local
+ * et CI, jamais en production), et le projet n'est pas hébergé par Supabase — une garde de plus, au
+ * cas où la variable y serait envoyée par erreur. Les tests y placent un 31 décembre ou un 2 janvier.
  */
 export function aujourdhui(req: Request): string {
-  if (Deno.env.get('FACTURX_TESTS') === '1') {
+  if (Deno.env.get('FACTURX_TESTS') === '1' && !projetHeberge()) {
     const date = req.headers.get('x-facturx-aujourdhui');
     if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
   }

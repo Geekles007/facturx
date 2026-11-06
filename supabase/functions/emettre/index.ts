@@ -3,13 +3,19 @@
  * le numéro que le serveur attribue, validée par le SDK, son PDF Factur-X déposé, le tout dans une
  * transaction.
  *
- *   POST /functions/v1/emettre   { brouillonId, version, invoice, appearance }, en JSON portable
+ *   POST /functions/v1/emettre   { brouillonId, version, invoice, appearance, clientId? },
+ *                                en JSON portable, 10 Mio au plus
  *
  * `invoice` est construite par le Studio (traduction du formulaire, `computeTotals`) et porte le
- * numéro qu'il propose ; le serveur le remplace par celui qu'il attribue. Réponse 201
- * `{ id, numero }`, ou 200 avec le même corps pour un rejeu du même brouillon. Erreurs (§ 13) :
- * 401 `SESSION`, 403 `DROITS` ou `NON_CONFIRME`, 409 `BROUILLON_MODIFIE`, `DATE` ou `DOUBLON`, 422
- * `ANOMALIES`, 429 `LIMITE`, 500 `INTERNE`.
+ * numéro qu'il propose ; le serveur le remplace par celui qu'il attribue. `clientId`, l'uid du client
+ * dans la bibliothèque du Studio, n'est retenu que s'il désigne un client de l'entreprise (Ruling 29).
+ * Réponse 201 `{ id, numero }`, ou 200 avec le même corps pour un rejeu du même brouillon. Erreurs
+ * (§ 13) : 401 `SESSION`, 403 `DROITS` ou `NON_CONFIRME`, 409 `BROUILLON_MODIFIE`, `DATE` ou
+ * `DOUBLON`, 413 et 422 `ANOMALIES`, 429 `LIMITE`, 500 `INTERNE`.
+ *
+ * Outre les bornes du § 7 (étape 5), une numérotation annuelle n'admet pas de date antérieure au
+ * 1er janvier de son année (Ruling 30) : une facture de l'année précédente prendrait le rang 1 de la
+ * série en cours. Elle passe par l'import des factures locales.
  *
  * Tout refus survient avant la validation de la transaction : aucun numéro n'est consommé, et le
  * brouillon reste intact. Seul un PDF déjà déposé peut rester sans facture (étape 9) : l'Edge
@@ -19,6 +25,7 @@
 import { type Invoice, isValidIsoDate, validateInvoice } from 'facturx-sdk';
 import type postgres from 'postgres';
 import { aujourdhui, contexte } from '../_shared/contexte.ts';
+import { lireTexte } from '../_shared/corps.ts';
 import { admin, sql } from '../_shared/db.ts';
 import { type Anomalie, anomalies, erreur, json, traiter } from '../_shared/erreurs.ts';
 import { type ApparenceEmise, lireApparence, produirePdf } from '../_shared/pdf.ts';
@@ -48,6 +55,7 @@ interface Corps {
   version: number;
   invoice: Invoice;
   appearance: ApparenceEmise;
+  clientId: string | undefined;
 }
 
 const estObjet = (v: unknown): v is Record<string, unknown> =>
@@ -77,6 +85,9 @@ function lireCorps(texte: string): Corps {
   if (!estObjet(corps.invoice)) {
     throw refus({ code: 'CORPS', path: 'invoice', message: 'Facture attendue.' });
   }
+  if (corps.clientId != null && typeof corps.clientId !== 'string') {
+    throw refus({ code: 'CORPS', path: 'clientId', message: 'Identifiant de client attendu.' });
+  }
   // La date est lue avant la validation (étapes 5 et 6) : elle doit déjà être une date.
   const { issueDate } = corps.invoice;
   if (typeof issueDate !== 'string' || !isValidIsoDate(issueDate)) {
@@ -90,6 +101,7 @@ function lireCorps(texte: string): Corps {
     version: corps.version as number,
     invoice: corps.invoice as unknown as Invoice,
     appearance: lireApparence(corps.appearance),
+    clientId: corps.clientId ?? undefined,
   };
 }
 
@@ -147,7 +159,7 @@ Deno.serve(
         'Confirmez l’adresse e-mail du compte avant d’émettre une facture.',
       );
     }
-    const { brouillonId, version, invoice, appearance } = lireCorps(await req.text());
+    const { brouillonId, version, invoice, appearance, clientId } = lireCorps(await lireTexte(req));
     const e = ctx.entrepriseId;
 
     // 2. Rejouer sans dupliquer : un double clic, ou un réseau qui coupe, rend la même facture.
@@ -193,10 +205,16 @@ Deno.serve(
       }
       const form = await formulaireDuBrouillon(tx, e, brouillonId, version, true);
 
-      // 5. Contrôler la date : ni après aujourd'hui (Paris), ni avant la dernière facture.
+      // 5. Contrôler la date : ni après aujourd'hui (Paris), ni avant la dernière facture, ni, en
+      // numérotation annuelle, avant le 1er janvier de son année (Ruling 30).
       const [{ derniere }] = await tx<{ derniere: string | null }[]>`
         select max(date_emission)::text as derniere from public.factures where entreprise_id = ${e}`;
-      const bornes = controlerDate(invoice.issueDate, aujourdhui(req), derniere ?? undefined);
+      const bornes = controlerDate(
+        invoice.issueDate,
+        aujourdhui(req),
+        derniere ?? undefined,
+        ligne.annuelle ? `${String(ligne.annee).padStart(4, '0')}-01-01` : undefined,
+      );
       if (bornes) {
         throw erreur(
           409,
@@ -301,15 +319,22 @@ Deno.serve(
       // 10. Enregistrer la facture (montants de `invoice.totals`, facture sous sa forme portable),
       // avancer la numérotation, supprimer le brouillon ; `sql.begin` valide en sortant. Les JSON
       // passent en `text` avant `jsonb` : un paramètre que Postgres annonce en `jsonb`, postgres.js
-      // le sérialise encore, et la colonne recevrait une chaîne au lieu d'un objet.
+      // le sérialise encore, et la colonne recevrait une chaîne au lieu d'un objet. Le client de la
+      // bibliothèque n'est retenu que s'il est de l'entreprise (Ruling 29) ; sinon `null`, sans
+      // erreur : un uid d'une autre entreprise ne se distingue pas d'un uid inconnu.
+      const [client] =
+        clientId === undefined
+          ? []
+          : await tx<{ id: string }[]>`
+              select id from public.clients where entreprise_id = ${e} and id = ${clientId}`;
       await tx`
         insert into public.factures (
-          id, entreprise_id, numero, type_code, date_emission, date_echeance, client_nom,
+          id, entreprise_id, numero, type_code, date_emission, date_echeance, client_id, client_nom,
           client_email, devise, ht, ttc, net_a_payer, invoice, form, appearance, pdf_chemin,
           sdk_version, facture_origine_id, brouillon_id, origine, emise_par
         ) values (
           ${factureId}, ${e}, ${numero}, ${facture.typeCode}, ${facture.issueDate},
-          ${facture.paymentTerms?.dueDate ?? null}, ${facture.buyer.name},
+          ${facture.paymentTerms?.dueDate ?? null}, ${client?.id ?? null}, ${facture.buyer.name},
           ${facture.buyer.contact?.email || null}, ${facture.currency},
           ${facture.totals.taxExclusiveAmount}, ${facture.totals.taxInclusiveAmount},
           ${facture.totals.amountDueForPayment}, ${toPortableJson(facture)}::text::jsonb,

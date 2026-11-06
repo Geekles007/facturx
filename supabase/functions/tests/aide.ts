@@ -31,6 +31,29 @@ function env(nom: string): string {
   return valeur;
 }
 
+/**
+ * Exécute `f` avec ces variables d'environnement (`undefined` : absente), puis rétablit les
+ * précédentes, même si `f` lève. Pour les tests unitaires du socle, sans la pile.
+ */
+export async function avecEnv<T>(
+  variables: Record<string, string | undefined>,
+  f: () => T | Promise<T>,
+): Promise<T> {
+  const avant = Object.fromEntries(Object.keys(variables).map((nom) => [nom, Deno.env.get(nom)]));
+  const poser = (valeurs: Record<string, string | undefined>) => {
+    for (const [nom, valeur] of Object.entries(valeurs)) {
+      if (valeur === undefined) Deno.env.delete(nom);
+      else Deno.env.set(nom, valeur);
+    }
+  };
+  try {
+    poser(variables);
+    return await f();
+  } finally {
+    poser(avant);
+  }
+}
+
 const sansSession = { auth: { persistSession: false, autoRefreshToken: false } };
 let client: SupabaseClient | undefined;
 
@@ -89,6 +112,10 @@ export async function creerCompte(
   };
 }
 
+/** L'adresse d'une Edge Function de la pile. */
+export const urlFonction = (fonction: string): string =>
+  `${env('SUPABASE_URL')}/functions/v1/${fonction}`;
+
 /**
  * Appelle une Edge Function comme le Studio : POST, corps en JSON portable, jeton de la session (un
  * jeton vide n'envoie pas d'en-tête `Authorization`). `enTetes` s'ajoute aux en-têtes.
@@ -105,11 +132,7 @@ export function appeler(
     ...enTetes,
   };
   if (jwt) headers.authorization = `Bearer ${jwt}`;
-  return fetch(`${env('SUPABASE_URL')}/functions/v1/${fonction}`, {
-    method: 'POST',
-    headers,
-    body: toPortableJson(corps),
-  });
+  return fetch(urlFonction(fonction), { method: 'POST', headers, body: toPortableJson(corps) });
 }
 
 /** `iso` décalée de `jours` jours (dates d'affaires, sans heure). */

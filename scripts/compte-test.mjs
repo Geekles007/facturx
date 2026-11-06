@@ -8,9 +8,9 @@
  *      bucket `polices` de la pile, comme `pnpm compte:polices` le fait, car les fonctions produisent
  *      les PDF avec elles et `supabase db reset` vide le bucket ; puis `supabase functions serve` en
  *      arrière-plan, avec les variables de supabase/functions/.env (ou de .env.example, sa copie
- *      versionnée, quand il n'existe pas : en CI), et `deno test -A` sur supabase/functions/tests/
- *      (avec l'import map de supabase/functions/deno.json), l'adresse de la pile et ses clés dans
- *      l'environnement.
+ *      versionnée, quand il n'existe pas : en CI), une requête de mise en route par fonction servie,
+ *      et `deno test -A` sur supabase/functions/tests/ (avec l'import map de
+ *      supabase/functions/deno.json), l'adresse de la pile et ses clés dans l'environnement.
  *
  * Le code de sortie est celui de `deno test`. Un dossier de tests absent ou vide est sauté, et sans
  * aucun test le script sort proprement sans toucher à la pile.
@@ -23,11 +23,56 @@ import { deposerPolices } from './compte-polices.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pgtapDir = join(root, 'supabase/tests');
-const denoDir = join(root, 'supabase/functions/tests');
+const fonctionsDir = join(root, 'supabase/functions');
+const denoDir = join(fonctionsDir, 'tests');
 /** Les variables des fonctions : le fichier local s'il existe, sinon sa copie versionnée. */
 const envFonctions = ['.env', '.env.example']
-  .map((nom) => join(root, 'supabase/functions', nom))
+  .map((nom) => join(fonctionsDir, nom))
   .find((chemin) => existsSync(chemin));
+
+/** Les fonctions servies : les dossiers de supabase/functions/ qui ont un index.ts, hors `_…` et tests. */
+function fonctionsServies() {
+  return readdirSync(fonctionsDir, { withFileTypes: true })
+    .filter(
+      (entree) =>
+        entree.isDirectory() &&
+        !entree.name.startsWith('_') &&
+        entree.name !== 'tests' &&
+        existsSync(join(fonctionsDir, entree.name, 'index.ts')),
+    )
+    .map((entree) => entree.name)
+    .sort();
+}
+
+/**
+ * Met chaque fonction en route avant les tests, et attend sa réponse. La première requête d'un
+ * serveur neuf charge les modules de la fonction (SDK, pdf-lib, supabase-js, postgres) : sur une
+ * machine chargée, ce chargement ajouté au premier rendu PDF dépassait la limite de CPU du runtime
+ * local (réponse 546), et faisait tomber le premier test. Une requête sans jeton suffit : la fonction
+ * répond 401 sans rien écrire. Un 5xx (worker qui démarre mal) est retenté ici, deux fois, et jamais
+ * dans les tests : un nouvel essai y cacherait un vrai dépassement.
+ */
+async function mettreEnRoute(apiUrl) {
+  for (const nom of fonctionsServies()) {
+    let statut;
+    for (let essai = 1; essai <= 3; essai++) {
+      try {
+        const reponse = await fetch(`${apiUrl}/functions/v1/${nom}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: '{}',
+        });
+        statut = reponse.status;
+        await reponse.body?.cancel();
+      } catch (erreur) {
+        statut = erreur.message;
+      }
+      if (typeof statut === 'number' && statut < 500) break;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    console.log(`compte:test — mise en route de ${nom} : ${statut}.`);
+  }
+}
 
 /** Le dossier existe-t-il, avec au moins un fichier de test (à n'importe quelle profondeur) ? */
 function aDesTests(dossier, extension) {
@@ -146,6 +191,7 @@ async function main() {
   const { serveur, pret } = demarrerServeur();
   try {
     await attendre(pret);
+    await mettreEnRoute(stack.API_URL);
     // `--config` : sans lui, `deno test` lancé depuis la racine ne trouve pas l'import map.
     const deno = spawn(
       'deno',
