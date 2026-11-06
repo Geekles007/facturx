@@ -4,9 +4,11 @@
  *   pnpm compte:test
  *
  *   1. pgTAP : `supabase test db` (supabase/tests/) ;
- *   2. Edge Functions : `supabase functions serve` en arrière-plan, puis `deno test -A` sur
- *      supabase/functions/tests/ (avec l'import map de supabase/functions/deno.json), l'adresse de
- *      la pile et ses clés dans l'environnement.
+ *   2. Edge Functions : les polices du Studio (`pnpm site:build` les construit) sont déposées dans le
+ *      bucket `polices` de la pile, comme `pnpm compte:polices` le fait, car les fonctions produisent
+ *      les PDF avec elles et `supabase db reset` vide le bucket ; puis `supabase functions serve` en
+ *      arrière-plan, et `deno test -A` sur supabase/functions/tests/ (avec l'import map de
+ *      supabase/functions/deno.json), l'adresse de la pile et ses clés dans l'environnement.
  *
  * Le code de sortie est celui de `deno test`. Un dossier de tests absent ou vide est sauté, et sans
  * aucun test le script sort proprement sans toucher à la pile.
@@ -15,6 +17,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { deposerPolices } from './compte-polices.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pgtapDir = join(root, 'supabase/tests');
@@ -128,6 +131,10 @@ async function main() {
     if (resultat.status !== 0) return resultat.status ?? 1;
   }
   if (!fonctions) return 0;
+
+  // Le script de `pnpm compte:polices`, avec l'adresse et la clé de la pile : mêmes polices, même bucket.
+  const polices = await deposerPolices({ url: stack.API_URL, cle: stack.SERVICE_ROLE_KEY });
+  console.log(`compte:test — polices TTF déposées dans le bucket « polices » : ${polices}.`);
 
   const { serveur, pret } = demarrerServeur();
   try {

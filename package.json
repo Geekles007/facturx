@@ -24,6 +24,7 @@
     "site:dist": "pnpm build && pnpm validator:fetch && pnpm downloads:fetch && pnpm site:build",
     "site:check": "tsc --noEmit -p tsconfig.site.json && vitest run --config vitest.site.config.mts && pnpm site:build",
     "compte:preparer": "node scripts/compte-preparer.mjs",
+    "compte:polices": "node scripts/compte-polices.mjs",
     "compte:start": "supabase start",
     "compte:test": "node scripts/compte-test.mjs"
   },
