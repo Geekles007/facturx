@@ -766,9 +766,8 @@ Deno.test('facture ou apparence imbriquées sur 3 000 niveaux : 422 CORPS, rien 
   const brouillon = await brouillonDeTest(compte.entrepriseId);
   // Le SDK laisse passer une propriété inconnue, et la facture enregistrée la porte : `toPortableJson`
   // lèverait en l'écrivant, après le dépôt du PDF (il lève au-delà de 2 700 niveaux environ). Le corps
-  // s'écrit à la main : `toPortableJson` ne sait pas l'écrire non plus. Selon le runtime, c'est la
-  // lecture du corps (chemin vide) ou la sérialisation (le champ) qui refuse la première : dans les deux
-  // cas, 422 avant tout dépôt. La sérialisation est éprouvée seule (corps.test.ts, `serialiser`).
+  // s'écrit à la main : `toPortableJson` ne sait pas l'écrire non plus. La profondeur est plafonnée à
+  // 64 niveaux avant le décodage (`lireObjetPortable`) : 422 au chemin vide, quel que soit le runtime.
   const profond = `${'['.repeat(3000)}${']'.repeat(3000)}`;
   const avec = (valeur: unknown) => {
     const texte = toPortableJson(valeur);
@@ -776,17 +775,17 @@ Deno.test('facture ou apparence imbriquées sur 3 000 niveaux : 422 CORPS, rien 
   };
   const corps = (invoice: string, appearance: string) =>
     `{"brouillonId":"${brouillon.id}","version":${brouillon.version},"invoice":${invoice},"appearance":${appearance}}`;
-  const cas: [string, string, string][] = [
-    ['invoice', corps(avec(factureDeTest()), toPortableJson(apparenceDeTest())), 'invoice'],
-    ['appearance', corps(toPortableJson(factureDeTest()), avec(apparenceDeTest())), 'appearance'],
+  const cas: [string, string][] = [
+    ['invoice', corps(avec(factureDeTest()), toPortableJson(apparenceDeTest()))],
+    ['appearance', corps(toPortableJson(factureDeTest()), avec(apparenceDeTest()))],
   ];
-  for (const [nom, texte, chemin] of cas) {
+  for (const [nom, texte] of cas) {
     const reponse = await appelerTexte('emettre', compte.jwt, texte);
     assertEquals(reponse.status, 422, nom);
     const erreur = await reponse.json();
     assertEquals(erreur.code, 'ANOMALIES', nom);
     assertEquals(erreur.details[0].code, 'CORPS', nom);
-    assert(['', chemin].includes(erreur.details[0].path), `${nom} : ${erreur.details[0].path}`);
+    assertEquals(erreur.details[0].path, '', nom);
   }
   assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
   assertEquals(await nombreDeFactures(compte.entrepriseId), 0);

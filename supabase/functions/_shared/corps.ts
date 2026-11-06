@@ -51,14 +51,69 @@ export const estObjet = (v: unknown): v is Record<string, unknown> =>
 /** Un identifiant `uuid`, tel que Postgres l'admet : un autre texte ferait lever la requête. */
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Niveaux d'imbrication d'un corps JSON, au plus (voir `examinerJson`). */
+export const PROFONDEUR_MAX = 64;
+
+/** Virgules hors chaînes d'un corps JSON, au plus (voir `examinerJson`). */
+export const VIRGULES_MAX = 300_000;
+
+/**
+ * Examine le texte d'un corps JSON avant de le décoder, en une passe et en mémoire constante : la
+ * profondeur d'imbrication (`[` et `{` ouverts à la fois) ne dépasse pas `PROFONDEUR_MAX`, et les
+ * virgules, qui comptent les éléments et les entrées, `VIRGULES_MAX`. Les chaînes sont sautées, avec
+ * leurs échappements : un guillemet précédé d'une barre oblique ne la ferme pas, et une barre
+ * échappée par une autre ne protège pas le guillemet qui suit. Rend le motif du refus, ou
+ * `undefined`. Le texte n'est pas vérifié pour autant : `JSON.parse` le fera.
+ *
+ * Pourquoi : `JSON.parse` avec un réviseur (ce que fait `fromPortableJson`) coûte bien plus que le
+ * texte. Mesuré sous `--max-old-space-size=256`, la limite des fonctions hébergées, sur un corps de
+ * 10 Mio : `[{},…]` dépasse 512 Mo, `[[0],…]` et `[{"a":0},…]` 320 Mo, et 5,2 millions de `[` ouverts
+ * font manquer de mémoire `JSON.parse` lui-même. Or un worker sert plusieurs requêtes : celui qui meurt
+ * emporte les autres. Les plafonds dépassent toute facture réaliste : une ligne compte une
+ * vingtaine de virgules (≈ 25 avec ses taxes et ses remises), soit 12 000 lignes pour 300 000 ; le
+ * corps le plus profond (corps, facture, lignes, ligne, taxe, …) tient en une dizaine de niveaux.
+ */
+function examinerJson(texte: string): string | undefined {
+  let profondeur = 0;
+  let virgules = 0;
+  let dansUneChaine = false;
+  for (let i = 0; i < texte.length; i++) {
+    const c = texte.charCodeAt(i);
+    if (dansUneChaine) {
+      if (c === 0x5c) {
+        // Barre oblique : le caractère suivant est échappé.
+        i++;
+      } else if (c === 0x22) {
+        dansUneChaine = false;
+      }
+    } else if (c === 0x22) {
+      dansUneChaine = true;
+    } else if (c === 0x5b || c === 0x7b) {
+      if (++profondeur > PROFONDEUR_MAX) {
+        return `Le corps est imbriqué sur plus de ${PROFONDEUR_MAX} niveaux.`;
+      }
+    } else if (c === 0x5d || c === 0x7d) {
+      // Un fermant sans ouvrant n'est pas du JSON : `JSON.parse` le refusera ; il ne doit pas faire
+      // gagner de la place à ce qui suit.
+      if (profondeur > 0) profondeur--;
+    } else if (c === 0x2c && ++virgules > VIRGULES_MAX) {
+      return 'Le corps compte plus de 300 000 éléments.';
+    }
+  }
+  return undefined;
+}
+
 /**
  * Le corps `texte` en JSON portable, qui doit être un objet ; sinon lève 422 `ANOMALIES` (`Issue` de
  * code `CORPS`, chemin vide) sous `message`, que chaque fonction rédige selon ce que le refus laisse
- * intact.
+ * intact. Un corps trop profond ou trop large est refusé avant d'être décodé (`examinerJson`) : toute
+ * fonction qui lit un corps JSON passe par ici.
  */
 export function lireObjetPortable(texte: string, message: string): Record<string, unknown> {
   const refus = (detail: string) =>
     anomalies([{ code: 'CORPS', path: '', message: detail }], message);
+  const exces = examinerJson(texte);
+  if (exces !== undefined) throw refus(exces);
   let corps: unknown;
   try {
     corps = fromPortableJson(texte);
@@ -207,16 +262,24 @@ export function exigerAdmissible(
 /**
  * `valeur` en JSON portable : le texte que l'appelant garde pour l'enregistrer en `jsonb`. Sérialisé
  * une fois, ici, sous `try` : `toPortableJson` lève (`RangeError`) au-delà de quelque 2 700 niveaux,
- * alors que la lecture du JSON en admet davantage, et le même appel fait plus tard, dans la
- * transaction, serait une erreur du serveur après le dépôt du PDF. Trop imbriquée : 422 `ANOMALIES`
- * (`Issue` de code `code` et de chemin `path`, sous `message`).
+ * et le même appel fait plus tard, dans la transaction, serait une erreur du serveur après le dépôt du
+ * PDF. Un corps reçu n'en approche pas (`lireObjetPortable` plafonne la profondeur à
+ * `PROFONDEUR_MAX`), mais la facture validée peut porter ce que le SDK laisse passer : ce n'est
+ * que la défense de second rang. Sérialisation impossible : 422 `ANOMALIES` (`Issue` de code `code`
+ * et de chemin `path`, sous `message`).
  */
 export function serialiser(valeur: unknown, path: string, code: string, message: string): string {
   try {
     return toPortableJson(valeur);
   } catch {
     throw anomalies(
-      [{ code, path, message: 'Structure trop imbriquée pour être enregistrée.' }],
+      [
+        {
+          code,
+          path,
+          message: 'Cette valeur ne peut pas être écrite en JSON pour être enregistrée.',
+        },
+      ],
       message,
     );
   }

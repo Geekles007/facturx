@@ -97,10 +97,10 @@ const dateLisible = (date: string): boolean => isValidIsoDate(date) && dateAdmis
  * La facture embarquée dans le PDF, lue sans validation, et son texte JSON portable ; sinon lève 422
  * `ANOMALIES` (`Issue` de code `FACTURX`). Le SDK lit sans valider : la lecture laisse passer ce que
  * la base refuserait ensuite, et ce serait un 500 après le dépôt du PDF (type, devise ou numéro mal
- * formés ; date vide ou de l'an 0 ;
- * caractère nul ou demi-substitut isolé, que le XML porte en `&#0;` ou `&#xD800;`). Ces valeurs-là sont
- * donc contrôlées ici, et elles seules : de quoi ranger la facture, sans juger de son contenu. Le
- * lecteur garantit déjà la présence et la forme du reste (acheteur, montants entiers en centimes).
+ * formés ; date vide ou de l'an 0 ; caractère nul ou demi-substitut isolé, que le XML porte en `&#0;`
+ * ou `&#xD800;`). Ces valeurs-là sont donc contrôlées ici, et elles seules : de quoi ranger la
+ * facture, sans juger de son contenu. Le lecteur garantit déjà la présence et la forme du reste
+ * (acheteur, montants entiers en centimes).
  */
 async function lireFacture(pdf: Uint8Array): Promise<{ invoice: Invoice; json: string }> {
   const message = `Le PDF n’est pas une facture Factur-X lisible : ${SANS_IMPORT}.`;

@@ -655,10 +655,9 @@ Deno.test('corps illisible : 422 ANOMALIES, Issue CORPS, rien d’importé', asy
 Deno.test('form ou appearance imbriqués sur 3 000 niveaux : 422 CORPS, rien de déposé', async () => {
   const compte = await creerCompte();
   const pdf = toPortableJson(await pdfDe(factureLocale('F-2025-0042')));
-  // `toPortableJson` lève au-delà de 2 700 niveaux environ alors que la lecture du JSON en admet plus :
-  // sérialisé en base, après le dépôt du PDF, ce serait un 500. Selon le runtime, c'est la lecture du
-  // corps (chemin vide) ou sa sérialisation (le champ) qui refuse la première : dans les deux cas, 422
-  // avant tout dépôt. La sérialisation est éprouvée seule (corps.test.ts, `serialiser`).
+  // La profondeur est plafonnée à 64 niveaux avant le décodage (`lireObjetPortable`) : 422 au chemin
+  // vide, quel que soit le runtime. Avant ce plafond, 3 000 niveaux se lisaient, puis `toPortableJson`
+  // levait en les écrivant en base, après le dépôt du PDF.
   const profond = `${'['.repeat(3000)}${']'.repeat(3000)}`;
   for (const champ of ['form', 'appearance']) {
     const form = champ === 'form' ? profond : toPortableJson(FORM);
@@ -672,7 +671,7 @@ Deno.test('form ou appearance imbriqués sur 3 000 niveaux : 422 CORPS, rien de 
     const erreur = await reponse.json();
     assertEquals(erreur.code, 'ANOMALIES', champ);
     assertEquals(erreur.details[0].code, 'CORPS', champ);
-    assert(['', champ].includes(erreur.details[0].path), `${champ} : ${erreur.details[0].path}`);
+    assertEquals(erreur.details[0].path, '', champ);
   }
   assertEquals(await nombreDeFactures(compte.entrepriseId), 0);
   assertEquals(await pdfDeposes(compte.entrepriseId), []);

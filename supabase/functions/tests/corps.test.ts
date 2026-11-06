@@ -78,6 +78,91 @@ Deno.test('lireObjetPortable : ni du JSON ni un objet, 422 ANOMALIES sous le mes
   }
 });
 
+/** Un corps à `n` conteneurs ouverts à la fois : `{"a":{"a":…0…}}`. */
+const imbrique = (n: number): string => `${'{"a":'.repeat(n)}0${'}'.repeat(n)}`;
+
+/** Un corps `{"a":[0,0,…]}` qui compte exactement `virgules` virgules hors chaînes. */
+const large = (virgules: number): string =>
+  `{"a":[${Array(virgules + 1)
+    .fill(0)
+    .join(',')}]}`;
+
+Deno.test('lireObjetPortable : profondeur plafonnée à 64 niveaux, avant le décodage', async () => {
+  assertEquals(Object.keys(lireObjetPortable(imbrique(64), 'message')), ['a']);
+  const reponse = await refus(
+    Promise.resolve().then(() => lireObjetPortable(imbrique(65), 'message')),
+  );
+  assertEquals(reponse.status, 422);
+  const corps = await reponse.json();
+  assertEquals(corps.code, 'ANOMALIES');
+  assertEquals(corps.message, 'message');
+  assertEquals(corps.details.length, 1);
+  assertEquals(corps.details[0].code, 'CORPS');
+  assertEquals(corps.details[0].path, '');
+  assert(corps.details[0].message.includes('64'), corps.details[0].message);
+});
+
+Deno.test('lireObjetPortable : largeur plafonnée à 300 000 virgules hors chaînes, avant le décodage', async () => {
+  assertEquals(Object.keys(lireObjetPortable(large(300_000), 'message')), ['a']);
+  const reponse = await refus(
+    Promise.resolve().then(() => lireObjetPortable(large(300_001), 'message')),
+  );
+  assertEquals(reponse.status, 422);
+  const corps = await reponse.json();
+  assertEquals(corps.details[0].code, 'CORPS');
+  assertEquals(corps.details[0].path, '');
+  assert(corps.details[0].message.includes('300 000'), corps.details[0].message);
+});
+
+Deno.test('lireObjetPortable : les crochets, accolades et virgules d’une chaîne ne comptent pas', () => {
+  // 400 000 virgules et 100 ouvrants dans une chaîne : rien à compter.
+  const chaine = `${','.repeat(400_000)}${'['.repeat(100)}${'{'.repeat(100)}`;
+  assertEquals(lireObjetPortable(JSON.stringify({ a: chaine, b: [1, 2] }), 'message').b, [1, 2]);
+});
+
+Deno.test('lireObjetPortable : les guillemets échappés et les barres obliques inverses ne trompent pas le pré-examen', async () => {
+  const BARRE = '\\';
+  const ouvrants = '['.repeat(70);
+  // Barre puis guillemet : le guillemet est échappé, la chaîne continue, et les 70 `[` en font partie.
+  const dansLaChaine = `{"a":"x${BARRE}"${ouvrants}"}`;
+  assertEquals(lireObjetPortable(dansLaChaine, 'message').a, `x"${ouvrants}`);
+  // Deux barres puis un guillemet : une barre échappée, le guillemet ferme la chaîne, et les 70 `[`
+  // qui suivent sont du JSON.
+  const horsDeLaChaine = `{"a":"x${BARRE}${BARRE}","b":${ouvrants}${']'.repeat(70)}}`;
+  const reponse = await refus(
+    Promise.resolve().then(() => lireObjetPortable(horsDeLaChaine, 'message')),
+  );
+  assertEquals(reponse.status, 422);
+  // Une suite de barres : de rang pair, le guillemet ferme la chaîne ; de rang impair, il est échappé.
+  assertEquals(lireObjetPortable(`{"a":"${BARRE.repeat(4)}"}`, 'message').a, BARRE.repeat(2));
+  assertEquals(lireObjetPortable(`{"a":"${BARRE.repeat(3)}""}`, 'message').a, `${BARRE}"`);
+});
+
+Deno.test('lireObjetPortable : des corps de 10 Mio qui dépasseraient 256 Mo au décodage sont refusés sans manque de mémoire', async () => {
+  // `JSON.parse` et son réviseur coûtent bien plus que le texte : un worker qui meurt de mémoire
+  // emporte les requêtes des autres. Un processus à part, au tas plafonné.
+  const chemin = (nom: string) => decodeURIComponent(new URL(nom, import.meta.url).pathname);
+  const sortie = await new Deno.Command(Deno.execPath(), {
+    args: [
+      'run',
+      '--config',
+      chemin('../deno.json'),
+      '--v8-flags=--max-old-space-size=256',
+      chemin('./decodage-large.ts'),
+    ],
+    stdout: 'piped',
+    stderr: 'piped',
+  }).output();
+  const decoder = new TextDecoder();
+  assertEquals(sortie.code, 0, decoder.decode(sortie.stderr).slice(0, 500));
+  assertEquals(JSON.parse(decoder.decode(sortie.stdout)), {
+    objets_vides: 422,
+    tableaux_de_un: 422,
+    objets_de_un: 422,
+    ouvrants: 422,
+  });
+});
+
 Deno.test('cheminInadmissible : un texte propre, des paires de substituts valides, des octets', () => {
   assertEquals(
     cheminInadmissible({ a: ['é', '🙂', { b: 'x' }], '🙂': 1, n: 3, v: null }),
