@@ -20,7 +20,7 @@ import {
   type SavedInvoice,
 } from './library.js';
 import { blankForm, type InvoiceForm } from './model.js';
-import { ErreurConservation } from './persistence.js';
+import { ErreurConservation, estDuCompte } from './persistence.js';
 import { storage } from './storage.js';
 
 export type Tab = 'content' | 'appearance' | 'check' | 'code';
@@ -58,8 +58,12 @@ export interface UiState {
   library: LibraryTab | undefined;
   mobile: 'edit' | 'preview';
   toast: Toast | undefined;
-  /** Conservation locale : en attente, active, ou indisponible (le Studio travaille en mémoire). */
-  storage: 'pending' | 'ok' | 'memory';
+  /**
+   * Conservation : en attente, active, ou indisponible (le Studio travaille en mémoire). En mode
+   * compte, `injoignable` : le serveur n'a pas répondu au démarrage ; rien n'est lu ni envoyé, la
+   * saisie reste dans le miroir local jusqu'au rechargement.
+   */
+  storage: 'pending' | 'ok' | 'memory' | 'injoignable';
   /** Facture de l'historique affichée : émise, donc en lecture seule. */
   issued: string | undefined;
   /** Première visite : l'exemple est affiché. */
@@ -280,16 +284,36 @@ export async function loadPersisted(): Promise<Loaded | undefined> {
 export const DELAI_LOCAL_MS = 400;
 export const DELAI_COMPTE_MS = 1000;
 
-/** Écrit tout de suite ce qui attend le délai ; défini tant que la conservation tourne. */
-let enregistrerEnAttente: (() => Promise<void>) | undefined;
+/** Ce que la conservation en cours expose au reste du Studio ; rien quand elle ne tourne pas. */
+interface Suivi {
+  conserver(cle: string, faire: () => Promise<unknown>): Promise<boolean>;
+  enregistrerMaintenant(): Promise<boolean>;
+}
+let suivi: Suivi | undefined;
 
 /**
- * Écrit sans attendre le délai ce qui a changé (avant d'ouvrir un autre brouillon, avant
- * d'émettre), et attend la réponse. Ne lève pas : un échec suit le chemin de l'enregistrement
- * différé.
+ * Écrit sans attendre le délai ce qui a changé, renvoie ce qui attendait (réseau revenu,
+ * reconnexion), et attend les réponses. Vrai si le brouillon affiché est enregistré : faux s'il
+ * n'a pas pu partir (hors ligne, session expirée, conflit, refus). À appeler avant de changer de
+ * document, pour ne rien perdre de la saisie. Ne lève pas.
  */
-export function enregistrerMaintenant(): Promise<void> {
-  return enregistrerEnAttente?.() ?? Promise.resolve();
+export function enregistrerMaintenant(): Promise<boolean> {
+  return suivi?.enregistrerMaintenant() ?? Promise.resolve(true);
+}
+
+/**
+ * Une écriture faite hors de l'enregistrement différé (un client, un produit, l'apparence par
+ * défaut, un fichier), sous une clé qui la désigne (`clients:<uid>`…). En mode compte, son échec
+ * suit le même chemin que celui du brouillon : message, hors ligne ou session expirée, et la
+ * dernière écriture de chaque clé repart au retour du réseau ou après la reconnexion. Sans
+ * compte, rien ne change : un échec passe sous silence, comme avant. Vrai si elle est passée.
+ */
+export function conserver(cle: string, faire: () => Promise<unknown>): Promise<boolean> {
+  if (suivi) return suivi.conserver(cle, faire);
+  return faire().then(
+    () => true,
+    () => false,
+  );
 }
 
 /** Le message d'un enregistrement que le serveur refuse. */
@@ -302,40 +326,63 @@ function messageDeRefus(erreur: unknown): string {
   return phrases.refus;
 }
 
+/** Le brouillon tel qu'il s'enregistre sous `draft`. */
+function brouillonDe(s: StudioState): NonNullable<Loaded['draft']> {
+  const draft: NonNullable<Loaded['draft']> = { form: s.form, appearance: s.appearance };
+  if (s.ui.issued) draft.issued = s.ui.issued;
+  // L'exemple reste signalé comme tel d'une visite à l'autre, tant qu'il n'a pas été modifié.
+  if (s.ui.sample) draft.sample = true;
+  return draft;
+}
+
+/** Une écriture, de quoi la refaire, et si elle s'adresse au serveur (ou à ce navigateur seul). */
+interface Ecriture {
+  faire: () => Promise<unknown>;
+  locale: boolean;
+}
+
 /**
  * Écrit le brouillon, l'entreprise et la numérotation quand ils changent, `delai` ms après la
  * dernière modification (400 par défaut). Rend de quoi arrêter.
  *
- * Sans compte, un échec fait passer le Studio en mémoire, comme toujours. Avec un compte, la
- * conservation dit pourquoi une écriture n'est pas passée (`ErreurConservation`) :
- *   - réseau : `ui.reseau = 'hors-ligne'` ; la dernière valeur de chaque clé est gardée, et repart
- *     à l'évènement `online`, une fois (pas de boucle de nouveaux essais) ;
- *   - session : `ui.compte.session = 'expiree'`, et la connexion s'ouvre, une seule fois ; la
- *     valeur est gardée, et repart quand la session redevient active ;
+ * Sans compte, un échec fait passer le Studio en mémoire, comme toujours. Avec un compte, le
+ * brouillon est d'abord recopié dans ce navigateur (`garderBrouillon`, 400 ms après la frappe),
+ * et la conservation dit pourquoi une écriture n'est pas passée (`ErreurConservation`) :
+ *   - réseau : `ui.reseau = 'hors-ligne'` ; la dernière écriture de chaque clé est gardée, et
+ *     repart à l'évènement `online` (une passe : pas de boucle de nouveaux essais) ;
+ *   - session : `ui.compte.session = 'expiree'`, et la connexion s'ouvre, une seule fois ;
+ *     l'écriture repart quand la session redevient active ;
  *   - conflit : `ui.conflit = true` ; rien ne repart ni ne se recharge sans l'utilisateur ;
  *   - refus (4xx) : un message, et rien ne repart.
- * Dans tous ces cas, le miroir local du brouillon (`compte/persistence.ts`) garde la saisie.
+ * Une facture émise ou l'exemple affichés ne sont qu'une vue, gardée dans ce navigateur : leur
+ * écriture ne touche ni à l'attente du brouillon ni à l'état du réseau. Au démarrage, une saisie
+ * que le serveur n'a pas reçue (`saisieEnAttente`) repart aussitôt, par le même chemin.
  */
 export function startPersistence(options: { delai?: number } = {}): () => void {
   const delai = options.delai ?? DELAI_LOCAL_MS;
+  const miroir = estDuCompte(storage) ? storage : undefined;
   let previous = state;
   let vu = state;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  /** La dernière valeur soumise pour chaque clé : seule son issue compte. */
-  const derniere = new Map<string, unknown>();
+  let timerMiroir: ReturnType<typeof setTimeout> | undefined;
+  /** La dernière écriture soumise pour chaque clé : seule son issue compte. */
+  const derniere = new Map<string, Ecriture>();
   /** Ce qui reste à écrire après une coupure du réseau ou une session expirée. */
-  const enAttente = new Map<string, unknown>();
+  const enAttente = new Map<string, Ecriture>();
+  /** Les clés dont la dernière écriture n'est pas passée, quelle qu'en soit la raison. */
+  const enEchec = new Set<string>();
 
-  const echec = (cle: string, valeur: unknown, erreur: unknown): void => {
+  const echec = (cle: string, e: Ecriture, erreur: unknown): void => {
     const compte = state.ui.compte;
     if (!compte) {
       if (state.ui.storage === 'ok') ui({ storage: 'memory' });
       return;
     }
+    const actuelle = derniere.get(cle) === e;
+    if (actuelle) enEchec.add(cle);
     const code = erreur instanceof ErreurConservation ? erreur.code : 'REFUS';
-    const actuelle = derniere.get(cle) === valeur;
     if (code === 'RESEAU' || code === 'SESSION') {
-      if (actuelle) enAttente.set(cle, valeur);
+      if (actuelle) enAttente.set(cle, e);
       if (code === 'RESEAU') {
         if (state.ui.reseau !== 'hors-ligne') ui({ reseau: 'hors-ligne' });
       } else if (compte.session === 'active') {
@@ -352,60 +399,93 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
     if (state.ui.toast?.text !== texte) toast(texte, 'error');
   };
 
-  const ecrire = async (cle: string, valeur: unknown): Promise<void> => {
+  const ecrire = async (cle: string, e: Ecriture): Promise<boolean> => {
     try {
-      await storage.set(cle, valeur);
-      if (derniere.get(cle) === valeur) enAttente.delete(cle);
-      if (state.ui.reseau === 'hors-ligne') ui({ reseau: 'ok' });
+      await e.faire();
+      if (derniere.get(cle) === e) {
+        enAttente.delete(cle);
+        enEchec.delete(cle);
+      }
+      // Une écriture locale ne dit rien du réseau.
+      if (!e.locale && state.ui.reseau === 'hors-ligne') ui({ reseau: 'ok' });
+      return true;
     } catch (erreur) {
-      echec(cle, valeur, erreur);
+      echec(cle, e, erreur);
+      return false;
     }
   };
 
-  const soumettre = (cle: string, valeur: unknown): Promise<void> => {
-    derniere.set(cle, valeur);
-    return ecrire(cle, valeur);
+  const soumettre = (cle: string, e: Ecriture): Promise<boolean> => {
+    derniere.set(cle, e);
+    return ecrire(cle, e);
+  };
+
+  /** Le brouillon de `s` : une vue (facture émise, exemple) ou une saisie, sous deux clés. */
+  const ecritureDuBrouillon = (s: StudioState): [string, Ecriture] => {
+    const draft = brouillonDe(s);
+    const vue = draft.issued !== undefined || draft.sample === true;
+    return [vue ? 'vue' : 'draft', { faire: () => storage.set(KEYS.draft, draft), locale: vue }];
   };
 
   /** Écrit ce qui a changé entre le dernier état écrit et `s`. */
   const flush = (s: StudioState = state): Promise<unknown> => {
     clearTimeout(timer);
     timer = undefined;
-    const writes: Promise<void>[] = [];
+    const writes: Promise<boolean>[] = [];
     if (
       s.form !== previous.form ||
       s.appearance !== previous.appearance ||
       s.ui.issued !== previous.ui.issued ||
       s.ui.sample !== previous.ui.sample
     ) {
-      const draft: Loaded['draft'] = { form: s.form, appearance: s.appearance };
-      if (s.ui.issued) draft.issued = s.ui.issued;
-      // L'exemple reste signalé comme tel d'une visite à l'autre, tant qu'il n'a pas été modifié.
-      if (s.ui.sample) draft.sample = true;
-      writes.push(soumettre(KEYS.draft, draft));
+      writes.push(soumettre(...ecritureDuBrouillon(s)));
     }
-    if (s.company !== previous.company) writes.push(soumettre(KEYS.company, s.company));
-    if (s.numbering !== previous.numbering) writes.push(soumettre(KEYS.numbering, s.numbering));
+    if (s.company !== previous.company) {
+      const company = s.company;
+      writes.push(
+        soumettre(KEYS.company, { faire: () => storage.set(KEYS.company, company), locale: false }),
+      );
+    }
+    if (s.numbering !== previous.numbering) {
+      const numbering = s.numbering;
+      writes.push(
+        soumettre(KEYS.numbering, {
+          faire: () => storage.set(KEYS.numbering, numbering),
+          locale: false,
+        }),
+      );
+    }
     previous = s;
     return Promise.all(writes);
+  };
+
+  /** Recopie dans ce navigateur, sans l'envoyer, le brouillon de `s` (mode compte). */
+  const garder = (s: StudioState = state): Promise<void> => {
+    clearTimeout(timerMiroir);
+    timerMiroir = undefined;
+    return miroir
+      ? miroir.garderBrouillon(brouillonDe(s)).catch(() => undefined)
+      : Promise.resolve();
   };
 
   /** Renvoie ce qui attend, une clé après l'autre ; s'arrête si le réseau ou la session manque. */
   let rejeu: Promise<void> | undefined;
   const rejouer = (): Promise<void> => {
-    rejeu ??= (async () => {
-      try {
-        for (const [cle, valeur] of [...enAttente]) {
-          if (state.ui.compte?.session === 'expiree') return;
-          if (enAttente.get(cle) !== valeur) continue;
-          await ecrire(cle, valeur);
-          if (state.ui.reseau === 'hors-ligne') return;
-        }
-      } finally {
-        rejeu = undefined;
+    if (rejeu) return rejeu;
+    // La passe peut finir sans rien attendre (session expirée) : `finally` s'exécute alors plus
+    // tard que l'affectation, jamais avant, et la passe suivante n'est pas bloquée.
+    const passe = (async () => {
+      for (const [cle, e] of [...enAttente]) {
+        if (state.ui.compte?.session === 'expiree') return;
+        if (enAttente.get(cle) !== e) continue;
+        await ecrire(cle, e);
+        if (state.ui.reseau === 'hors-ligne') return;
       }
-    })();
-    return rejeu;
+    })().finally(() => {
+      if (rejeu === passe) rejeu = undefined;
+    });
+    rejeu = passe;
+    return passe;
   };
 
   const desabonner = store.subscribe(() => {
@@ -416,23 +496,31 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
     if (avant.ui.compte?.session === 'expiree' && s.ui.compte?.session === 'active') {
       void rejouer();
     }
-    if (s.ui.storage !== 'ok') return;
-    const document =
+    if (s.ui.storage !== 'ok' && s.ui.storage !== 'injoignable') return;
+    const brouillon =
       s.form !== avant.form ||
       s.appearance !== avant.appearance ||
-      s.company !== avant.company ||
-      s.numbering !== avant.numbering ||
       s.ui.issued !== avant.ui.issued ||
       s.ui.sample !== avant.ui.sample;
     // Le reste (survol, onglet, message) ne repousse pas l'enregistrement.
-    if (!document) return;
+    if (!brouillon && s.company === avant.company && s.numbering === avant.numbering) return;
     // Une facture émise ouverte remplace la saisie : ce qui attendait le délai part avant elle.
-    if (timer !== undefined && s.ui.issued !== avant.ui.issued) void flush(avant);
+    if (s.ui.issued !== avant.ui.issued) {
+      if (timerMiroir !== undefined) void garder(avant);
+      if (timer !== undefined) void flush(avant);
+    }
+    if (brouillon && miroir) {
+      clearTimeout(timerMiroir);
+      timerMiroir = setTimeout(() => void garder(), DELAI_LOCAL_MS);
+    }
+    // Serveur injoignable au démarrage : rien n'a été lu, donc rien ne part ; le miroir suffit.
+    if (s.ui.storage === 'injoignable') return;
     clearTimeout(timer);
     timer = setTimeout(() => void flush(), delai);
   });
 
   const auDepart = (): void => {
+    if (timerMiroir !== undefined) void garder();
     if (state.ui.storage === 'ok') void flush();
   };
   const auRetour = (): void => void rejouer();
@@ -440,16 +528,42 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
   globalThis.addEventListener?.('pagehide', auDepart);
   globalThis.addEventListener?.('online', auRetour);
 
-  enregistrerEnAttente = async () => {
-    if (state.ui.storage === 'ok') await flush();
+  suivi = {
+    conserver: (cle, faire) =>
+      state.ui.compte
+        ? soumettre(cle, { faire, locale: false })
+        : faire().then(
+            () => true,
+            () => false,
+          ),
+    async enregistrerMaintenant() {
+      if (timerMiroir !== undefined) await garder();
+      if (state.ui.storage !== 'ok') return state.ui.storage !== 'injoignable';
+      await flush();
+      await rejouer();
+      // Refusé plus tôt (conflit, refus) puis peut-être réglé hors du magasin (« garder la
+      // mienne ») : le brouillon affiché repart une fois, et son issue fait foi.
+      const [cle, e] = ecritureDuBrouillon(state);
+      if (enEchec.has('draft') && !enAttente.has('draft') && cle === 'draft')
+        await soumettre(cle, e);
+      return !enEchec.has('draft');
+    },
   };
+
+  // Une saisie que le serveur n'a pas reçue avant la fermeture : elle repart dès maintenant, et
+  // son échec se voit (hors ligne, session expirée, conflit) comme celui d'une frappe.
+  const aRejouer = miroir?.saisieEnAttente();
+  if (aRejouer !== undefined && state.ui.storage === 'ok') {
+    void soumettre('draft', { faire: () => storage.set(KEYS.draft, aRejouer), locale: false });
+  }
 
   return () => {
     desabonner();
     clearTimeout(timer);
+    clearTimeout(timerMiroir);
     globalThis.removeEventListener?.('pagehide', auDepart);
     globalThis.removeEventListener?.('online', auRetour);
-    enregistrerEnAttente = undefined;
+    suivi = undefined;
   };
 }
 

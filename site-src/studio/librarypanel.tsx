@@ -21,7 +21,16 @@ import {
 import { blankPaymentMeans, type FormLine, isoToday } from './model.js';
 import { download, fileStem } from './pipeline.js';
 import { storage } from './storage.js';
-import { type LibraryTab, setIn, store, toast, ui, updateForm, useStudio } from './store.js';
+import {
+  conserver,
+  type LibraryTab,
+  setIn,
+  store,
+  toast,
+  ui,
+  updateForm,
+  useStudio,
+} from './store.js';
 import { Button, Dialog, Field, FilePick, IconButton, Input, Select, Toggle } from './ui.js';
 import { balanceForm, creditNoteForm, duplicateForm, openIssued, startDraft } from './workflows.js';
 
@@ -143,7 +152,7 @@ function ClientsTab() {
   const remove = (client: ClientRecord) => {
     if (!confirm(t.library.deleteConfirm)) return;
     store.set((s) => ({ clients: s.clients.filter((c) => c.uid !== client.uid) }));
-    storage.remove('clients', client.uid).catch(() => undefined);
+    void conserver(`clients:${client.uid}`, () => storage.remove('clients', client.uid));
   };
   if (clients.length === 0) return <p class="lib-empty">{t.library.clientsEmpty}</p>;
   return (
@@ -188,7 +197,7 @@ function ProductsTab() {
   const remove = (product: ProductRecord) => {
     if (!confirm(t.library.deleteConfirm)) return;
     store.set((s) => ({ products: s.products.filter((p) => p.uid !== product.uid) }));
-    storage.remove('products', product.uid).catch(() => undefined);
+    void conserver(`products:${product.uid}`, () => storage.remove('products', product.uid));
   };
   if (products.length === 0) return <p class="lib-empty">{t.library.productsEmpty}</p>;
   return (
@@ -264,7 +273,7 @@ function HistoryTab() {
                 variant="ghost"
                 icon="copy"
                 onClick={() =>
-                  startDraft(duplicateForm(saved.form), structuredClone(saved.appearance))
+                  void startDraft(duplicateForm(saved.form), structuredClone(saved.appearance))
                 }
               >
                 {t.library.duplicate}
@@ -274,7 +283,7 @@ function HistoryTab() {
                   size="sm"
                   variant="ghost"
                   onClick={() =>
-                    startDraft(creditNoteForm(saved.form), structuredClone(saved.appearance))
+                    void startDraft(creditNoteForm(saved.form), structuredClone(saved.appearance))
                   }
                 >
                   {t.library.credit}
@@ -322,7 +331,7 @@ function HistoryTab() {
             onClick={() => {
               try {
                 const chosen = history.filter((h) => balancing?.includes(h.uid));
-                startDraft(
+                void startDraft(
                   balanceForm(chosen),
                   structuredClone(chosen[0]?.appearance ?? store.get().appearance),
                 );
@@ -387,6 +396,9 @@ function BackupTab() {
   const clients = useStudio((s) => s.clients.length);
   const products = useStudio((s) => s.products.length);
   const invoices = useStudio((s) => s.history.length);
+  // Avec un compte, restaurer une sauvegarde locale écrirait par-dessus le serveur, clé par clé :
+  // l'import des données locales (tâche 20) s'en chargera.
+  const compte = useStudio((s) => s.ui.compte !== undefined);
   const exportAll = async () => {
     const dump = await storage.dump().catch(() => undefined);
     const data = dump ?? {
@@ -432,9 +444,11 @@ function BackupTab() {
         <Button icon="download" variant="primary" onClick={exportAll}>
           {t.library.export}
         </Button>
-        <FilePick accept=".json,application/json" onFile={restore} icon="upload">
-          {t.library.restore}
-        </FilePick>
+        {!compte && (
+          <FilePick accept=".json,application/json" onFile={restore} icon="upload">
+            {t.library.restore}
+          </FilePick>
+        )}
       </div>
     </div>
   );

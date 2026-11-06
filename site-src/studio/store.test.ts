@@ -2,10 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { t } from './i18n.js';
 import { defaultCompany } from './library.js';
 import { blankForm } from './model.js';
-import { type CodeConservation, ErreurConservation, type Persistence } from './persistence.js';
+import {
+  type CodeConservation,
+  type ConservationDuCompte,
+  ErreurConservation,
+  type Persistence,
+} from './persistence.js';
 import { indexedDbPersistence, utiliser } from './storage.js';
 import {
   type CompteUi,
+  conserver,
   enregistrerMaintenant,
   type Loaded,
   setForm,
@@ -13,6 +19,7 @@ import {
   store,
   ui,
 } from './store.js';
+import { startDraft } from './workflows.js';
 
 const COMPTE: CompteUi = {
   email: 'a@exemple.test',
@@ -24,30 +31,58 @@ const COMPTE: CompteUi = {
 
 /**
  * Une conservation qui note chaque écriture et répond ce que `refus` dit à ce moment : rien
- * (l'écriture passe), ou le code d'une `ErreurConservation`.
+ * (l'écriture passe), ou le code d'une `ErreurConservation`. Elle tient aussi, comme celle du
+ * compte, un miroir (`gardes`), des brouillons (`nouveaux`) et une saisie en attente au
+ * démarrage (`enAttente`). Une vue (facture émise, exemple) ne va pas au serveur : elle passe
+ * toujours.
  */
 function fausseConservation() {
   const ecrites: { cle: string; valeur: unknown }[] = [];
-  const etat: { refus: CodeConservation | Error | undefined; detail?: string } = {
-    refus: undefined,
+  const gardes: unknown[] = [];
+  const etat: {
+    refus: CodeConservation | Error | undefined;
+    detail?: string;
+    nouveaux: number;
+    enAttente?: unknown;
+  } = { refus: undefined, nouveaux: 0 };
+  const echoue = (): void => {
+    if (etat.refus instanceof Error) throw etat.refus;
+    if (etat.refus) throw new ErreurConservation(etat.refus, etat.detail);
   };
-  const p: Persistence = {
+  const p: Persistence & ConservationDuCompte = {
     available: async () => true,
     get: async () => undefined,
     async set(cle, valeur) {
       ecrites.push({ cle, valeur });
-      if (etat.refus instanceof Error) throw etat.refus;
-      if (etat.refus) throw new ErreurConservation(etat.refus, etat.detail);
+      const vue = (valeur as { issued?: string; sample?: boolean }).issued !== undefined;
+      if (!vue) echoue();
       return cle;
     },
     list: async () => [],
-    put: async (_, valeur) => valeur.uid,
+    async put(store, valeur) {
+      ecrites.push({ cle: `${store}:${valeur.uid}`, valeur });
+      echoue();
+      return valeur.uid;
+    },
     remove: async () => undefined,
     getFile: async () => undefined,
-    setFile: async (cle) => cle,
+    async setFile(cle, octets) {
+      ecrites.push({ cle: `files:${cle}`, valeur: octets });
+      echoue();
+      return cle;
+    },
     dump: async () => ({}),
+    async garderBrouillon(valeur) {
+      gardes.push(valeur);
+    },
+    async nouveauBrouillon() {
+      echoue();
+      etat.nouveaux++;
+    },
+    saisieEnAttente: () => etat.enAttente,
+    brouillonLocal: async () => undefined,
   };
-  return { p, ecrites, etat };
+  return { p, ecrites, gardes, etat };
 }
 
 /** La fenêtre : ses évènements (`online`, `pagehide`) sont ceux d'un `EventTarget` à nous. */
@@ -239,5 +274,183 @@ describe('startPersistence en mode compte', () => {
     ui({ compte: COMPTE });
     await vi.waitFor(() => expect(brouillonsEcrits(ecrites)).toEqual(['ABC']));
     expect(ecrites).toHaveLength(1);
+  });
+});
+
+describe('changer de document sans rien perdre (mode compte)', () => {
+  it('un retour du réseau pendant une session expirée ne bloque pas le rejeu suivant', async () => {
+    const { p, ecrites, etat } = fausseConservation();
+    etat.refus = 'SESSION';
+    demarrer(p);
+    setForm('buyer.name', 'Tapé hors session');
+    await vi.waitFor(() => expect(store.get().ui.compte?.session).toBe('expiree'));
+    // `online` alors que la session manque encore : la passe s'arrête aussitôt.
+    fenetre.dispatchEvent(new Event('online'));
+    await vi.advanceTimersByTimeAsync(0);
+
+    etat.refus = undefined;
+    ecrites.length = 0;
+    ui({ compte: COMPTE });
+    await vi.waitFor(() => expect(brouillonsEcrits(ecrites)).toEqual(['Tapé hors session']));
+  });
+
+  it('le miroir est écrit 400 ms après la frappe, le serveur au bout du délai', async () => {
+    const { p, ecrites, gardes } = fausseConservation();
+    demarrer(p, { options: { delai: 1000 } });
+    setForm('buyer.name', 'A');
+    await vi.advanceTimersByTimeAsync(399);
+    expect(gardes).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(gardes).toMatchObject([{ form: { buyer: { name: 'A' } } }]);
+    expect(ecrites).toEqual([]);
+    await vi.advanceTimersByTimeAsync(600);
+    expect(brouillonsEcrits(ecrites)).toEqual(['A']);
+  });
+
+  it('hors ligne, ouvrir une facture émise ne fait oublier ni la saisie ni le réseau', async () => {
+    const { p, ecrites, etat } = fausseConservation();
+    etat.refus = 'RESEAU';
+    demarrer(p);
+    setForm('buyer.name', 'Saisie hors ligne');
+    await vi.waitFor(() => expect(store.get().ui.reseau).toBe('hors-ligne'));
+    // La facture émise s'affiche : son écriture, locale, passe.
+    store.set((s) => ({ form: blankForm('2026-11-04'), ui: { ...s.ui, issued: 'facture-7' } }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ecrites.at(-1)?.valeur).toMatchObject({ issued: 'facture-7' });
+    expect(store.get().ui.reseau).toBe('hors-ligne');
+    expect(await enregistrerMaintenant()).toBe(false);
+
+    etat.refus = undefined;
+    ecrites.length = 0;
+    fenetre.dispatchEvent(new Event('online'));
+    await vi.waitFor(() => expect(store.get().ui.reseau).toBe('ok'));
+    expect(brouillonsEcrits(ecrites)).toEqual(['Saisie hors ligne']);
+  });
+
+  it('enregistrerMaintenant dit si le brouillon est enregistré', async () => {
+    const { p, etat } = fausseConservation();
+    demarrer(p, { options: { delai: 1000 } });
+    setForm('buyer.name', 'A');
+    expect(await enregistrerMaintenant()).toBe(true);
+    etat.refus = 'SESSION';
+    setForm('buyer.name', 'AB');
+    expect(await enregistrerMaintenant()).toBe(false);
+    etat.refus = 'BROUILLON_MODIFIE';
+    ui({ compte: COMPTE });
+    setForm('buyer.name', 'ABC');
+    expect(await enregistrerMaintenant()).toBe(false);
+  });
+
+  it('un conflit réglé hors du magasin (« garder la mienne ») ne bloque plus le changement', async () => {
+    const { p, etat } = fausseConservation();
+    etat.refus = 'BROUILLON_MODIFIE';
+    demarrer(p);
+    setForm('buyer.name', 'Ma version');
+    await vi.waitFor(() => expect(store.get().ui.conflit).toBe(true));
+    // La conservation a imposé la version : le serveur l'a, l'écriture suivante passe.
+    etat.refus = undefined;
+    ui({ conflit: false });
+    expect(await enregistrerMaintenant()).toBe(true);
+  });
+
+  it('au démarrage, une saisie que le serveur n’a pas reçue repart, et son échec se voit', async () => {
+    const { p, ecrites, etat } = fausseConservation();
+    etat.enAttente = { form: { ...blankForm('2026-11-04'), id: 'F-1' }, appearance: {} };
+    etat.refus = 'SESSION';
+    demarrer(p);
+    await vi.waitFor(() => expect(store.get().ui.compte?.session).toBe('expiree'));
+    expect(ecrites[0]?.valeur).toBe(etat.enAttente);
+
+    etat.refus = undefined;
+    ui({ compte: COMPTE });
+    await vi.waitFor(() => expect(ecrites).toHaveLength(2));
+    expect(ecrites[1]?.valeur).toBe(etat.enAttente);
+  });
+
+  it('serveur injoignable au démarrage : le miroir suit la frappe, rien ne part', async () => {
+    const { p, ecrites, gardes } = fausseConservation();
+    demarrer(p, { options: { delai: 1000 } });
+    ui({ storage: 'injoignable' });
+    setForm('buyer.name', 'Saisie gardée');
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(gardes).toMatchObject([{ form: { buyer: { name: 'Saisie gardée' } } }]);
+    expect(ecrites).toEqual([]);
+    expect(await enregistrerMaintenant()).toBe(false);
+  });
+});
+
+describe('startDraft en mode compte', () => {
+  it('la saisie part, puis un nouveau brouillon : l’ancien reste au serveur', async () => {
+    const { p, ecrites, etat } = fausseConservation();
+    demarrer(p, { options: { delai: 1000 } });
+    setForm('buyer.name', 'Original');
+    const copie = { ...blankForm('2026-11-04'), id: 'F-copie' };
+    expect(await startDraft(copie)).toBe(true);
+    expect(brouillonsEcrits(ecrites)).toEqual(['Original']);
+    expect(etat.nouveaux).toBe(1);
+    expect(store.get().form).toBe(copie);
+  });
+
+  it('hors ligne : refusé, la saisie reste à l’écran, et le Studio dit pourquoi', async () => {
+    const { p, etat } = fausseConservation();
+    etat.refus = 'RESEAU';
+    demarrer(p);
+    setForm('buyer.name', 'Saisie hors ligne');
+    await vi.waitFor(() => expect(store.get().ui.reseau).toBe('hors-ligne'));
+    expect(await startDraft({ ...blankForm('2026-11-04'), id: 'F-copie' })).toBe(false);
+    expect(store.get().form.buyer.name).toBe('Saisie hors ligne');
+    expect(etat.nouveaux).toBe(0);
+    expect(store.get().ui.toast?.text).toBe(t.compte.conservation.enAttente.reseau);
+  });
+
+  it('sans compte, remplace aussitôt, sans rien attendre', () => {
+    const { p } = fausseConservation();
+    demarrer(p, { sansCompte: true });
+    const neuve = { ...blankForm('2026-11-04'), id: 'F-neuve' };
+    void startDraft(neuve);
+    expect(store.get().form).toBe(neuve);
+  });
+});
+
+describe('conserver : les écritures des panneaux', () => {
+  it('hors ligne : signalées, et la dernière de chaque clé repart au retour du réseau', async () => {
+    const { p, ecrites, etat } = fausseConservation();
+    etat.refus = 'RESEAU';
+    demarrer(p);
+    const client = (nom: string) => ({ uid: 'c-1', nom });
+    expect(await conserver('clients:c-1', () => p.put('clients', client('Avant')))).toBe(false);
+    expect(store.get().ui.reseau).toBe('hors-ligne');
+    await conserver('clients:c-1', () => p.put('clients', client('Après')));
+    await conserver('products:p-1', () => p.put('products', { uid: 'p-1' }));
+
+    etat.refus = undefined;
+    ecrites.length = 0;
+    fenetre.dispatchEvent(new Event('online'));
+    await vi.waitFor(() => expect(store.get().ui.reseau).toBe('ok'));
+    expect(ecrites.map((e) => [e.cle, (e.valeur as { nom?: string }).nom])).toEqual([
+      ['clients:c-1', 'Après'],
+      ['products:p-1', undefined],
+    ]);
+  });
+
+  it('un fichier refusé : le message le dit, et rien ne repart', async () => {
+    const { p, ecrites, etat } = fausseConservation();
+    etat.refus = 'FICHIER';
+    demarrer(p);
+    const ok = await conserver('files:font-1', () => p.setFile('font-1', Uint8Array.of(1)));
+    expect(ok).toBe(false);
+    expect(store.get().ui.toast?.text).toBe(t.compte.conservation.fichier);
+    fenetre.dispatchEvent(new Event('online'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ecrites).toHaveLength(1);
+  });
+
+  it('sans compte, un échec passe sous silence, comme avant', async () => {
+    const { p, etat } = fausseConservation();
+    etat.refus = new Error('quota');
+    demarrer(p, { sansCompte: true });
+    expect(await conserver('clients:c-1', () => p.put('clients', { uid: 'c-1' }))).toBe(false);
+    expect(store.get().ui.storage).toBe('ok');
+    expect(store.get().ui.toast).toBeUndefined();
   });
 });

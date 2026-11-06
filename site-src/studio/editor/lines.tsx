@@ -12,7 +12,7 @@ import { formatMoney, t } from '../i18n.js';
 import { lineToProduct, productToLine } from '../library.js';
 import { blankAdjustment, blankLine, type FormAdjustment, type FormLine, uid } from '../model.js';
 import { storage } from '../storage.js';
-import { setForm, store, toast, updateForm, useStudio } from '../store.js';
+import { conserver, setForm, store, toast, updateForm, useStudio } from '../store.js';
 import {
   Button,
   Card,
@@ -333,7 +333,7 @@ function LineRow({ line, index, count }: { line: FormLine; index: number; count:
         ? products.map((pr) => (pr.uid === record.uid ? record : pr))
         : [...products, record],
     });
-    storage.put('products', record).catch(() => undefined);
+    void conserver(`products:${record.uid}`, () => storage.put('products', record));
     toast(t.lines.productSaved);
   };
   return (

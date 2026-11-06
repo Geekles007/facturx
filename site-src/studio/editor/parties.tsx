@@ -12,7 +12,7 @@ import { t } from '../i18n.js';
 import type { ClientRecord } from '../library.js';
 import { type FormAddress, type FormParty, uid } from '../model.js';
 import { storage } from '../storage.js';
-import { setForm, store, toast, useStudio } from '../store.js';
+import { conserver, setForm, store, toast, useStudio } from '../store.js';
 import { Button, Card, Disclosure, Field, Input, Menu, Select, Toggle } from '../ui.js';
 
 type Setter = (path: string, value: unknown) => void;
@@ -451,7 +451,7 @@ export function saveClient(party: FormParty): void {
       ? clients.map((c) => (c.uid === record.uid ? record : c))
       : [...clients, record],
   });
-  storage.put('clients', record).catch(() => undefined);
+  void conserver(`clients:${record.uid}`, () => storage.put('clients', record));
   toast(existing ? t.party.clientUpdated : t.party.clientSaved);
 }
 

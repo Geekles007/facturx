@@ -42,7 +42,13 @@ import { sampleForm } from './sample.js';
 import { storage } from './storage.js';
 import { persistKeys, store, type Tab, toast, ui, useStudio } from './store.js';
 import { Button, Dialog, FilePick, Icon, IconButton, IssuesContext, Menu } from './ui.js';
-import { creditNoteForm, duplicateForm, issueInvoice, startDraft } from './workflows.js';
+import {
+  creditNoteForm,
+  duplicateForm,
+  issueInvoice,
+  quitterLeBrouillon,
+  startDraft,
+} from './workflows.js';
 
 // ---------- ressources : police et logo ----------
 
@@ -319,9 +325,18 @@ function StatusPill({ issues, official }: { issues: StudioIssue[]; official: Off
   );
 }
 
+/**
+ * Sans compte, le brouillon est unique : le remplacer perd la saisie, d'où la question. Avec un
+ * compte, le brouillon ouvert reste dans la liste (`startDraft` en crée un autre) : rien à demander.
+ */
 function confirmReplace(): boolean {
   const { ui: state } = store.get();
-  return state.sample || state.issued !== undefined || confirm(t.app.replaceConfirm);
+  return (
+    state.compte !== undefined ||
+    state.sample ||
+    state.issued !== undefined ||
+    confirm(t.app.replaceConfirm)
+  );
 }
 
 async function openFile(file: File): Promise<void> {
@@ -329,8 +344,8 @@ async function openFile(file: File): Promise<void> {
   toast(t.app.importing(file.name), 'info');
   try {
     const imported = await importBytes(new Uint8Array(await file.arrayBuffer()), file.name);
-    startDraft(imported.form, imported.appearance);
-    toast(t.app.imported(t.app.sources[imported.source] ?? imported.source));
+    if (await startDraft(imported.form, imported.appearance))
+      toast(t.app.imported(t.app.sources[imported.source] ?? imported.source));
   } catch (error) {
     toast(
       t.app.importFailed(error instanceof ImportError ? error.message : String(error)),
@@ -341,6 +356,8 @@ async function openFile(file: File): Promise<void> {
 
 async function newBlank(): Promise<void> {
   if (!confirmReplace()) return;
+  // En mode compte, le refus vient tout de suite, avant de lire l'apparence par défaut.
+  if (!(await quitterLeBrouillon())) return;
   const { company, numbering, form, ui: state } = store.get();
   const saved = await storage
     .get<ReturnType<typeof defaultAppearance>>(persistKeys.appearance)
@@ -350,7 +367,7 @@ async function newBlank(): Promise<void> {
     company.seller.name.trim() || state.sample
       ? company
       : { ...company, seller: form.seller, paymentMeans: form.paymentMeans };
-  startDraft(newInvoiceForm(profile, numbering), saved ?? store.get().appearance);
+  await startDraft(newInvoiceForm(profile, numbering), saved ?? store.get().appearance);
 }
 
 /**
@@ -506,12 +523,12 @@ function TopBar({ derived, onIssue }: { derived: Derived; onIssue: () => void })
             {
               label: t.app.duplicate,
               icon: 'copy',
-              onSelect: () => startDraft(duplicateForm(store.get().form)),
+              onSelect: () => void startDraft(duplicateForm(store.get().form)),
             },
             {
               label: t.app.creditNote,
               icon: 'receipt',
-              onSelect: () => startDraft(creditNoteForm(store.get().form)),
+              onSelect: () => void startDraft(creditNoteForm(store.get().form)),
             },
             'separator',
             {
@@ -519,8 +536,9 @@ function TopBar({ derived, onIssue }: { derived: Derived; onIssue: () => void })
               icon: 'sparkle',
               onSelect: () => {
                 if (!confirmReplace()) return;
-                startDraft(sampleForm(), defaultAppearance());
-                ui({ sample: true });
+                void startDraft(sampleForm(), defaultAppearance()).then((ok) => {
+                  if (ok) ui({ sample: true });
+                });
               },
             },
           ]}
@@ -755,6 +773,15 @@ function Banners() {
           <Icon name="alert" /> {t.app.storageMemory}
         </p>
       )}
+      {storageState === 'injoignable' && (
+        <div class="banner warn actions">
+          <Icon name="alert" />
+          <span>{t.compte.conservation.injoignable}</span>
+          <Button size="sm" icon="refresh" onClick={() => location.reload()}>
+            {t.compte.conservation.rechargerPage}
+          </Button>
+        </div>
+      )}
       <CompteBanners />
       {sample && !issued && (
         <p class="banner info">
@@ -776,7 +803,7 @@ function Banners() {
               size="sm"
               icon="copy"
               onClick={() =>
-                startDraft(duplicateForm(saved.form), structuredClone(saved.appearance))
+                void startDraft(duplicateForm(saved.form), structuredClone(saved.appearance))
               }
             >
               {t.app.duplicate}
@@ -786,7 +813,7 @@ function Banners() {
                 size="sm"
                 icon="receipt"
                 onClick={() =>
-                  startDraft(creditNoteForm(saved.form), structuredClone(saved.appearance))
+                  void startDraft(creditNoteForm(saved.form), structuredClone(saved.appearance))
                 }
               >
                 {t.app.creditNote}

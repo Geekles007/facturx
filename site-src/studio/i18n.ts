@@ -666,6 +666,19 @@ const fr = {
         'La numérotation ne peut pas reculer : le prochain numéro doit rester au moins celui du serveur.',
       fichier:
         'Fichier refusé : un logo PNG ou JPEG de 1 Mo au plus, ou une police TTF de 2 Mo au plus.',
+      enAttente: {
+        reseau:
+          "Hors ligne : la saisie du brouillon ouvert n'est pas encore sur le serveur. Changez de document au retour du réseau, pour ne pas la perdre.",
+        session:
+          "Session expirée : reconnectez-vous d'abord. La saisie du brouillon ouvert n'est pas encore sur le serveur, et changer de document la perdrait.",
+        conflit:
+          'Ce brouillon est en conflit : rechargez la version enregistrée ou gardez la vôtre avant de changer de document.',
+        refus:
+          "La saisie du brouillon ouvert n'a pas pu être enregistrée : changer de document la perdrait. Corrigez-la, puis réessayez.",
+      },
+      injoignable:
+        "Le serveur du compte ne répond pas : vos factures, clients et réglages n'ont pas pu être lus. Votre saisie reste dans ce navigateur ; rechargez la page quand le réseau sera revenu.",
+      rechargerPage: 'Recharger la page',
     },
     brouillons: {
       titre: 'Brouillons',
@@ -683,6 +696,8 @@ const fr = {
       echec:
         "L'opération n'a pas abouti : vérifiez votre connexion, puis réessayez dans un instant.",
       introuvable: "Ce brouillon n'existe plus : il a été émis ou supprimé ailleurs.",
+      nonEnregistre: 'pas encore enregistré',
+      reprendre: 'Reprendre',
     },
   },
 };
@@ -1332,6 +1347,19 @@ const en: Strings = {
       refus: 'The server refused to save this change: it is still displayed, but it is not kept.',
       recul: 'Numbering cannot go backwards: the next number must stay at least the server’s.',
       fichier: 'File refused: a PNG or JPEG logo of 1 MB at most, or a TTF font of 2 MB at most.',
+      enAttente: {
+        reseau:
+          'Offline: what you typed in the open draft is not on the server yet. Switch documents once the network is back, so as not to lose it.',
+        session:
+          'Session expired: sign in again first. What you typed in the open draft is not on the server yet, and switching documents would lose it.',
+        conflit:
+          'This draft is in conflict: reload the saved version or keep yours before switching documents.',
+        refus:
+          'What you typed in the open draft could not be saved: switching documents would lose it. Correct it, then try again.',
+      },
+      injoignable:
+        'The account server is not responding: your invoices, customers and settings could not be read. Your work stays in this browser; reload the page once the network is back.',
+      rechargerPage: 'Reload the page',
     },
     brouillons: {
       titre: 'Drafts',
@@ -1346,6 +1374,8 @@ const en: Strings = {
       chargement: 'Loading…',
       echec: 'The operation did not go through: check your connection, then try again in a moment.',
       introuvable: 'This draft no longer exists: it was issued or deleted elsewhere.',
+      nonEnregistre: 'not saved yet',
+      reprendre: 'Resume',
     },
   },
 };

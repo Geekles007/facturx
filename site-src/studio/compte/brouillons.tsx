@@ -3,9 +3,9 @@
  * conflit — recharger la version du serveur, ou garder la sienne.
  *
  * Chargé par `import()` depuis app.tsx, avec le reste du compte. La conservation est celle du
- * serveur, que `demarrer` a mise derrière `storage` ; elle tient le brouillon courant. Avant de
- * changer de brouillon, ce qui attend le délai d'enregistrement part : la saisie en cours ne se
- * perd pas, et ne s'écrit pas dans le brouillon suivant.
+ * serveur, que `demarrer` a mise derrière `storage` ; elle tient le brouillon ouvert. On ne quitte
+ * un brouillon qu'une fois sa saisie sur le serveur (`quitterLeBrouillon`) : sinon le Studio dit
+ * pourquoi, et l'éditeur reste dessus. Rien de ce qu'on a tapé ne se perd en changeant de document.
  */
 
 import { useEffect, useState } from 'preact/hooks';
@@ -17,10 +17,11 @@ import {
   hydrateForm,
   newInvoiceForm,
 } from '../library.js';
+import { ErreurConservation } from '../persistence.js';
 import { storage } from '../storage.js';
-import { enregistrerMaintenant, persistKeys, store, toast, ui } from '../store.js';
+import { persistKeys, store, toast, ui, useStudio } from '../store.js';
 import { Button, Dialog, IconButton } from '../ui.js';
-import { startDraft } from '../workflows.js';
+import { messageEnAttente, quitterLeBrouillon, startDraft } from '../workflows.js';
 import {
   type Brouillon,
   estPersistenceCompte,
@@ -57,14 +58,20 @@ function affiche(): Brouillon {
   return { form, appearance };
 }
 
-/** Une facture vierge, à l'en-tête de l'entreprise, qui deviendra un nouveau brouillon. */
-async function nouveau(p: PersistenceCompte): Promise<void> {
-  await enregistrerMaintenant();
-  await p.nouveauBrouillon();
+/** Le message d'un échec : la saisie qui ne peut pas partir, ou le serveur qui ne répond pas. */
+function messageDEchec(erreur: unknown): string {
+  if (erreur instanceof ErreurConservation && erreur.code === 'EN_ATTENTE')
+    return messageEnAttente(erreur.detail);
+  return t.compte.brouillons.echec;
+}
+
+/** Une facture vierge, à l'en-tête de l'entreprise, qui devient un nouveau brouillon. */
+async function nouveau(): Promise<boolean> {
+  // Le refus vient tout de suite : lire l'apparence par défaut attendrait le réseau pour rien.
+  if (!(await quitterLeBrouillon())) return false;
   const { company, numbering } = store.get();
-  const apparence = await p.get<Appearance>(persistKeys.appearance).catch(() => undefined);
-  startDraft(newInvoiceForm(company, numbering), fill(defaultAppearance(), apparence));
-  ui({ conflit: false });
+  const apparence = await storage.get<Appearance>(persistKeys.appearance).catch(() => undefined);
+  return startDraft(newInvoiceForm(company, numbering), fill(defaultAppearance(), apparence));
 }
 
 // ---------- conflit ----------
@@ -84,8 +91,8 @@ export async function rechargerBrouillon(): Promise<void> {
     await p.imposerBrouillon(affiche());
     ui({ conflit: false });
     toast(phrases.supprimeAilleurs, 'info', 7000);
-  } catch {
-    toast(t.compte.brouillons.echec, 'error');
+  } catch (erreur) {
+    toast(messageDEchec(erreur), 'error');
   }
 }
 
@@ -97,8 +104,8 @@ export async function garderMaVersion(): Promise<void> {
     await conservation().imposerBrouillon(affiche());
     ui({ conflit: false });
     toast(phrases.garde);
-  } catch {
-    toast(t.compte.brouillons.echec, 'error');
+  } catch (erreur) {
+    toast(messageDEchec(erreur), 'error');
   }
 }
 
@@ -106,6 +113,8 @@ export async function garderMaVersion(): Promise<void> {
 
 export function Brouillons({ open, onClose }: { open: boolean; onClose: () => void }) {
   const phrases = t.compte.brouillons;
+  // Une facture émise ou l'exemple affichés : le brouillon ouvert est dessous, il se rouvre.
+  const vue = useStudio((s) => s.ui.issued !== undefined || s.ui.sample);
   const [liste, setListe] = useState<ResumeBrouillon[]>();
   const [erreur, setErreur] = useState(false);
   const [occupe, setOccupe] = useState(false);
@@ -131,8 +140,8 @@ export function Brouillons({ open, onClose }: { open: boolean; onClose: () => vo
     setOccupe(true);
     try {
       await action(conservation());
-    } catch {
-      toast(phrases.echec, 'error');
+    } catch (raison) {
+      toast(messageDEchec(raison), 'error', 9000);
     } finally {
       setOccupe(false);
     }
@@ -140,7 +149,9 @@ export function Brouillons({ open, onClose }: { open: boolean; onClose: () => vo
 
   const ouvrir = (id: string) =>
     agir(async (p) => {
-      await enregistrerMaintenant();
+      // Le brouillon ouvert (sous une vue) se rouvre tel quel ; un autre attend que la saisie parte.
+      const dejaOuvert = id === p.brouillonCourant()?.id;
+      if (!dejaOuvert && !(await quitterLeBrouillon())) return;
       const b = await p.ouvrirBrouillon(id);
       if (!b) {
         toast(phrases.introuvable, 'error');
@@ -151,18 +162,23 @@ export function Brouillons({ open, onClose }: { open: boolean; onClose: () => vo
       onClose();
     });
 
+  /** La saisie d'un brouillon jamais parvenu au serveur, cachée sous une vue : on la reprend. */
+  const reprendre = (b: Brouillon) => {
+    afficher(b);
+    onClose();
+  };
+
   const creer = () =>
-    agir(async (p) => {
-      await nouveau(p);
-      onClose();
+    agir(async () => {
+      if (await nouveau()) onClose();
     });
 
   const supprimer = (b: ResumeBrouillon) =>
     agir(async (p) => {
       if (!confirm(phrases.supprimerConfirm(b.numero || t.app.untitled))) return;
-      // La saisie en attente part d'abord : sinon elle recréerait le brouillon supprimé.
-      await enregistrerMaintenant();
       const ouvert = p.brouillonCourant()?.id === b.id;
+      // Supprimer un autre brouillon que l'ouvert ne doit rien lui faire perdre : sa saisie part.
+      if (!ouvert && !(await quitterLeBrouillon())) return;
       await p.supprimerBrouillon(b.id);
       const restants = await p.brouillons();
       setListe(restants);
@@ -171,10 +187,14 @@ export function Brouillons({ open, onClose }: { open: boolean; onClose: () => vo
       // une facture vierge s'il n'en reste aucun.
       const suivant = restants[0] && (await p.ouvrirBrouillon(restants[0].id));
       if (suivant) afficher(suivant);
-      else await nouveau(p);
+      else await nouveau();
     });
 
-  const courant = open ? conservation().brouillonCourant()?.id : undefined;
+  const p = open ? conservation() : undefined;
+  const courant = p?.brouillonCourant()?.id;
+  // Une saisie qui attend le serveur, sous une vue, et absente de la liste (jamais créée).
+  const enAttente = vue ? (p?.saisieEnAttente() as Brouillon | undefined) : undefined;
+  const cachee = enAttente && !liste?.some((b) => b.id === courant) ? enAttente : undefined;
 
   return (
     <Dialog
@@ -195,15 +215,31 @@ export function Brouillons({ open, onClose }: { open: boolean; onClose: () => vo
         </p>
       )}
       {!erreur && liste === undefined && <p class="lib-empty">{phrases.chargement}</p>}
-      {liste?.length === 0 && <p class="lib-empty">{phrases.vide}</p>}
-      {liste && liste.length > 0 && (
+      {liste?.length === 0 && !cachee && <p class="lib-empty">{phrases.vide}</p>}
+      {liste && (liste.length > 0 || cachee) && (
         <ul class="lib-list">
+          {cachee && (
+            <li>
+              <div class="lib-main">
+                <strong>
+                  {cachee.form.id || t.app.untitled}
+                  <span class="type-tag">{phrases.nonEnregistre}</span>
+                </strong>
+                <span>{cachee.form.buyer.name || phrases.sansClient}</span>
+              </div>
+              <div class="lib-actions">
+                <Button size="sm" variant="ghost" onClick={() => reprendre(cachee)}>
+                  {phrases.reprendre}
+                </Button>
+              </div>
+            </li>
+          )}
           {liste.map((b) => (
             <li key={b.id}>
               <div class="lib-main">
                 <strong>
                   {b.numero || t.app.untitled}
-                  {b.id === courant && <span class="type-tag">{phrases.ouvert}</span>}
+                  {b.id === courant && !vue && <span class="type-tag">{phrases.ouvert}</span>}
                 </strong>
                 <span>
                   {b.client || phrases.sansClient} · {phrases.modifie(formatDate(b.modifieLe))}
@@ -213,7 +249,7 @@ export function Brouillons({ open, onClose }: { open: boolean; onClose: () => vo
                 <Button
                   size="sm"
                   variant="ghost"
-                  disabled={occupe || b.id === courant}
+                  disabled={occupe || (b.id === courant && !vue)}
                   onClick={() => ouvrir(b.id)}
                 >
                   {phrases.ouvrir}

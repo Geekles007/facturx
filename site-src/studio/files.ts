@@ -1,16 +1,18 @@
 /**
  * Fichiers de l'utilisateur (logo, polices importées) : gardés en mémoire pour la session, et
- * dans IndexedDB quand il répond. Ils ne sont envoyés nulle part.
+ * conservés quand la conservation répond — dans IndexedDB sans compte, sur le serveur avec un
+ * compte (un échec s'y voit et l'écriture repart, comme le reste : `conserver`).
  */
 
 import { storage } from './storage.js';
-import { store } from './store.js';
+import { conserver, store } from './store.js';
 
 const memory = new Map<string, Uint8Array>();
 
 export async function putFile(key: string, bytes: Uint8Array): Promise<void> {
   memory.set(key, bytes);
-  if (store.get().ui.storage === 'ok') await storage.setFile(key, bytes).catch(() => undefined);
+  if (store.get().ui.storage === 'ok')
+    await conserver(`files:${key}`, () => storage.setFile(key, bytes));
 }
 
 export async function getFile(key: string): Promise<Uint8Array | undefined> {

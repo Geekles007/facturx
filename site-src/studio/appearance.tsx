@@ -25,7 +25,7 @@ import { uid } from './model.js';
 import { type Assets, layoutFor } from './pipeline.js';
 import { Thumbnail } from './preview.js';
 import { storage } from './storage.js';
-import { persistKeys, setAppearance, store, toast, useStudio } from './store.js';
+import { conserver, persistKeys, setAppearance, store, toast, useStudio } from './store.js';
 import { Button, Field, FilePick, Icon, Input, Segmented, TextArea, Toggle } from './ui.js';
 
 const SWATCHES = [
@@ -173,6 +173,8 @@ function ColorPicker() {
 
 function FontPicker() {
   const appearance = useStudio((s) => s.appearance);
+  // Le serveur du compte ne garde que des polices TTF (bucket `fichiers`) ; en local, OTF aussi.
+  const formats = useStudio((s) => (s.ui.compte ? '.ttf' : '.ttf,.otf'));
   const { built } = useDerived();
   const [loaded, setLoaded] = useState<Record<string, LoadedFonts>>({});
   const [regular, setRegular] = useState<File | undefined>();
@@ -263,7 +265,7 @@ function FontPicker() {
       <div class="font-import">
         {!regular ? (
           <FilePick
-            accept=".ttf,.otf"
+            accept={formats}
             onFile={(file) => setRegular(file)}
             icon="upload"
             size="sm"
@@ -277,7 +279,7 @@ function FontPicker() {
               <Icon name="file" /> {regular.name}
             </span>
             <FilePick
-              accept=".ttf,.otf"
+              accept={formats}
               onFile={(bold) => importFont(regular, bold)}
               icon="upload"
               size="sm"
@@ -505,8 +507,11 @@ export function AppearancePanel() {
   }, [appearance.logo?.key]);
   const saveDefault = () => {
     const current = store.get().appearance;
-    storage.set(persistKeys.appearance, current).catch(() => undefined);
-    toast(t.appearance.defaultSaved);
+    void conserver(persistKeys.appearance, () => storage.set(persistKeys.appearance, current)).then(
+      (ok) => {
+        if (ok) toast(t.appearance.defaultSaved);
+      },
+    );
   };
   return (
     <div class="panel appearance">

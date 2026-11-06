@@ -18,8 +18,10 @@ import {
   fill,
   hydrateForm,
 } from './library.js';
+import { estDuCompte } from './persistence.js';
 import { sampleForm } from './sample.js';
-import { DELAI_COMPTE_MS, loadPersisted, startPersistence, store } from './store.js';
+import { storage } from './storage.js';
+import { DELAI_COMPTE_MS, type Loaded, loadPersisted, startPersistence, store } from './store.js';
 
 async function boot(): Promise<void> {
   const root = document.getElementById('studio');
@@ -48,6 +50,20 @@ async function boot(): Promise<void> {
         storage: 'ok',
         sample: draft ? draft.sample === true : true,
         issued: draft?.issued,
+      },
+    });
+  } else if (ui.compte && estDuCompte(storage)) {
+    // Le serveur du compte n'a pas répondu à la lecture : rien n'en est lu, donc rien n'y part
+    // (`injoignable`). La saisie gardée dans ce navigateur reprend, et le Studio le dit.
+    const local = (await storage.brouillonLocal().catch(() => undefined)) as Loaded['draft'];
+    store.set({
+      form: local ? hydrateForm(local.form) : sampleForm(),
+      appearance: local ? fill(defaultAppearance(), local.appearance) : defaultAppearance(),
+      ui: {
+        ...ui,
+        storage: 'injoignable',
+        sample: local ? local.sample === true : true,
+        issued: local?.issued,
       },
     });
   } else {

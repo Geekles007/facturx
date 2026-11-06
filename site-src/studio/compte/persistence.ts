@@ -8,12 +8,17 @@
  *   - `numbering` → `numerotation` : `gabarit`, `annuelle`, et `prochain` quand le Studio l'a changé
  *     (un rang périmé, lu avant une émission, ne repart pas). Jamais `annee` : seule l'émission
  *     change d'année ;
- *   - `draft` → le brouillon courant (`brouillons`), dont l'identifiant reste dans ce navigateur
- *     (`brouillon-courant-<entreprise>`) ; sans lui, une écriture insère un brouillon. Chaque
- *     écriture est d'abord recopiée dans IndexedDB (`draft-compte-<entreprise>`) : ce miroir garde
- *     la saisie quand le serveur ne la prend pas (réseau, session expirée, conflit). La mise à jour
- *     ne passe que sur la version lue (`update … where id and version`) : si un autre onglet a
- *     enregistré entre-temps, rien n'est écrasé et l'écriture lève `BROUILLON_MODIFIE` ;
+ *   - `draft` → le brouillon ouvert (`brouillons`), dont l'identifiant reste dans ce navigateur
+ *     (`brouillon-courant-<entreprise>`) ; sans lui, une écriture insère un brouillon, sous un
+ *     identifiant tiré d'avance (rejouée après une réponse perdue, elle retrouve sa ligne). La
+ *     saisie est recopiée dans IndexedDB (`draft-compte-<entreprise>`) avant l'envoi : ce miroir la
+ *     garde quand le serveur ne la prend pas (réseau, session expirée, conflit). La mise à jour ne
+ *     passe que sur la version lue (`update … where id and version`) : si un autre onglet a
+ *     enregistré entre-temps, rien n'est écrasé et l'écriture lève `BROUILLON_MODIFIE`. Une facture
+ *     émise ou l'exemple affichés sont une vue, gardée à part (`vue-compte-<entreprise>`) : ils ne
+ *     touchent ni au brouillon ouvert ni à son miroir. On ne change de brouillon (nouveau, ouvrir)
+ *     qu'une fois la saisie du brouillon ouvert sur le serveur : sinon `EN_ATTENTE`, et rien ne
+ *     bouge ;
  *   - `clients` et `products` → `clients` et `produits`, de clé `(entreprise_id, id)` : l'`uid`
  *     devient `id`, `nom` et `email` sont tirés de la fiche ;
  *   - `invoices` → `factures`, en lecture : une facture s'émet par le serveur ;
@@ -39,7 +44,12 @@ import type {
   SavedInvoice,
 } from '../library.js';
 import type { InvoiceForm } from '../model.js';
-import { type CodeConservation, ErreurConservation, type Persistence } from '../persistence.js';
+import {
+  type CodeConservation,
+  type ConservationDuCompte,
+  ErreurConservation,
+  type Persistence,
+} from '../persistence.js';
 import { indexedDbPersistence as local } from '../storage.js';
 import type { Loaded } from '../store.js';
 
@@ -47,11 +57,13 @@ import type { Loaded } from '../store.js';
 export type Brouillon = NonNullable<Loaded['draft']>;
 
 /**
- * Le miroir local du brouillon : la dernière saisie, le brouillon du serveur et la version sur
- * lesquels elle repose, et si le serveur l'a reçue.
+ * Le miroir local du brouillon ouvert : la dernière saisie, le brouillon du serveur et la version
+ * sur lesquels elle repose (ou l'identifiant prévu, s'il n'est pas encore créé), et si le serveur
+ * l'a reçue.
  */
 export type Miroir = Brouillon & {
   brouillon?: { id: string; version: number } | undefined;
+  idPrevu?: string | undefined;
   envoye: boolean;
 };
 
@@ -66,17 +78,19 @@ export interface ResumeBrouillon {
 }
 
 /** La conservation du compte, avec de quoi tenir plusieurs brouillons. */
-export interface PersistenceCompte extends Persistence {
+export interface PersistenceCompte extends Persistence, ConservationDuCompte {
   readonly entrepriseId: string;
   /** Le brouillon ouvert sur le serveur, et la version lue ; rien tant qu'il n'est pas créé. */
   brouillonCourant(): { id: string; version: number } | undefined;
   /** Les brouillons de l'entreprise, le plus récemment modifié d'abord. */
   brouillons(): Promise<ResumeBrouillon[]>;
-  /** Ouvre un brouillon : il devient le brouillon courant. Rien s'il n'existe plus. */
+  /**
+   * Ouvre un brouillon : il devient le brouillon ouvert. Rien s'il n'existe plus. Lève
+   * `EN_ATTENTE` si la saisie du brouillon ouvert ne peut pas partir avant.
+   */
   ouvrirBrouillon(id: string): Promise<Brouillon | undefined>;
+  /** Supprime un brouillon ; si c'est l'ouvert, sa saisie s'en va avec lui (c'est voulu). */
   supprimerBrouillon(id: string): Promise<void>;
-  /** Plus de brouillon courant : la prochaine écriture en crée un. */
-  nouveauBrouillon(): Promise<void>;
   /** Après un conflit : la version du serveur, qui devient celle sur laquelle on écrit. */
   rechargerBrouillon(): Promise<Brouillon | undefined>;
   /** Après un conflit : `b` remplace la version du serveur, relue juste avant. */
@@ -238,24 +252,65 @@ async function toutLire<T>(
 
 // ---------- la conservation ----------
 
+/**
+ * Un document : le brouillon du serveur auquel la saisie appartient (`id`, et la version sur
+ * laquelle la prochaine écriture passe), ou celui qu'on va créer sous `idPrevu`. Une écriture
+ * emporte son document : partie en retard, elle va au bon brouillon, jamais à celui qu'on a ouvert
+ * entre-temps.
+ */
+interface Document {
+  idPrevu: string;
+  id?: string | undefined;
+  version?: number | undefined;
+  /** Texte canonique de ce que le serveur en a : un contenu identique ne repart pas. */
+  surLeServeur?: string | undefined;
+  /** La dernière saisie reçue pour ce document, et si le serveur l'a. */
+  derniere?: Brouillon | undefined;
+  envoye: boolean;
+  /** Supprimé par l'utilisateur : ce qui restait à envoyer ne part plus. */
+  supprime?: boolean;
+}
+
+const documentNeuf = (): Document => ({ idPrevu: crypto.randomUUID(), envoye: true });
+
+/** Une facture émise ou l'exemple : ce qui s'affiche à la place d'un brouillon, sans en être un. */
+const estUneVue = (b: Brouillon): boolean => b.issued !== undefined || b.sample === true;
+
+const corps = (b: Brouillon) => ({
+  form: versPortable(b.form),
+  appearance: versPortable(b.appearance),
+});
+
+const saisieDu = (m: Miroir): Brouillon => {
+  const { brouillon: _b, idPrevu: _i, envoye: _e, ...b } = m;
+  return b;
+};
+
+const documentDu = (m: Miroir): Document => ({
+  idPrevu: m.idPrevu ?? crypto.randomUUID(),
+  id: m.brouillon?.id,
+  version: m.brouillon?.version,
+  derniere: saisieDu(m),
+  envoye: m.envoye,
+});
+
 export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): PersistenceCompte {
   const E = entrepriseId;
   const cleCourant = `brouillon-courant-${E}`;
   const cleMiroir = `draft-compte-${E}`;
+  const cleVue = `vue-compte-${E}`;
   /** Les clés de `kv` sans place sur le serveur : un objet, dans ce navigateur. */
   const cleLocale = `kv-compte-${E}`;
 
-  /** Le brouillon ouvert sur le serveur, et la version sur laquelle la prochaine écriture passe. */
-  let courant: { id: string; version: number } | undefined;
-  /** Texte canonique de ce que le serveur a de ce brouillon : un contenu identique ne repart pas. */
-  let surLeServeur: string | undefined;
-  /** La dernière saisie reçue : une écriture dépassée par une plus récente ne part pas. */
-  let derniere: Brouillon | undefined;
+  /** Le document ouvert dans l'éditeur (ou sous la vue affichée). */
+  let doc: Document = documentNeuf();
+  /** Le document de chaque saisie reçue : rejouée plus tard, elle n'en change pas. */
+  const documents = new WeakMap<Brouillon, Document>();
   /** La numérotation telle que le serveur l'a rendue en dernier. */
   let numerotation: Numbering | undefined;
 
   /**
-   * Les opérations sur le brouillon passent une à une : deux écritures simultanées partiraient
+   * Les opérations sur les brouillons passent une à une : deux écritures simultanées partiraient
    * sur la même version, et la seconde se croirait en conflit avec la première.
    */
   let file: Promise<unknown> = Promise.resolve();
@@ -272,170 +327,254 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
       () => undefined,
     );
 
-  function ecrireMiroir(b: Brouillon, envoye: boolean): Promise<void> {
-    const miroir: Miroir = { ...b, brouillon: courant && { ...courant }, envoye };
+  /** Le miroir du document ouvert, tel qu'il est maintenant. */
+  function ecrireMiroir(): Promise<void> {
+    const d = doc;
+    if (!d.derniere) return Promise.resolve();
+    const miroir: Miroir = {
+      ...d.derniere,
+      brouillon:
+        d.id !== undefined && d.version !== undefined
+          ? { id: d.id, version: d.version }
+          : undefined,
+      idPrevu: d.idPrevu,
+      envoye: d.envoye,
+    };
     return auMieux(local.set(cleMiroir, miroir));
   }
 
-  /** Le brouillon courant : celui-ci désormais, ou plus aucun. */
-  async function suivre(ligne: { id: string; version: number } | undefined): Promise<void> {
-    courant = ligne && { id: ligne.id, version: ligne.version };
-    await auMieux(ligne ? local.set(cleCourant, ligne.id) : local.remove('kv', cleCourant));
+  /** `brouillon-courant` suit le document ouvert. */
+  async function suivreCourant(d: Document): Promise<void> {
+    if (d !== doc) return;
+    await auMieux(d.id ? local.set(cleCourant, d.id) : local.remove('kv', cleCourant));
   }
 
-  const lireLigne = (l: LigneBrouillon): Brouillon => ({
-    form: depuisPortable<InvoiceForm>(l.form),
-    appearance: depuisPortable<Appearance>(l.appearance),
-  });
+  async function lireLigne(id: string): Promise<LigneBrouillon | undefined> {
+    const r = await sb
+      .from('brouillons')
+      .select('id, form, appearance, version')
+      .eq('entreprise_id', E)
+      .eq('id', id)
+      .maybeSingle<LigneBrouillon>();
+    if (r.error) throw echec(r);
+    return r.data ?? undefined;
+  }
 
-  /** Ouvre la ligne lue : elle devient le brouillon courant, et le miroir la recopie. */
+  /** Ouvre la ligne lue : elle devient le document ouvert, et le miroir la recopie. */
   async function adopter(l: LigneBrouillon): Promise<Brouillon> {
-    const b = lireLigne(l);
-    await suivre(l);
-    surLeServeur = canonique({ form: l.form, appearance: l.appearance });
-    derniere = b;
-    await ecrireMiroir(b, true);
+    const b: Brouillon = {
+      form: depuisPortable<InvoiceForm>(l.form),
+      appearance: depuisPortable<Appearance>(l.appearance),
+    };
+    doc = {
+      idPrevu: l.id,
+      id: l.id,
+      version: l.version,
+      surLeServeur: canonique({ form: l.form, appearance: l.appearance }),
+      derniere: b,
+      envoye: true,
+    };
+    documents.set(b, doc);
+    await suivreCourant(doc);
+    await auMieux(local.remove('kv', cleVue));
+    await ecrireMiroir();
     return b;
   }
 
-  /** Envoie `b` : insertion sans brouillon courant, sinon mise à jour sur la version lue. */
-  async function envoyer(b: Brouillon): Promise<void> {
-    const corps = { form: versPortable(b.form), appearance: versPortable(b.appearance) };
-    const texte = canonique(corps);
-    if (!courant) {
+  /** Recopie `b` sans l'envoyer : la vue à part, la saisie d'un brouillon dans son miroir. */
+  async function garder(b: Brouillon): Promise<void> {
+    if (estUneVue(b)) {
+      await auMieux(local.set(cleVue, b));
+      return;
+    }
+    doc.derniere = b;
+    documents.set(b, doc);
+    doc.envoye = doc.surLeServeur !== undefined && canonique(corps(b)) === doc.surLeServeur;
+    // L'éditeur montre un brouillon : la vue gardée ne s'affichera plus au démarrage.
+    await auMieux(local.remove('kv', cleVue));
+    await ecrireMiroir();
+  }
+
+  /**
+   * Envoie `b`, la saisie du document `d` : insertion sous `idPrevu` s'il n'est pas créé (une
+   * ligne déjà là est celle d'une insertion dont la réponse s'est perdue), puis mise à jour sur la
+   * version lue si le serveur n'a pas déjà ce contenu.
+   */
+  async function envoyer(b: Brouillon, d: Document): Promise<void> {
+    if (d.supprime) return;
+    const c = corps(b);
+    const texte = canonique(c);
+    if (d.id !== undefined && d.version === undefined) {
+      // Ouvert sans avoir été lu (sous une vue, au démarrage) : sa version d'abord.
+      const l = await lireLigne(d.id);
+      if (l) {
+        d.version = l.version;
+        d.surLeServeur = canonique({ form: l.form, appearance: l.appearance });
+      } else Object.assign(d, { idPrevu: crypto.randomUUID(), id: undefined });
+    }
+    if (d.id === undefined) {
       const r = await sb
         .from('brouillons')
-        .insert({ entreprise_id: E, ...corps })
+        .insert({ id: d.idPrevu, entreprise_id: E, ...c })
         .select('id, version')
         .single<{ id: string; version: number }>();
-      if (r.error) throw echec(r);
-      await suivre(r.data);
-    } else if (texte !== surLeServeur) {
+      if (!r.error) {
+        Object.assign(d, { id: r.data.id, version: r.data.version, surLeServeur: texte });
+      } else if (r.status === 409) {
+        const l = await lireLigne(d.idPrevu);
+        if (!l) throw echec(r);
+        Object.assign(d, {
+          id: l.id,
+          version: l.version,
+          surLeServeur: canonique({ form: l.form, appearance: l.appearance }),
+        });
+      } else throw echec(r);
+      await suivreCourant(d);
+    }
+    if (texte !== d.surLeServeur) {
       const r = await sb
         .from('brouillons')
-        .update(corps)
+        .update(c)
         .eq('entreprise_id', E)
-        .eq('id', courant.id)
-        .eq('version', courant.version)
+        .eq('id', d.id as string)
+        .eq('version', d.version as number)
         .select('version');
       if (r.error) throw echec(r);
       const [ligne] = r.data as { version: number }[];
       // Aucune ligne touchée : la version a changé (ou le brouillon n'existe plus). Rien d'écrasé.
       if (!ligne) throw new ErreurConservation('BROUILLON_MODIFIE');
-      courant = { ...courant, version: ligne.version };
+      d.version = ligne.version;
+      d.surLeServeur = texte;
     }
-    surLeServeur = texte;
-    // Le miroir suit : la saisie la plus récente, sur la version qu'on vient d'obtenir.
-    if (derniere) await ecrireMiroir(derniere, derniere === b);
+    if (d.derniere === b) d.envoye = true;
+    if (d === doc) await ecrireMiroir();
   }
 
-  /**
-   * Une saisie que le serveur n'a pas reçue : on la renvoie, sans rien lever si elle échoue encore
-   * (le miroir la garde, la prochaine écriture réessaie). Appelée depuis une opération de la file.
-   */
-  const rattraper = (b: Brouillon): Promise<void> => auMieux(envoyer(b));
-
-  async function enregistrerBrouillon(b: Brouillon): Promise<void> {
-    derniere = b;
-    if (b.issued !== undefined || b.sample) {
-      // Une facture émise affichée, ou l'exemple pas encore modifié : ce n'est pas un brouillon
-      // du serveur. Le brouillon courant y reste, dans la liste ; le miroir garde la vue.
-      await enFile(async () => {
-        await suivre(undefined);
-        surLeServeur = undefined;
-        await ecrireMiroir(b, true);
-      });
+  async function enregistrer(b: Brouillon): Promise<void> {
+    // Une vue reste dans ce navigateur : le brouillon ouvert et son miroir n'en savent rien.
+    if (estUneVue(b)) {
+      await auMieux(local.set(cleVue, b));
       return;
     }
-    // Le miroir d'abord, sans attendre le serveur : c'est lui qui garde la saisie.
-    await ecrireMiroir(b, false);
+    // Une saisie déjà reçue (rejouée par le magasin) va au document où elle a été tapée, sans rien
+    // changer au miroir ni à la vue affichée ; une saisie nouvelle vient de l'éditeur.
+    const connue = documents.get(b);
+    const d = connue ?? doc;
+    if (d.supprime) return;
+    if (!connue) await garder(b);
     await enFile(async () => {
-      if (derniere !== b) return; // Une saisie plus récente part après celle-ci.
-      await envoyer(b);
+      // Rien n'est sauté : part la saisie la plus récente de ce document (celle-ci, ou une plus
+      // neuve arrivée entre-temps, peut-être seulement recopiée dans le miroir) ; la suivante
+      // trouvera le serveur à jour et n'enverra rien.
+      if (d.supprime) return;
+      await envoyer(d.derniere ?? b, d);
     });
   }
 
   /**
-   * Le brouillon à afficher au démarrage. S'il a une saisie que le serveur n'a pas reçue (réseau,
-   * session expirée) et qui repose sur la version du serveur, c'est la plus récente : elle est
-   * affichée et rejouée. Si le serveur a changé depuis, le Studio affiche la saisie locale, sur
-   * son ancienne version : rien n'est écrasé, et le prochain enregistrement signale le conflit.
+   * Avant de changer de document (dans la file) : la saisie du document ouvert doit être sur le
+   * serveur. Sinon on l'envoie ; si elle ne part pas, `EN_ATTENTE` avec la raison, et rien ne
+   * change : la saisie reste dans le miroir, et l'éditeur sur son document.
    */
-  async function lireBrouillon(): Promise<Brouillon | undefined> {
-    const [id, miroir] = await Promise.all([
-      local.get<string>(cleCourant).catch(() => undefined),
-      local.get<Miroir>(cleMiroir).catch(() => undefined),
-    ]);
-    const saisie = (m: Miroir): Brouillon => {
-      const { brouillon: _, envoye: __, ...b } = m;
-      return b;
-    };
-    /** Rien d'ouvert dans ce navigateur : le brouillon modifié le plus récemment, s'il y en a un. */
-    const plusRecent = async (): Promise<Brouillon | undefined> => {
-      const r = await sb
-        .from('brouillons')
-        .select('id, form, appearance, version')
-        .eq('entreprise_id', E)
-        .order('modifie_le', { ascending: false })
-        .limit(1)
-        .maybeSingle<LigneBrouillon>();
-      if (r.error) throw echec(r);
-      return r.data ? adopter(r.data) : undefined;
-    };
-    if (!id) {
-      if (miroir && !miroir.brouillon) {
-        // Une facture émise ou l'exemple affiché, ou un brouillon jamais parvenu au serveur.
-        const b = saisie(miroir);
-        derniere = b;
-        if (!miroir.envoye) await rattraper(b);
-        return b;
-      }
-      return plusRecent();
+  async function assurerEnvoi(): Promise<void> {
+    const d = doc;
+    if (d.supprime || d.envoye || !d.derniere) return;
+    try {
+      await envoyer(d.derniere, d);
+    } catch (erreur) {
+      const raison = erreur instanceof ErreurConservation ? erreur.code : 'RESEAU';
+      throw new ErreurConservation('EN_ATTENTE', raison);
     }
+  }
 
+  /**
+   * Au démarrage, une saisie que le serveur n'a pas reçue : est-elle toujours en avance sur lui ?
+   * Même version : elle s'y applique. Même contenu sur une autre version : c'est notre propre
+   * écriture, dont la réponse s'est perdue, et rien n'est en conflit. Brouillon disparu (émis ou
+   * supprimé ailleurs) : elle repartira en nouveau brouillon, sous un nouvel identifiant (l'ancien a
+   * pu nommer une facture émise). Sinon le serveur a changé depuis : elle reste sur son ancienne
+   * version, et son envoi signalera le conflit sans rien écraser.
+   */
+  async function verifier(d: Document): Promise<void> {
+    if (d.id === undefined || !d.derniere) return;
+    const l = await lireLigne(d.id);
+    if (!l) {
+      Object.assign(d, {
+        idPrevu: crypto.randomUUID(),
+        id: undefined,
+        version: undefined,
+        surLeServeur: undefined,
+      });
+      return;
+    }
+    const serveur = canonique({ form: l.form, appearance: l.appearance });
+    const identique = serveur === canonique(corps(d.derniere));
+    if (l.version === d.version || identique) {
+      d.version = l.version;
+      d.surLeServeur = serveur;
+      if (identique) d.envoye = true;
+    }
+  }
+
+  /** Rien d'ouvert dans ce navigateur : le brouillon modifié le plus récemment, s'il y en a un. */
+  async function plusRecent(): Promise<Brouillon | undefined> {
     const r = await sb
       .from('brouillons')
       .select('id, form, appearance, version')
       .eq('entreprise_id', E)
-      .eq('id', id)
+      .order('modifie_le', { ascending: false })
+      .limit(1)
       .maybeSingle<LigneBrouillon>();
     if (r.error) throw echec(r);
-    const enAttente = miroir && miroir.brouillon?.id === id && !miroir.envoye ? miroir : undefined;
-    if (!r.data) {
-      // Émis ou supprimé ailleurs. Une saisie qui n'y était pas arrivée repart en nouveau brouillon.
-      await suivre(undefined);
-      if (!enAttente) return plusRecent();
-      const b = saisie(enAttente);
-      derniere = b;
-      await rattraper(b);
-      return b;
-    }
-    if (!enAttente) return adopter(r.data);
+    if (r.data) return adopter(r.data);
+    doc = documentNeuf();
+    await suivreCourant(doc);
+    return undefined;
+  }
 
-    const b = saisie(enAttente);
-    derniere = b;
-    surLeServeur = canonique({ form: r.data.form, appearance: r.data.appearance });
-    if (enAttente.brouillon?.version === r.data.version) {
-      await suivre(r.data);
-      await rattraper(b);
-    } else {
-      courant = enAttente.brouillon && { ...enAttente.brouillon };
+  /**
+   * Ce qui s'affiche au démarrage. Une saisie que le serveur n'a pas reçue désigne le document
+   * ouvert, quoi que dise `brouillon-courant` : le magasin la renvoie aussitôt (`saisieEnAttente`).
+   * Une vue gardée (facture émise, exemple) s'affiche de nouveau ; sinon le brouillon courant, ou le
+   * plus récent du serveur.
+   */
+  async function lireBrouillon(): Promise<Brouillon | undefined> {
+    const [id, miroir, vue] = await Promise.all([
+      local.get<string>(cleCourant).catch(() => undefined),
+      local.get<Miroir>(cleMiroir).catch(() => undefined),
+      local.get<Brouillon>(cleVue).catch(() => undefined),
+    ]);
+    if (miroir && !miroir.envoye) {
+      doc = documentDu(miroir);
+      if (doc.derniere) documents.set(doc.derniere, doc);
+      await verifier(doc);
+      await suivreCourant(doc);
+      await ecrireMiroir();
+      return vue ?? doc.derniere;
     }
-    return b;
+    if (vue) {
+      // Le brouillon courant reste celui de la liste ; sa version se lira à sa réouverture.
+      doc = id ? { idPrevu: crypto.randomUUID(), id, envoye: true } : documentNeuf();
+      return vue;
+    }
+    if (id) {
+      const l = await lireLigne(id);
+      if (l) return adopter(l);
+    }
+    return plusRecent();
   }
 
   /** Le brouillon courant tel que le serveur l'a, sans rien changer : pour la sauvegarde. */
   async function brouillonPourSauvegarde(): Promise<Brouillon | undefined> {
-    const id = courant?.id ?? (await local.get<string>(cleCourant).catch(() => undefined));
+    const id = doc.id ?? (await local.get<string>(cleCourant).catch(() => undefined));
     if (!id) return undefined;
-    const r = await sb
-      .from('brouillons')
-      .select('id, form, appearance, version')
-      .eq('entreprise_id', E)
-      .eq('id', id)
-      .maybeSingle<LigneBrouillon>();
-    if (r.error) throw echec(r);
-    return r.data ? lireLigne(r.data) : undefined;
+    const l = await lireLigne(id);
+    return l
+      ? {
+          form: depuisPortable<InvoiceForm>(l.form),
+          appearance: depuisPortable<Appearance>(l.appearance),
+        }
+      : undefined;
   }
 
   // ---------- kv : entreprise, apparence, numérotation, et ce qui reste local ----------
@@ -580,7 +719,7 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
           await ecrireNumerotation(value as Numbering);
           break;
         case 'draft':
-          await enregistrerBrouillon(value as Brouillon);
+          await enregistrer(value as Brouillon);
           break;
         default:
           await changerLocal((valeurs) => {
@@ -705,7 +844,7 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
           await ecrireEntreprise({ apparence_defaut: null });
           break;
         case 'draft': {
-          const id = courant?.id;
+          const id = doc.id;
           if (id) await persistance.supprimerBrouillon(id);
           break;
         }
@@ -779,7 +918,23 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
 
     // ---------- plusieurs brouillons ----------
 
-    brouillonCourant: () => courant && { ...courant },
+    garderBrouillon: (valeur) => garder(valeur as Brouillon),
+
+    saisieEnAttente: () => (doc.envoye || doc.supprime ? undefined : doc.derniere),
+
+    async brouillonLocal(): Promise<Brouillon | undefined> {
+      const [miroir, vue] = await Promise.all([
+        local.get<Miroir>(cleMiroir).catch(() => undefined),
+        local.get<Brouillon>(cleVue).catch(() => undefined),
+      ]);
+      if (miroir) doc = documentDu(miroir);
+      return vue ?? (miroir ? saisieDu(miroir) : undefined);
+    },
+
+    brouillonCourant: () =>
+      doc.id !== undefined && doc.version !== undefined
+        ? { id: doc.id, version: doc.version }
+        : undefined,
 
     async brouillons(): Promise<ResumeBrouillon[]> {
       const lignes = await toutLire<{
@@ -808,65 +963,57 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
 
     ouvrirBrouillon: (id) =>
       enFile(async () => {
-        const r = await sb
-          .from('brouillons')
-          .select('id, form, appearance, version')
-          .eq('entreprise_id', E)
-          .eq('id', id)
-          .maybeSingle<LigneBrouillon>();
-        if (r.error) throw echec(r);
-        return r.data ? adopter(r.data) : undefined;
+        if (id === doc.id && doc.derniere && !doc.supprime) {
+          // Le document déjà ouvert (sous une vue, peut-être) : sa saisie, envoyée ou non.
+          await auMieux(local.remove('kv', cleVue));
+          return doc.derniere;
+        }
+        await assurerEnvoi();
+        const l = await lireLigne(id);
+        return l ? adopter(l) : undefined;
       }),
 
     supprimerBrouillon: (id) =>
       enFile(async () => {
         const r = await sb.from('brouillons').delete().eq('entreprise_id', E).eq('id', id);
         if (r.error) throw echec(r);
-        if (courant?.id === id) {
-          await suivre(undefined);
-          surLeServeur = undefined;
-          derniere = undefined;
+        if (doc.id === id) {
+          doc.supprime = true;
+          doc = documentNeuf();
+          await suivreCourant(doc);
           await auMieux(local.remove('kv', cleMiroir));
         }
       }),
 
     nouveauBrouillon: () =>
       enFile(async () => {
-        await suivre(undefined);
-        surLeServeur = undefined;
+        await assurerEnvoi();
+        doc = documentNeuf();
+        await suivreCourant(doc);
       }),
 
     rechargerBrouillon: () =>
       enFile(async () => {
-        if (!courant) return undefined;
-        const r = await sb
-          .from('brouillons')
-          .select('id, form, appearance, version')
-          .eq('entreprise_id', E)
-          .eq('id', courant.id)
-          .maybeSingle<LigneBrouillon>();
-        if (r.error) throw echec(r);
-        return r.data ? adopter(r.data) : undefined;
+        if (doc.id === undefined) return undefined;
+        const l = await lireLigne(doc.id);
+        return l ? adopter(l) : undefined;
       }),
 
     imposerBrouillon: (b) =>
       enFile(async () => {
-        derniere = b;
-        await ecrireMiroir(b, false);
-        if (courant) {
-          const r = await sb
-            .from('brouillons')
-            .select('version')
-            .eq('entreprise_id', E)
-            .eq('id', courant.id)
-            .maybeSingle<{ version: number }>();
-          if (r.error) throw echec(r);
+        const d = doc;
+        d.derniere = b;
+        documents.set(b, d);
+        d.envoye = false;
+        await ecrireMiroir();
+        if (d.id !== undefined) {
+          const l = await lireLigne(d.id);
           // Supprimé ailleurs entre-temps : la saisie devient un nouveau brouillon.
-          if (r.data) courant = { ...courant, version: r.data.version };
-          else await suivre(undefined);
+          if (l) Object.assign(d, { version: l.version, surLeServeur: undefined });
+          else
+            Object.assign(d, { idPrevu: crypto.randomUUID(), id: undefined, version: undefined });
         }
-        surLeServeur = undefined;
-        await envoyer(b);
+        await envoyer(b, d);
       }),
   };
   return persistance;

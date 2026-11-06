@@ -16,10 +16,11 @@ import {
   type SavedInvoice,
 } from './library.js';
 import { buildInvoice, type InvoiceForm, isoToday, uid } from './model.js';
+import { ErreurConservation, estDuCompte } from './persistence.js';
 import type { Assets } from './pipeline.js';
 import { buildFacturX, download, fileStem } from './pipeline.js';
 import { storage } from './storage.js';
-import { store, toast, ui } from './store.js';
+import { enregistrerMaintenant, store, toast, ui } from './store.js';
 
 /** Nouveaux identifiants d'interface pour chaque élément de liste d'un formulaire copié. */
 function refreshUids(form: InvoiceForm): InvoiceForm {
@@ -163,8 +164,46 @@ export function openIssued(saved: SavedInvoice): void {
   }));
 }
 
-/** Remplace la facture affichée par un nouveau brouillon. */
-export function startDraft(form: InvoiceForm, appearance?: Appearance): void {
+/** Pourquoi la saisie du brouillon ouvert n'est pas partie (`raison` : un code de la conservation). */
+export function messageEnAttente(raison?: string): string {
+  const s = store.get().ui;
+  const phrases = t.compte.conservation.enAttente;
+  if (s.compte?.session === 'expiree' || raison === 'SESSION') return phrases.session;
+  if (s.conflit || raison === 'BROUILLON_MODIFIE') return phrases.conflit;
+  if (s.reseau === 'hors-ligne' || s.storage === 'injoignable' || raison === 'RESEAU')
+    return phrases.reseau;
+  return phrases.refus;
+}
+
+/**
+ * En mode compte, avant de quitter le brouillon ouvert : sa saisie part au serveur. Faux, avec un
+ * message qui dit pourquoi, si elle ne peut pas partir (hors ligne, session expirée, conflit) :
+ * changer de document la perdrait, on reste donc sur lui. Sans compte, toujours vrai.
+ */
+export async function quitterLeBrouillon(): Promise<boolean> {
+  if (!store.get().ui.compte || !estDuCompte(storage)) return true;
+  if (await enregistrerMaintenant()) return true;
+  toast(messageEnAttente(), 'error', 9000);
+  return false;
+}
+
+/**
+ * Remplace la facture affichée par un nouveau brouillon. En mode compte, c'en est un de plus : le
+ * brouillon ouvert part d'abord au serveur et reste dans la liste ; s'il ne peut pas partir, rien
+ * ne change et le Studio dit pourquoi. Vrai si la facture a été remplacée. Sans compte, rien
+ * n'attend : le remplacement est immédiat, comme toujours.
+ */
+export async function startDraft(form: InvoiceForm, appearance?: Appearance): Promise<boolean> {
+  if (store.get().ui.compte && estDuCompte(storage)) {
+    if (!(await quitterLeBrouillon())) return false;
+    try {
+      await storage.nouveauBrouillon();
+    } catch (erreur) {
+      const raison = erreur instanceof ErreurConservation ? erreur.detail : undefined;
+      toast(messageEnAttente(raison), 'error', 9000);
+      return false;
+    }
+  }
   store.set((s) => ({
     form,
     ...(appearance ? { appearance } : {}),
@@ -174,8 +213,10 @@ export function startDraft(form: InvoiceForm, appearance?: Appearance): void {
       library: undefined,
       tab: 'content',
       sample: false,
+      conflit: false,
       focus: undefined,
     },
   }));
   ui({ mobile: 'edit' });
+  return true;
 }
