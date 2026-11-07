@@ -24,17 +24,42 @@ export const DELAI_GRACE_JOURS = 30;
 
 const JOUR_MS = 86_400_000;
 
-/** La date de l'export réussi pendant cette session (ISO), s'il y en a eu un. */
-let exportFaitLe: string | undefined;
-
-/** Retient qu'un export vient d'aboutir : la suppression peut se demander. */
-export function retenirExport(): void {
-  exportFaitLe = new Date().toISOString();
+/** Ce que l'archive d'un export contient de factures, et ce qui lui manque de leurs PDF. */
+export interface ContenuExport {
+  factures: number;
+  pdfManquants: number;
 }
 
-/** Ce que cette session sait de l'export : sa date, s'il a abouti. */
-export function exportDeLaSession(): { exportFaitLe?: string } {
-  return exportFaitLe ? { exportFaitLe } : {};
+/** L'export réussi pendant cette session, s'il y en a eu un : sa date (ISO) et son contenu. */
+let exportFait: (ContenuExport & { exportFaitLe: string }) | undefined;
+
+/**
+ * Retient qu'un export vient d'aboutir, avec ce que l'archive contient : la suppression peut se
+ * demander, et sa confirmation dira ce qui manque à l'archive.
+ */
+export function retenirExport(contenu: ContenuExport = { factures: 0, pdfManquants: 0 }): void {
+  exportFait = { exportFaitLe: new Date().toISOString(), ...contenu };
+}
+
+/** Ce que cette session sait de l'export, s'il a abouti : sa date, ses factures, ses PDF manquants. */
+export function exportDeLaSession(): Partial<ContenuExport> & { exportFaitLe?: string } {
+  return exportFait ? { ...exportFait } : {};
+}
+
+/**
+ * Les factures du compte qui ne sont pas dans une archive qui en contenait `exportees` : celles
+ * émises (ou importées) depuis l'export, ici ou ailleurs. Compté sur le serveur, sans dépendre de
+ * l'horloge de ce navigateur. Lève si le serveur ne répond pas.
+ */
+export async function facturesHorsDeLArchive(exportees: number): Promise<number> {
+  const entrepriseId = store.get().ui.compte?.entrepriseId;
+  if (!entrepriseId) return 0;
+  const { count, error } = await client()
+    .from('factures')
+    .select('id', { count: 'exact', head: true })
+    .eq('entreprise_id', entrepriseId);
+  if (error || count === null) throw new Error(t.compte.suppression.reseau);
+  return Math.max(0, count - exportees);
 }
 
 /** Vrai seulement si un export a abouti pendant cette session : sans lui, pas de demande. */
@@ -66,8 +91,11 @@ async function refus(erreur: unknown): Promise<Error> {
   if (http.status === 409 && code === 'SUPPRESSION') {
     const details = corps.details as { suppressionDemandeeLe?: unknown } | undefined;
     const le = details?.suppressionDemandeeLe;
-    const date = typeof le === 'string' && !Number.isNaN(Date.parse(le)) ? jourDe(le) : '';
-    return new Error(phrases.tropTard(date));
+    return new Error(
+      typeof le === 'string' && !Number.isNaN(Date.parse(le))
+        ? phrases.tropTard(jourDe(le))
+        : phrases.tropTardSansDate,
+    );
   }
   // Une panne hors de la fonction (passerelle, worker arrêté) ne dit rien de plus qu'une absence.
   if (http.status >= 500 && code !== 'INTERNE') return new Error(phrases.reseau);

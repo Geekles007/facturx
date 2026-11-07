@@ -4,6 +4,7 @@
  * compte (un échec s'y voit et l'écriture repart, comme le reste : `conserver`).
  */
 
+import { PLAFOND_LOGO } from '../shared/image.js';
 import { t } from './i18n.js';
 import { storage } from './storage.js';
 import { conserver, estEnAttente, store, toast } from './store.js';
@@ -50,9 +51,29 @@ function loadImage(url: string): Promise<HTMLImageElement> {
 }
 
 /**
+ * La taille où un logo est redessiné : 480 pixels de haut au plus (120 points sur la page, à 4 pixels
+ * par point : bien assez pour l'impression ; un SVG y est rastérisé), et `PLAFOND_LOGO` en largeur —
+ * un logo très allongé est réduit d'autant, plutôt que refusé par le compte (Ruling 62).
+ */
+export function tailleDuLogo(
+  natural: { width: number; height: number },
+  isSvg: boolean,
+): { width: number; height: number } {
+  const maxHeight = 480;
+  const ratio = natural.width / natural.height;
+  let height = isSvg ? maxHeight : Math.min(natural.height, maxHeight);
+  let width = Math.round(height * ratio);
+  if (width > PLAFOND_LOGO.largeur) {
+    width = PLAFOND_LOGO.largeur;
+    height = width / ratio;
+  }
+  return { width: Math.max(1, width), height: Math.max(1, Math.round(height)) };
+}
+
+/**
  * Prépare un logo pour le PDF : un SVG est rastérisé en PNG (pdf-lib n'embarque que PNG et JPEG),
- * une image démesurée est réduite, et tout sort en PNG 8 bits ou en JPEG — des formats que
- * PDF/A accepte sans discussion. La transparence est conservée.
+ * une image démesurée est réduite (`tailleDuLogo`), et tout sort en PNG 8 bits ou en JPEG — des
+ * formats que PDF/A accepte sans discussion. La transparence est conservée.
  */
 export async function normalizeLogo(
   file: File,
@@ -63,14 +84,10 @@ export async function normalizeLogo(
   try {
     const image = await loadImage(url);
     const natural = { width: image.naturalWidth || 600, height: image.naturalHeight || 300 };
-    // 120 points de haut au plus sur la page, à 4 pixels par point : bien assez pour l'impression.
-    const maxHeight = 480;
-    const ratio = natural.width / natural.height;
-    const height = isSvg ? maxHeight : Math.min(natural.height, maxHeight);
-    const width = Math.round(height * ratio);
+    const { width, height } = tailleDuLogo(natural, isSvg);
     const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, width);
-    canvas.height = Math.max(1, Math.round(height));
+    canvas.width = width;
+    canvas.height = height;
     const context = canvas.getContext('2d');
     if (!context) throw new Error('canvas indisponible');
     if (isJpeg) {

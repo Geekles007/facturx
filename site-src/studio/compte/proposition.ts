@@ -46,10 +46,11 @@ export interface MarqueImport {
 }
 
 /**
- * La marque vit dans IndexedDB, à côté des données locales, une par compte (entreprise). C'est une
- * donnée du compte dans ce navigateur : la déconnexion l'efface.
+ * La marque vit dans IndexedDB, à côté des données locales, une par compte (entreprise). Elle décrit
+ * ces données locales, non celles du compte : la déconnexion la garde (Ruling 61), sans quoi l'import
+ * serait reproposé à chaque connexion et le même brouillon local repris une seconde fois.
  */
-export const cleMarque = (entrepriseId: string): string => `import-local-${entrepriseId}`;
+const cleMarque = (entrepriseId: string): string => `import-local-${entrepriseId}`;
 
 const texte = (v: unknown): boolean => typeof v === 'string' && v.trim() !== '';
 

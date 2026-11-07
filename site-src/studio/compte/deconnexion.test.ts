@@ -12,10 +12,11 @@ import { conservationEnMemoire } from './test-aide.js';
 
 /**
  * La déconnexion sur un poste partagé (relevé aux tâches 15-16) : une fois les écritures parties, le
- * miroir du brouillon, les valeurs locales (`kv-compte-*`), la vue, le brouillon courant et la marque
- * d'import de ce compte quittent IndexedDB ; les données du Studio sans compte, et celles d'un autre
- * compte, restent. Une saisie que le serveur n'a pas reçue n'est effacée qu'avec l'accord de
- * l'utilisateur ; sans lui, rien ne change, et la session reste ouverte.
+ * miroir du brouillon, les valeurs locales (`kv-compte-*`), la vue et le brouillon courant de ce
+ * compte quittent IndexedDB ; les données du Studio sans compte, celles d'un autre compte, et la
+ * marque d'import (`import-local-*`, qui décrit les données de ce navigateur, Ruling 61) restent.
+ * Une saisie que le serveur n'a pas reçue n'est effacée qu'avec l'accord de l'utilisateur ; sans
+ * lui, rien ne change, et la session reste ouverte.
  */
 
 const auth = vi.hoisted(() => ({ signOut: vi.fn(), onAuthStateChange: vi.fn() }));
@@ -28,14 +29,15 @@ const confirmer = vi.fn();
 const uiAvant = store.get().ui;
 let arreter: (() => void) | undefined;
 
-/** Les clés que ce navigateur garde pour l'entreprise `e`. */
+/** Les clés que ce navigateur garde pour le compte de l'entreprise `e`, et que la déconnexion efface. */
 const clesDuCompte = (e: string) => [
   `brouillon-courant-${e}`,
   `draft-compte-${e}`,
   `vue-compte-${e}`,
   `kv-compte-${e}`,
-  `import-local-${e}`,
 ];
+/** La marque d'import : elle décrit les données de ce navigateur, la déconnexion la garde. */
+const MARQUE = { etat: 'fait', le: '2026-11-07T10:00:00.000Z', brouillon: 'empreinte-1' };
 
 const brouillon = { form: { id: 'F-1' }, appearance: {} };
 const entreprise = defaultCompany();
@@ -51,7 +53,7 @@ async function remplir(miroirEnvoye: boolean): Promise<void> {
     await local.set(`draft-compte-${e}`, { ...brouillon, envoye: e === E ? miroirEnvoye : true });
     await local.set(`vue-compte-${e}`, { ...brouillon, issued: 'f-1' });
     await local.set(`kv-compte-${e}`, { reglage: 1 });
-    await local.set(`import-local-${e}`, { etat: 'fait', le: '2026-11-07T10:00:00.000Z' });
+    await local.set(`import-local-${e}`, MARQUE);
   }
 }
 
@@ -94,13 +96,8 @@ describe('se déconnecter efface de ce navigateur les données du compte', () =>
     await remplir(true);
     await deconnecter();
     expect(confirmer).not.toHaveBeenCalled();
-    expect(await lire(clesDuCompte(E))).toEqual([
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-    ]);
+    expect(await lire(clesDuCompte(E))).toEqual([undefined, undefined, undefined, undefined]);
+    expect(await local.get(`import-local-${E}`)).toEqual(MARQUE);
     // Le Studio sans compte garde tout.
     expect(await local.get('draft')).toEqual(brouillon);
     expect(await local.get('company')).toEqual(entreprise);
@@ -121,18 +118,14 @@ describe('se déconnecter efface de ce navigateur les données du compte', () =>
     );
     // Refusé : la session reste ouverte, et rien ne quitte ce navigateur.
     expect((await lire(clesDuCompte(E))).every((v) => v !== undefined)).toBe(true);
+    expect(await local.get(`import-local-${E}`)).toEqual(MARQUE);
     expect(auth.signOut).not.toHaveBeenCalled();
     expect(reload).not.toHaveBeenCalled();
 
     confirmer.mockReturnValue(true);
     await deconnecter();
-    expect(await lire(clesDuCompte(E))).toEqual([
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-    ]);
+    expect(await lire(clesDuCompte(E))).toEqual([undefined, undefined, undefined, undefined]);
+    expect(await local.get(`import-local-${E}`)).toEqual(MARQUE);
     expect((await lire(clesDuCompte(AUTRE))).every((v) => v !== undefined)).toBe(true);
     expect(auth.signOut).toHaveBeenCalledOnce();
     expect(reload).toHaveBeenCalledOnce();
@@ -159,13 +152,8 @@ describe('se déconnecter efface de ce navigateur les données du compte', () =>
     expect(confirmer).toHaveBeenCalledWith(
       t.compte.deconnexion.nonEnvoye([t.compte.deconnexion.elements.company]),
     );
-    expect(await lire(clesDuCompte(E))).toEqual([
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-    ]);
+    expect(await lire(clesDuCompte(E))).toEqual([undefined, undefined, undefined, undefined]);
+    expect(await local.get(`import-local-${E}`)).toEqual(MARQUE);
     // La conservation est arrêtée : une modification de plus (la numérotation, qu'elle aurait
     // écrite) ne part ni au serveur ni ici.
     const ecrites = journal.length;

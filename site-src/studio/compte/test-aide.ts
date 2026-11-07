@@ -12,6 +12,7 @@
  */
 
 import { createClient, FunctionsHttpError, type SupabaseClient } from '@supabase/supabase-js';
+import { dimensionsImage, logoTropGrand } from '../../shared/image.js';
 import { defaultAppearance, defaultNumbering, type Numbering } from '../library.js';
 import { ErreurConservation, type Persistence } from '../persistence.js';
 import type { DonneesRelance } from './relances.js';
@@ -178,13 +179,44 @@ export async function insererFacture(
   return id;
 }
 
+/**
+ * Une image réduite à ses en-têtes — PNG : signature et IHDR ; JPEG : SOI et SOF0 —, complétée de
+ * zéros jusqu'à `taille` octets : ce que lisent les contrôles de type, de poids et de dimensions d'un
+ * logo, sans rien à décoder.
+ */
+export function imageDeTest(
+  type: 'png' | 'jpeg',
+  largeur: number,
+  hauteur: number,
+  taille = 64,
+): Uint8Array {
+  const entete =
+    type === 'png'
+      ? [
+          ...[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+          ...[0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52],
+          ...[largeur >>> 24, (largeur >>> 16) & 0xff, (largeur >>> 8) & 0xff, largeur & 0xff],
+          ...[hauteur >>> 24, (hauteur >>> 16) & 0xff, (hauteur >>> 8) & 0xff, hauteur & 0xff],
+          ...[8, 6, 0, 0, 0],
+        ]
+      : [
+          ...[0xff, 0xd8, 0xff, 0xc0, 0x00, 0x0b, 8],
+          ...[hauteur >> 8, hauteur & 0xff, largeur >> 8, largeur & 0xff],
+          ...[1, 1, 0x11, 0],
+        ];
+  const octets = new Uint8Array(Math.max(taille, entete.length));
+  octets.set(entete);
+  return octets;
+}
+
 // ---------- une conservation en mémoire, sans pile ----------
 
 /**
  * Une conservation en mémoire, et le journal de ses écritures (import, restauration d'un export).
  * `compte` (par défaut) : comme celle du compte, elle refuse d'écrire une facture ou un PDF (seul le
- * serveur émet et importe) et, comme le déclencheur de la base, de faire reculer la numérotation ;
- * elle part d'une numérotation initiale de 2026. `local` : comme IndexedDB, elle prend tout.
+ * serveur émet et importe) ou un logo au-delà du plafond en pixels et, comme le déclencheur de la
+ * base, de faire reculer la numérotation ; elle part d'une numérotation initiale de 2026. `local` :
+ * comme IndexedDB, elle prend tout.
  */
 export function conservationEnMemoire(
   options: { mode?: 'compte' | 'local'; numerotation?: Numbering } = {},
@@ -227,6 +259,11 @@ export function conservationEnMemoire(
     getFile: async (cle) => fichiers.get(cle),
     async setFile(cle, octets) {
       if (compte && cle.startsWith('pdf-')) throw new ErreurConservation('EMISSION_SERVEUR');
+      // Comme celle du compte, elle refuse un logo au-delà du plafond en pixels (Ruling 62).
+      const dimensions = dimensionsImage(octets);
+      if (compte && dimensions && logoTropGrand(dimensions)) {
+        throw new ErreurConservation('FICHIER', 'DIMENSIONS');
+      }
       journal.push(`setFile ${cle}`);
       fichiers.set(cle, octets);
       return cle;

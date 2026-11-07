@@ -180,9 +180,13 @@ async function lirePdf(
   }
 }
 
-/** L'archive du compte, avec ce qu'il faut en dire : combien de PDF, et lesquels manquent. */
+/**
+ * L'archive du compte, avec ce qu'il faut en dire : combien de factures elle contient, combien de
+ * PDF, et lesquels manquent.
+ */
 export async function construireArchive(): Promise<{
   archive: Blob;
+  factures: number;
   pdf: number;
   pdfManquants: PdfManquant[];
 }> {
@@ -282,7 +286,7 @@ export async function construireArchive(): Promise<{
     throw erreur;
   }
   zip.ajouter('donnees.json', strToU8(texte), true);
-  return { archive: zip.fermer(), pdf, pdfManquants };
+  return { archive: zip.fermer(), factures: factures.length, pdf, pdfManquants };
 }
 
 /** L'archive zip du compte connecté : `donnees.json` et `factures/*.pdf`. Lève si elle n'aboutit pas. */
@@ -319,9 +323,9 @@ export function telechargerExport(): Promise<boolean> {
     const phrases = t.compte.export;
     toast(phrases.enCours, 'info', 120_000);
     try {
-      const { archive: zip, pdf, pdfManquants } = await construireArchive();
+      const { archive: zip, factures, pdf, pdfManquants } = await construireArchive();
       download(zip, `facturx-export-${isoToday()}.zip`, 'application/zip');
-      retenirExport();
+      retenirExport({ factures, pdfManquants: pdfManquants.length });
       toast(phrases.fait(pdf, pdfManquants.length), 'ok', 9000);
       return true;
     } catch (erreur) {

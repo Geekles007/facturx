@@ -124,6 +124,31 @@ describe('reaction', () => {
     expect(t.compte.erreurs.avoirDevise).toMatch(/devise/);
   });
 
+  test('FICHIER d’un logo trop grand en pixels : la phrase de l’interface, avec le plafond (Ruling 62)', () => {
+    const issue = {
+      code: 'FICHIER',
+      path: 'appearance.logo',
+      message: 'Le logo logo-1 mesure 4000 × 4000 pixels : 2000 × 2000 au plus.',
+      details: { largeur: 4000, hauteur: 4000, plafond: { largeur: 2000, hauteur: 2000 } },
+    };
+    expect(reaction(422, { code: 'ANOMALIES', message: '', details: [issue] })).toEqual({
+      kind: 'controle',
+      issues: [
+        {
+          code: 'FICHIER',
+          path: 'appearance.logo',
+          message: t.compte.erreurs.logoDimensions(4000, 4000, 2000, 2000),
+        },
+      ],
+    });
+    // Des détails mal formés : la phrase du serveur reste, sans exception.
+    const abime = { ...issue, details: { largeur: 'x' } };
+    expect(reaction(422, { code: 'ANOMALIES', message: '', details: [abime] })).toEqual({
+      kind: 'controle',
+      issues: [{ code: 'FICHIER', path: 'appearance.logo', message: issue.message }],
+    });
+  });
+
   test('les détails du serveur passent dans le message : numéro, identifiant, heure', () => {
     const doublon = reaction(409, {
       code: 'DOUBLON',

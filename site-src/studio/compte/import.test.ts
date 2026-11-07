@@ -33,6 +33,7 @@ import {
   messageNumerotation,
   numerotationReprise,
 } from './import.js';
+import { deconnecter } from './index.js';
 import { type PersistenceCompte, supabasePersistence } from './persistence.js';
 import {
   entrepriseRenseignee,
@@ -41,7 +42,13 @@ import {
   lireMarqueImport,
   retenirImport,
 } from './proposition.js';
-import { adminDeTest, compteDeTest, conservationEnMemoire, refusDeFonction } from './test-aide.js';
+import {
+  adminDeTest,
+  compteDeTest,
+  conservationEnMemoire,
+  imageDeTest,
+  refusDeFonction,
+} from './test-aide.js';
 
 /**
  * Importer les données locales (spec § 10) : sans pile, `importerLocal` sur une conservation en
@@ -94,8 +101,8 @@ async function viderLocal(): Promise<void> {
 // ---------- une sauvegarde locale ----------
 
 const pdfDeTest = (numero: string) => new TextEncoder().encode(`%PDF-1.7\n% ${numero}\n%%EOF\n`);
-/** Un logo : la signature PNG suffit au dépôt. */
-const LOGO = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+/** Un logo : la signature PNG et un en-tête lisible (64 × 32) suffisent au dépôt. */
+const LOGO = imageDeTest('png', 64, 32);
 
 /** Une facture émise sans compte, son résumé tiré de la facture elle-même (comme le Studio). */
 function facture(
@@ -547,6 +554,22 @@ describe('importerLocal (conservation en mémoire, importer simulé)', () => {
     expect(rapport.echecs).toEqual([
       { element: phrases.elements.client('Client A'), raison: phrases.raisons.refus },
     ]);
+  });
+
+  test('un logo de ce navigateur au-delà de 2000 × 2000 pixels : dit dans le bilan, le reste passe (Ruling 62)', async () => {
+    const cible = enMemoire();
+    const dump = sauvegarde(TROIS);
+    (dump.files as Record<string, Uint8Array>)['logo-1'] = imageDeTest('png', 4000, 4000, 77_000);
+    const { importer } = fauxImporter(cible.journal);
+    const rapport = await importerLocal(dump, cible.p, importer);
+    expect(rapport).toMatchObject({ clients: 2, produits: 1, factures: 3 });
+    expect(rapport.echecs).toEqual([
+      {
+        element: phrases.elements.fichier('logo-1'),
+        raison: t.compte.conservation.fichierDimensions(2000, 2000),
+      },
+    ]);
+    expect(cible.fichiers.has('logo-1')).toBe(false);
   });
 
   test('sans entreprise renseignée en local, celle du compte n’est pas remplacée', async () => {
@@ -1024,6 +1047,45 @@ describe('la proposition d’import à la première connexion', () => {
     expect(reprise).toMatchObject({ factures: 0, brouillon: 'repris' });
     expect(memoire.journal.filter((l) => l.startsWith('put') || l === 'set company')).toEqual([]);
     expect(await lireMarqueImport()).toMatchObject({ etat: 'fait' });
+  });
+
+  test('se déconnecter puis se reconnecter : ni reproposé (fait, refusé), ni second brouillon (Ruling 61)', async () => {
+    await remplirLocal();
+    compteQuiRetient({ oui: true });
+    const signOut = vi.fn().mockResolvedValue({ error: null });
+    session.sb = {
+      functions: {
+        invoke: vi.fn().mockResolvedValue({ data: { id: 'f', numero: 'x' }, error: null }),
+      },
+      auth: { signOut },
+    };
+    vi.stubGlobal('location', { reload: vi.fn() });
+    const reconnecter = () =>
+      store.set((s) => ({ ui: { ...s.ui, compte: compteUi('e-1'), storage: 'ok' } }));
+    try {
+      expect((await importerCeNavigateur()).brouillon).toBe('repris');
+      const marque = await lireMarqueImport();
+      expect(marque).toMatchObject({
+        etat: 'fait',
+        brouillon: expect.stringMatching(/^[0-9a-f]{64}$/),
+      });
+
+      await deconnecter();
+      expect(signOut).toHaveBeenCalledOnce();
+      reconnecter();
+      expect(await lireMarqueImport()).toEqual(marque);
+      expect(await importAProposer()).toBeUndefined();
+      // Redemandé depuis « Mon compte » : le brouillon local est déjà un brouillon du compte.
+      expect(await importerCeNavigateur()).toMatchObject({ brouillon: 'dejaRepris' });
+
+      await retenirImport('refuse');
+      await deconnecter();
+      reconnecter();
+      expect(await lireMarqueImport()).toMatchObject({ etat: 'refuse' });
+      expect(await importAProposer()).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   test('le brouillon local disparu entre-temps : la reprise marque l’import fait', async () => {

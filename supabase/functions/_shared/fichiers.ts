@@ -4,9 +4,13 @@
  *
  * Le type se vérifie par la signature des octets, jamais d'après l'extension ni d'après le type
  * annoncé à l'envoi, le seul que l'API Storage contrôle ; la taille, par les plafonds de la spec
- * (§ 11 : logo de 1 Mo, police de 2 Mo, en Mio comme la limite du bucket). Un fichier refusé est une
- * anomalie de l'apparence (422), pas une erreur du serveur.
+ * (§ 11 : logo de 1 Mo, police de 2 Mo, en Mio comme la limite du bucket). Les dimensions d'un logo
+ * se lisent dans ses en-têtes, sans le décoder, et sont plafonnées (`PLAFOND_LOGO`, Ruling 62) : la
+ * mémoire du rendu suit le nombre de pixels, pas le poids du fichier, et un logo trop grand ferait
+ * tomber l'émission au-delà de la mémoire d'une Edge Function. Un fichier refusé est une anomalie de
+ * l'apparence (422), pas une erreur du serveur, et rien n'est rendu.
  */
+import { dimensionsImage, logoTropGrand, PLAFOND_LOGO } from '../_vendor/shared/image.ts';
 import { admin } from './db.ts';
 import { anomalies } from './erreurs.ts';
 
@@ -38,9 +42,10 @@ const NOMS: Record<Attendu, string> = {
 const CLE = /^[A-Za-z0-9_-]{1,100}$/;
 
 /**
- * Les octets du fichier `cle` de l'entreprise, s'il est bien du type `attendu` et sous son plafond ;
- * sinon lève 422 `ANOMALIES` avec `[{ code: 'FICHIER', path: 'appearance.logo' }]` (ou
- * `appearance.customFont` pour une police).
+ * Les octets du fichier `cle` de l'entreprise, s'il est bien du type `attendu` et sous ses plafonds
+ * (poids ; pour un logo, dimensions lisibles et sous `PLAFOND_LOGO`) ; sinon lève 422 `ANOMALIES`
+ * avec `[{ code: 'FICHIER', path: 'appearance.logo' }]` (ou `appearance.customFont` pour une
+ * police), et, pour un logo trop grand, `details: { largeur, hauteur, plafond }`.
  */
 export async function lireFichier(
   entrepriseId: string,
@@ -48,9 +53,9 @@ export async function lireFichier(
   attendu: Attendu,
 ): Promise<Uint8Array> {
   const path = attendu === 'ttf' ? 'appearance.customFont' : 'appearance.logo';
-  const refus = (message: string) =>
+  const refus = (message: string, details?: Record<string, unknown>) =>
     anomalies(
-      [{ code: 'FICHIER', path, message }],
+      [{ code: 'FICHIER', path, message, ...(details ? { details } : {}) }],
       'Un fichier de l’apparence est refusé : aucun numéro n’a été consommé.',
     );
 
@@ -71,5 +76,16 @@ export async function lireFichier(
     signature.every((octet, i) => octets[i] === octet),
   );
   if (!reconnu) throw refus(`Le fichier ${cle} n’est pas ${NOMS[attendu]}.`);
+  if (attendu !== 'ttf') {
+    const dimensions = dimensionsImage(octets);
+    if (!dimensions) throw refus(`Le fichier ${cle} n’est pas ${NOMS[attendu]} lisible.`);
+    if (logoTropGrand(dimensions)) {
+      const { largeur, hauteur } = dimensions;
+      throw refus(
+        `Le logo ${cle} mesure ${largeur} × ${hauteur} pixels : ${PLAFOND_LOGO.largeur} × ${PLAFOND_LOGO.hauteur} au plus.`,
+        { largeur, hauteur, plafond: { ...PLAFOND_LOGO } },
+      );
+    }
+  }
   return octets;
 }

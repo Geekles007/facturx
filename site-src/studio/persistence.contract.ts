@@ -67,9 +67,15 @@ function facture(uid: string, numero: string): SavedInvoice {
   };
 }
 
-/** Signatures des fichiers que le Studio dépose : un logo PNG ou JPEG, une police TTF. */
-const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-const JPEG = [0xff, 0xd8, 0xff];
+/**
+ * Le début des fichiers que le Studio dépose : un logo PNG (signature et en-tête IHDR, 64 × 32) ou
+ * JPEG (SOI et SOF0, 64 × 32), dont la conservation du compte lit les dimensions ; une police TTF.
+ */
+const PNG = [
+  ...[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+  ...[0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 64, 0, 0, 0, 32, 8, 6, 0, 0, 0],
+];
+const JPEG = [0xff, 0xd8, 0xff, 0xc0, 0x00, 0x0b, 8, 0, 32, 0, 64, 1, 1, 0x11, 0];
 const TTF = [0x00, 0x01, 0x00, 0x00];
 
 /** Une police TTF suivie des 256 valeurs d'un octet, dans l'ordre : aucune ne doit être altérée. */

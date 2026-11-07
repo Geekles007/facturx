@@ -22,9 +22,11 @@ import {
   datePurge,
   demanderSuppression,
   exportDeLaSession,
+  facturesHorsDeLArchive,
   peutSupprimer,
+  retenirExport,
 } from './suppression.js';
-import { adminDeTest, compteDeTest, refusDeFonction } from './test-aide.js';
+import { adminDeTest, compteDeTest, insererFacture, refusDeFonction } from './test-aide.js';
 
 /**
  * Supprimer le compte en deux temps (spec § 12) : l'export imposé, la demande, puis l'annulation
@@ -93,6 +95,14 @@ describe('l’export imposé avant la demande', () => {
     expect(peutSupprimer(exportDeLaSession())).toBe(false);
   });
 
+  test('l’export retenu garde ses factures et ses PDF manquants : la confirmation les dira', () => {
+    retenirExport({ factures: 5, pdfManquants: 2 });
+    const etat = exportDeLaSession();
+    expect(peutSupprimer(etat)).toBe(true);
+    expect(etat).toMatchObject({ factures: 5, pdfManquants: 2 });
+    expect(Date.parse(etat.exportFaitLe ?? '')).not.toBeNaN();
+  });
+
   test('la purge a lieu 30 jours après la demande', () => {
     expect(DELAI_GRACE_JOURS).toBe(30);
     expect(datePurge('2026-11-07T10:00:00.000Z')).toBe('2026-12-07');
@@ -134,6 +144,9 @@ describe('les réponses de `supprimer-compte`', () => {
     await expect(annulerSuppression()).rejects.toThrow(
       t.compte.suppression.tropTard(formatDate('2026-09-01')),
     );
+    // Sans la date de la demande dans la réponse : la même phrase, sans date.
+    fonction(refusDeFonction(409, { code: 'SUPPRESSION', message: 'Trop tard.' }));
+    await expect(annulerSuppression()).rejects.toThrow(t.compte.suppression.tropTardSansDate);
   });
 
   test('session refusée : la connexion s’ouvre, et la phrase le dit', async () => {
@@ -260,6 +273,18 @@ describe.skipIf(pile)('la suppression contre la pile, fonctions servies', () => 
     );
     const enBase = await dateEnBase(entrepriseId);
     expect(enBase && new Date(enBase).getTime()).toBe(new Date(anciennete).getTime());
+  }, 30_000);
+
+  test('les factures émises depuis l’export : la confirmation de la suppression les compte', async () => {
+    const { sb, entrepriseId } = await compteDeTest();
+    session.sb = sb as SupabaseClient;
+    store.set((s) => ({ ui: { ...s.ui, compte: compteUi(entrepriseId) } }));
+    await insererFacture(entrepriseId, { prefixe: 'AVANT' });
+    // Une archive d'une facture : rien n'y manque. Le compte, pas l'horloge de ce navigateur, fait foi.
+    expect(await facturesHorsDeLArchive(1)).toBe(0);
+    await insererFacture(entrepriseId, { prefixe: 'APRES' });
+    await insererFacture(entrepriseId, { prefixe: 'APRES' });
+    expect(await facturesHorsDeLArchive(1)).toBe(2);
   }, 30_000);
 
   /** Le même compte, de nouveau à l'écran, sur la conservation que `demarrer` a posée. */

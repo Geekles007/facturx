@@ -1,6 +1,7 @@
 // Le miroir du brouillon vit dans IndexedDB : le faux doit exister avant l'évaluation de storage.ts.
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { tailleDuLogo } from '../files.js';
 import { t } from '../i18n.js';
 import {
   type Appearance,
@@ -13,27 +14,30 @@ import { indexedDbPersistence, utiliser } from '../storage.js';
 import { store } from '../store.js';
 import { changerLogo, retirerLogo } from './entreprise.js';
 import { refusDuLogo, supabasePersistence } from './persistence.js';
-import { compteDeTest, conservationEnMemoire } from './test-aide.js';
+import { compteDeTest, conservationEnMemoire, imageDeTest } from './test-aide.js';
 
 /**
  * La page Entreprise (spec § 10) : la numérotation, dont le prochain rang ne descend pas sous celui
  * du serveur, refusé avant tout envoi ; le logo des prochaines factures, refusé avant l'envoi s'il
- * pèse plus de 1 Mio ou si ses octets ne sont ni ceux d'un PNG ni ceux d'un JPEG (spec § 11).
+ * pèse plus de 1 Mio, si ses octets ne sont ni ceux d'un PNG ni ceux d'un JPEG (spec § 11), ou s'il
+ * dépasse 2000 × 2000 pixels (Ruling 62 : la mémoire du rendu suit les pixels, pas le poids).
  */
 
 vi.mock('./client.js', () => ({ client: () => undefined }));
 
 const MIO = 1024 * 1024;
-/** Des octets qui commencent comme un PNG, un JPEG, un GIF, une police TrueType. */
+/** Des octets qui commencent comme un GIF, une police TrueType. */
 const signe = (debut: number[], taille: number): Uint8Array => {
   const octets = new Uint8Array(taille);
   octets.set(debut);
   return octets;
 };
-const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-const JPEG = [0xff, 0xd8, 0xff, 0xe0];
 const GIF = [0x47, 0x49, 0x46, 0x38, 0x39, 0x61];
 const TTF = [0x00, 0x01, 0x00, 0x00];
+const png = (taille: number, largeur = 300, hauteur = 120) =>
+  imageDeTest('png', largeur, hauteur, taille);
+const jpeg = (taille: number, largeur = 300, hauteur = 120) =>
+  imageDeTest('jpeg', largeur, hauteur, taille);
 
 const uiAvant = store.get().ui;
 
@@ -102,23 +106,59 @@ describe.skipIf(!process.env.SUPABASE_URL)('la numérotation contre la pile', ()
   });
 });
 
-describe('le logo : 1 Mio au plus, PNG ou JPEG d’après ses octets', () => {
+describe('le logo : 1 Mio et 2000 × 2000 pixels au plus, PNG ou JPEG d’après ses octets', () => {
   test('les octets décident, jamais l’extension ni le type annoncé', () => {
-    expect(refusDuLogo(signe(PNG, 2048))).toBeUndefined();
-    expect(refusDuLogo(signe(JPEG, MIO))).toBeUndefined();
-    expect(refusDuLogo(signe(PNG, MIO + 1))).toBe('TAILLE');
+    expect(refusDuLogo(png(2048))).toBeUndefined();
+    expect(refusDuLogo(jpeg(MIO))).toBeUndefined();
+    expect(refusDuLogo(png(MIO + 1))).toBe('TAILLE');
     expect(refusDuLogo(signe(GIF, 2048))).toBe('TYPE');
     // Une police TrueType passe dans le bucket, pas comme logo.
     expect(refusDuLogo(signe(TTF, 2048))).toBe('TYPE');
+    // Un PNG sans en-tête lisible : ses dimensions ne se lisent pas, il n'est pas admis.
+    expect(refusDuLogo(signe([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 2048))).toBe('TYPE');
+  });
+
+  test('les pixels comptent, pas le poids : 4000 × 4000 en 77 Ko est refusé', () => {
+    expect(refusDuLogo(png(77_000, 4000, 4000))).toBe('DIMENSIONS');
+    expect(refusDuLogo(jpeg(4096, 2001, 300))).toBe('DIMENSIONS');
+    expect(refusDuLogo(png(4096, 2000, 2000))).toBeUndefined();
+  });
+
+  test('le Studio ramène un logo dans le plafond en le préparant (480 de haut, 2000 de large au plus)', () => {
+    expect(tailleDuLogo({ width: 600, height: 300 }, false)).toEqual({ width: 600, height: 300 });
+    expect(tailleDuLogo({ width: 3000, height: 1500 }, false)).toEqual({ width: 960, height: 480 });
+    // Un logo très large (6 : 1) : 480 de haut donnerait 2880 de large ; il est réduit à 2000.
+    expect(tailleDuLogo({ width: 6000, height: 1000 }, false)).toEqual({
+      width: 2000,
+      height: 333,
+    });
+    // Un SVG est rastérisé à 480 de haut, puis réduit de même.
+    expect(tailleDuLogo({ width: 120, height: 20 }, true)).toEqual({ width: 2000, height: 333 });
+    expect(tailleDuLogo({ width: 100, height: 50 }, true)).toEqual({ width: 960, height: 480 });
+  });
+
+  test('la conservation du compte refuse aussi un logo trop grand, avant l’envoi', async () => {
+    const p = supabasePersistence({} as never, 'e-1');
+    await expect(p.setFile('logo-x', png(4096, 4000, 4000))).rejects.toMatchObject({
+      code: 'FICHIER',
+      detail: 'DIMENSIONS',
+    });
+    await expect(
+      p.setFile('logo-x', signe([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 64)),
+    ).rejects.toMatchObject({ code: 'FICHIER', detail: 'TYPE' });
   });
 
   test('trop lourd ou mal signé : refusé avant l’envoi, et dit', async () => {
     const { p, journal } = conservationEnMemoire();
     utiliser(p);
     expect(
-      await changerLogo({ bytes: signe(PNG, MIO + 1), type: 'png', name: 'gros.png' }),
+      await changerLogo({ bytes: png(MIO + 1), type: 'png', name: 'gros.png' }),
     ).toBeUndefined();
     expect(store.get().ui.toast?.text).toBe(t.compte.entreprise.logoTropGros);
+    expect(
+      await changerLogo({ bytes: png(77_000, 4000, 4000), type: 'png', name: 'grand.png' }),
+    ).toBeUndefined();
+    expect(store.get().ui.toast?.text).toBe(t.compte.entreprise.logoDimensions(2000, 2000));
     expect(
       await changerLogo({ bytes: signe(GIF, 2048), type: 'png', name: 'faux.png' }),
     ).toBeUndefined();
@@ -129,7 +169,7 @@ describe('le logo : 1 Mio au plus, PNG ou JPEG d’après ses octets', () => {
   test('admis : déposé, puis posé sur l’apparence des prochaines factures', async () => {
     const { p, kv, fichiers, journal } = conservationEnMemoire();
     utiliser(p);
-    const logo = await changerLogo({ bytes: signe(PNG, 2048), type: 'png', name: 'logo.png' });
+    const logo = await changerLogo({ bytes: png(2048), type: 'png', name: 'logo.png' });
     expect(logo?.name).toBe('logo.png');
     const cle = logo?.key ?? '';
     expect(fichiers.get(cle)?.length).toBe(2048);
@@ -151,7 +191,7 @@ describe('le logo : 1 Mio au plus, PNG ou JPEG d’après ses octets', () => {
       ...defaut,
       logo: { ...defaut.logo, position: 'right', height: 60 },
     });
-    const second = await changerLogo({ bytes: signe(JPEG, 4096), type: 'jpeg', name: 'b.jpg' });
+    const second = await changerLogo({ bytes: jpeg(4096), type: 'jpeg', name: 'b.jpg' });
     expect((kv.get('appearance-default') as Appearance).logo).toEqual({
       key: second?.key,
       type: 'jpeg',

@@ -21,7 +21,13 @@ import { indexedDbPersistence, utiliser } from '../storage.js';
 import { ErreurExport, exporterArchive, nomsDesPdf, nouvelleArchive } from './export.js';
 import { supabasePersistence } from './persistence.js';
 import { aujourdhuiParis } from './suivi.js';
-import { adminDeTest, compteDeTest, conservationEnMemoire, insererFacture } from './test-aide.js';
+import {
+  adminDeTest,
+  compteDeTest,
+  conservationEnMemoire,
+  imageDeTest,
+  insererFacture,
+} from './test-aide.js';
 
 /**
  * L'export du compte (spec § 10 et § 12, Ruling 56) : une archive zip, `donnees.json` — une
@@ -91,8 +97,8 @@ describe('les limites du zip (sans Zip64)', () => {
 
 // ---------- contre la pile ----------
 
-/** Un logo : la signature PNG suffit au dépôt. */
-const LOGO = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+/** Un logo : la signature PNG et un en-tête lisible (64 × 32) suffisent au dépôt. */
+const LOGO = imageDeTest('png', 64, 32);
 
 type Ligne = Record<string, unknown>;
 

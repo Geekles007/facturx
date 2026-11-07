@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { PLAFOND_LOGO } from '../shared/image.js';
 import { t } from './i18n.js';
 import {
   type Appearance,
@@ -472,9 +473,20 @@ function messageDeRefus(erreur: unknown): string {
   const phrases = t.compte.conservation;
   if (erreur instanceof ErreurConservation) {
     if (erreur.detail === 'NUMEROTATION_RECUL') return phrases.recul;
-    if (erreur.code === 'FICHIER') return phrases.fichier;
+    if (erreur.code === 'FICHIER') return messageDeFichier(erreur.detail);
   }
   return phrases.refus;
+}
+
+/**
+ * Ce que l'interface dit d'un fichier refusé (`FICHIER`) : le plafond en pixels d'un logo trop grand
+ * (`DIMENSIONS`, Ruling 62), sinon les types et les poids admis.
+ */
+export function messageDeFichier(detail: string | undefined): string {
+  const phrases = t.compte.conservation;
+  return detail === 'DIMENSIONS'
+    ? phrases.fichierDimensions(PLAFOND_LOGO.largeur, PLAFOND_LOGO.hauteur)
+    : phrases.fichier;
 }
 
 /**

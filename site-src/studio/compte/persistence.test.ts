@@ -18,7 +18,7 @@ import { type Loaded, setForm, startPersistence, store, ui } from '../store.js';
 import { duplicateForm, quitterLeBrouillon, startDraft } from '../workflows.js';
 import { abandonnerSaisie } from './brouillons.js';
 import { type Miroir, supabasePersistence } from './persistence.js';
-import { adminDeTest, compteDeTest, perimerJeton } from './test-aide.js';
+import { adminDeTest, compteDeTest, imageDeTest, perimerJeton } from './test-aide.js';
 
 type Brouillon = NonNullable<Loaded['draft']>;
 
@@ -815,8 +815,8 @@ describe.skipIf(!process.env.SUPABASE_URL)('Persistance du compte, contre la pil
     test('setFile annonce le type lu dans les octets, et refuse le reste', async () => {
       const { sb, entrepriseId } = await compteDeTest();
       const p = supabasePersistence(sb, entrepriseId);
-      await p.setFile('logo-1', Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 1));
-      await p.setFile('logo-2', Uint8Array.of(0xff, 0xd8, 0xff, 1));
+      await p.setFile('logo-1', imageDeTest('png', 64, 32));
+      await p.setFile('logo-2', imageDeTest('jpeg', 64, 32));
       await p.setFile('font-1', Uint8Array.of(0x00, 0x01, 0x00, 0x00, 1));
       const { data } = await adminDeTest().storage.from('fichiers').list(entrepriseId);
       const types = Object.fromEntries(
@@ -834,6 +834,12 @@ describe.skipIf(!process.env.SUPABASE_URL)('Persistance du compte, contre la pil
       const logoTropLourd = new Uint8Array(1024 * 1024 + 1);
       logoTropLourd.set([0x89, 0x50, 0x4e, 0x47]);
       await expect(p.setFile('logo-4', logoTropLourd)).rejects.toThrow('FICHIER');
+      // Ruling 62 : 77 Ko, mais 4000 × 4000 pixels à décoder au rendu ; rien n'est déposé.
+      await expect(
+        p.setFile('logo-5', imageDeTest('png', 4000, 4000, 77_000)),
+      ).rejects.toMatchObject({ code: 'FICHIER', detail: 'DIMENSIONS' });
+      const { data: deposes } = await adminDeTest().storage.from('fichiers').list(entrepriseId);
+      expect((deposes ?? []).map((o) => o.name).sort()).toEqual(['font-1', 'logo-1', 'logo-2']);
     });
 
     test('dump : la forme de la sauvegarde locale, sans les PDF', async () => {
@@ -841,7 +847,7 @@ describe.skipIf(!process.env.SUPABASE_URL)('Persistance du compte, contre la pil
       const p = supabasePersistence(sb, entrepriseId);
       const ecrit = brouillon('Atelier des Lilas');
       await p.set('draft', ecrit);
-      await p.setFile('logo-1', Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 1));
+      await p.setFile('logo-1', imageDeTest('png', 64, 32));
       const copie = await p.dump();
       expect(Object.keys(copie).sort()).toEqual(['clients', 'files', 'invoices', 'kv', 'products']);
       const kv = copie.kv as Record<string, unknown>;

@@ -49,9 +49,32 @@ function anomalies(details: unknown): Issue[] {
     typeof d.code === 'string' &&
     typeof d.path === 'string' &&
     typeof d.message === 'string'
-      ? [{ code: d.code, path: d.path, message: d.message }]
+      ? [{ code: d.code, path: d.path, message: messageDeLAnomalie(d) ?? d.message }]
       : [],
   );
+}
+
+const entierPositif = (v: unknown): v is number => Number.isInteger(v) && (v as number) > 0;
+
+/**
+ * La phrase de l'interface pour une anomalie que le serveur détaille : un logo trop grand en pixels
+ * (`FICHIER`, `details` : ses dimensions et le plafond, Ruling 62). Rien pour les autres, ou pour des
+ * détails mal formés : la phrase du serveur reste.
+ */
+function messageDeLAnomalie(d: Record<string, unknown>): string | undefined {
+  const details = d.details;
+  if (d.code !== 'FICHIER' || !estObjet(details) || !estObjet(details.plafond)) return undefined;
+  const { largeur, hauteur } = details;
+  const plafond = details.plafond;
+  if (
+    !entierPositif(largeur) ||
+    !entierPositif(hauteur) ||
+    !entierPositif(plafond.largeur) ||
+    !entierPositif(plafond.hauteur)
+  ) {
+    return undefined;
+  }
+  return t.compte.erreurs.logoDimensions(largeur, hauteur, plafond.largeur, plafond.hauteur);
 }
 
 /**

@@ -657,6 +657,8 @@ const fr = {
       signupClosed: 'Les inscriptions sont fermées pour le moment.',
       network: 'Le serveur est injoignable : vérifiez votre connexion, puis réessayez.',
       samePassword: "Choisissez un mot de passe différent de l'actuel.",
+      reauth:
+        'Changer le mot de passe demande une connexion récente : déconnectez-vous, reconnectez-vous, puis recommencez.',
       session: 'Votre session a expiré : reconnectez-vous, puis recommencez.',
       other: "L'opération a échoué. Réessayez dans un instant.",
       loadFailed: "Le module de connexion n'a pas pu être chargé : vérifiez votre connexion.",
@@ -691,6 +693,8 @@ const fr = {
         'La numérotation ne peut pas reculer : le prochain numéro doit rester au moins celui du serveur.',
       fichier:
         'Fichier refusé : un logo PNG ou JPEG de 1 Mo au plus, ou une police TTF de 2 Mo au plus.',
+      fichierDimensions: (largeur: number, hauteur: number) =>
+        `Logo refusé : ${largeur} × ${hauteur} pixels au plus. Choisissez-le de nouveau dans le Studio, qui le réduit lui-même.`,
       enAttente: {
         reseau:
           "Hors ligne : la saisie du brouillon ouvert n'est pas encore sur le serveur. Changez de document au retour du réseau, pour ne pas la perdre.",
@@ -777,6 +781,9 @@ const fr = {
       inconnue: 'Le serveur a refusé la demande : réessayez dans un instant.',
       avoirDevise:
         "La devise de cet avoir n'est pas celle de la facture qu'il cite : un avoir est dans la devise de la facture qu'il corrige.",
+      /** Un logo trop grand en pixels pour le rendu du serveur (Ruling 62). */
+      logoDimensions: (largeur: number, hauteur: number, maxLargeur: number, maxHauteur: number) =>
+        `Le logo mesure ${largeur} × ${hauteur} pixels : ${maxLargeur} × ${maxHauteur} au plus. Choisissez-le de nouveau (onglet Apparence ou page Entreprise) : le Studio le réduira.`,
     },
     /** Émettre en mode compte : la facture part au serveur, qui la numérote. */
     emission: {
@@ -1214,6 +1221,8 @@ const fr = {
       logoTropGros:
         "Ce logo pèse plus de 1 Mo : réduisez-le, puis recommencez. Rien n'a été envoyé.",
       logoType: "Ce fichier n'est ni un PNG ni un JPEG : rien n'a été envoyé.",
+      logoDimensions: (largeur: number, hauteur: number) =>
+        `Ce logo dépasse ${largeur} × ${hauteur} pixels : réduisez-le, puis recommencez. Rien n'a été envoyé.`,
       logoIllisible: "Cette image n'a pas pu être lue : rien n'a été envoyé.",
       logoEnregistre: 'Logo enregistré pour vos prochaines factures.',
       logoRetire: 'Logo retiré de vos prochaines factures.',
@@ -1264,6 +1273,11 @@ const fr = {
         'Seront effacés : vos factures et leurs PDF, les paiements et les relances, les brouillons, les clients, le catalogue, votre entreprise avec sa numérotation, son logo et ses polices, puis le compte lui-même.',
       confirmerCopie: (heure: string) =>
         `L'archive exportée à ${heure} sera la seule copie de vos données : gardez-la dix ans, le temps pendant lequel la loi vous oblige à conserver vos factures.`,
+      confirmerPdfManquants: (n: number) =>
+        `Il lui manque ${n > 1 ? `${n} PDF de factures, listés` : 'le PDF d’une facture, listé'} dans donnees.json : exportez de nouveau avant de demander la suppression.`,
+      confirmerEmisesDepuis: (n: number) =>
+        `${n > 1 ? `${n} factures ont été émises` : 'Une facture a été émise'} depuis cet export : ${n > 1 ? 'elles ne sont' : 'elle n’est'} pas dans l'archive. Exportez de nouveau avant de demander la suppression.`,
+      reexporter: 'Exporter de nouveau',
       confirmer: 'Demander la suppression',
       garder: 'Garder mon compte',
       ecranTitre: 'Suppression du compte demandée',
@@ -1279,6 +1293,8 @@ const fr = {
       annulee: 'Suppression annulée : votre compte reprend.',
       tropTard: (date: string) =>
         `La suppression demandée le ${date} remonte à plus de 30 jours : elle ne peut plus être annulée, et l'effacement a pu commencer.`,
+      tropTardSansDate:
+        "La suppression a été demandée il y a plus de 30 jours : elle ne peut plus être annulée, et l'effacement a pu commencer.",
       session: 'Votre session a expiré : reconnectez-vous, puis recommencez.',
       reseau: "Le serveur ne répond pas : rien n'a changé. Réessayez dans un instant.",
       chargement:
@@ -1946,6 +1962,8 @@ const en: Strings = {
       signupClosed: 'Sign-ups are closed for the moment.',
       network: 'The server cannot be reached: check your connection, then try again.',
       samePassword: 'Choose a password different from the current one.',
+      reauth:
+        'Changing the password requires a recent sign-in: sign out, sign in again, then start over.',
       session: 'Your session has expired: sign in again, then start over.',
       other: 'The operation failed. Try again in a moment.',
       loadFailed: 'The sign-in module could not be loaded: check your connection.',
@@ -1977,6 +1995,8 @@ const en: Strings = {
       refus: 'The server refused to save this change: it is still displayed, but it is not kept.',
       recul: 'Numbering cannot go backwards: the next number must stay at least the server’s.',
       fichier: 'File refused: a PNG or JPEG logo of 1 MB at most, or a TTF font of 2 MB at most.',
+      fichierDimensions: (largeur: number, hauteur: number) =>
+        `Logo refused: ${largeur} × ${hauteur} pixels at most. Choose it again in the Studio, which shrinks it itself.`,
       enAttente: {
         reseau:
           'Offline: what you typed in the open draft is not on the server yet. Switch documents once the network is back, so as not to lose it.',
@@ -2057,6 +2077,8 @@ const en: Strings = {
       inconnue: 'The server refused the request: try again in a moment.',
       avoirDevise:
         'The currency of this credit note is not that of the invoice it cites: a credit note is in the currency of the invoice it corrects.',
+      logoDimensions: (largeur: number, hauteur: number, maxLargeur: number, maxHauteur: number) =>
+        `The logo is ${largeur} × ${hauteur} pixels: ${maxLargeur} × ${maxHauteur} at most. Choose it again (Appearance tab or Company page): the Studio will shrink it.`,
     },
     emission: {
       aucunNumero: 'No number was used.',
@@ -2469,6 +2491,8 @@ const en: Strings = {
       logoRetirer: 'Remove',
       logoTropGros: 'This logo is larger than 1 MB: shrink it, then try again. Nothing was sent.',
       logoType: 'This file is neither a PNG nor a JPEG: nothing was sent.',
+      logoDimensions: (largeur: number, hauteur: number) =>
+        `This logo exceeds ${largeur} × ${hauteur} pixels: shrink it, then try again. Nothing was sent.`,
       logoIllisible: 'This image could not be read: nothing was sent.',
       logoEnregistre: 'Logo saved for your next invoices.',
       logoRetire: 'Logo removed from your next invoices.',
@@ -2517,6 +2541,11 @@ const en: Strings = {
         'What will be erased: your invoices and their PDFs, payments and reminders, drafts, clients, the catalogue, your company with its numbering, logo and fonts, then the account itself.',
       confirmerCopie: (heure: string) =>
         `The archive exported at ${heure} will be the only copy of your data: keep it for ten years, the time during which the law requires you to keep your invoices.`,
+      confirmerPdfManquants: (n: number) =>
+        `It lacks ${n > 1 ? `the PDFs of ${n} invoices, listed` : 'the PDF of one invoice, listed'} in donnees.json: export again before requesting deletion.`,
+      confirmerEmisesDepuis: (n: number) =>
+        `${n > 1 ? `${n} invoices have been issued` : 'One invoice has been issued'} since this export: ${n > 1 ? 'they are' : 'it is'} not in the archive. Export again before requesting deletion.`,
+      reexporter: 'Export again',
       confirmer: 'Request deletion',
       garder: 'Keep my account',
       ecranTitre: 'Account deletion requested',
@@ -2532,6 +2561,8 @@ const en: Strings = {
       annulee: 'Deletion cancelled: your account resumes.',
       tropTard: (date: string) =>
         `The deletion requested on ${date} is more than 30 days old: it can no longer be cancelled, and erasure may have started.`,
+      tropTardSansDate:
+        'The deletion was requested more than 30 days ago: it can no longer be cancelled, and erasure may have started.',
       session: 'Your session has expired: sign in again, then start over.',
       reseau: 'The server is not responding: nothing has changed. Try again in a moment.',
       chargement:

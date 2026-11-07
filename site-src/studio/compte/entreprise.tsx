@@ -3,9 +3,12 @@
  * bibliothèque, repris), le logo des prochaines factures, la numérotation, et le compte — adresse,
  * mot de passe, export des données, suppression en deux temps (spec § 12).
  *
- * - Le logo est celui de l'apparence par défaut, que reprend une facture vierge ; il est refusé
- *   avant l'envoi s'il dépasse 1 Mio ou si ses octets ne sont ni ceux d'un PNG ni ceux d'un JPEG
- *   (spec § 11), puis déposé avec son type (`putFile`, comme le reste).
+ * - Le logo est celui de l'apparence par défaut, que reprend une facture vierge. Préparé par
+ *   `normalizeLogo` (480 pixels de haut, `PLAFOND_LOGO` de large au plus), il est refusé avant
+ *   l'envoi s'il dépasse 1 Mio, si ses octets ne sont ni ceux d'un PNG ni ceux d'un JPEG (spec § 11),
+ *   ou s'il dépasse `PLAFOND_LOGO` pixels (Ruling 62), puis déposé avec son type (`putFile`).
+ * - La confirmation de la suppression dit ce qui manque à l'archive exportée : ses PDF manquants, et
+ *   les factures émises depuis (comptées sur le serveur), avec de quoi exporter de nouveau.
  * - Le prochain rang de la numérotation ne descend pas sous celui du serveur : le champ le refuse
  *   avant tout envoi (la base le refuserait aussi, `NUMEROTATION_RECUL`).
  * - La suppression ne se demande qu'après un export réussi pendant cette session, puis une
@@ -17,6 +20,7 @@
  */
 
 import { useEffect, useState } from 'preact/hooks';
+import { PLAFOND_LOGO } from '../../shared/image.js';
 import { getFile, normalizeLogo, putFile } from '../files.js';
 import { formatDate, t } from '../i18n.js';
 import type { Appearance } from '../library.js';
@@ -29,7 +33,14 @@ import { Button, Dialog, Field, FilePick, Icon, IconButton, Input } from '../ui.
 import { changerAdresse } from './index.js';
 import { FormulaireMotDePasse } from './motdepasse.js';
 import { estPersistenceCompte, refusDuLogo } from './persistence.js';
-import { datePurge, demanderSuppression, exportDeLaSession, peutSupprimer } from './suppression.js';
+import {
+  type ContenuExport,
+  datePurge,
+  demanderSuppression,
+  exportDeLaSession,
+  facturesHorsDeLArchive,
+  peutSupprimer,
+} from './suppression.js';
 
 type Logo = NonNullable<Appearance['logo']>;
 
@@ -65,7 +76,13 @@ export async function changerLogo(logo: {
   const phrases = t.compte.entreprise;
   const refus = refusDuLogo(logo.bytes);
   if (refus) {
-    toast(refus === 'TAILLE' ? phrases.logoTropGros : phrases.logoType, 'error');
+    const texte =
+      refus === 'TAILLE'
+        ? phrases.logoTropGros
+        : refus === 'DIMENSIONS'
+          ? phrases.logoDimensions(PLAFOND_LOGO.largeur, PLAFOND_LOGO.hauteur)
+          : phrases.logoType;
+    toast(texte, 'error');
     return undefined;
   }
   let base: Appearance;
@@ -273,19 +290,44 @@ function Adresse() {
   );
 }
 
-/** La confirmation de la demande de suppression : les 30 jours, ce qui sera effacé, la seule copie. */
+/**
+ * La confirmation de la demande de suppression : les 30 jours, ce qui sera effacé, la seule copie —
+ * et ce qui manque à cette copie : les PDF absents de l'archive, et les factures émises depuis
+ * l'export (le compte en a plus que l'archive : compté sur le serveur à l'ouverture, émises ici ou
+ * ailleurs), avec de quoi exporter de nouveau.
+ */
 function ConfirmerSuppression({
   ouvert,
-  exportFaitLe,
+  exportFait,
+  exporter,
+  exportEnCours,
   fermer,
 }: {
   ouvert: boolean;
-  exportFaitLe: string;
+  exportFait: ContenuExport & { exportFaitLe: string };
+  exporter: () => Promise<void>;
+  exportEnCours: boolean;
   fermer: () => void;
 }) {
   const phrases = t.compte.suppression;
   const [occupe, setOccupe] = useState(false);
   const [erreur, setErreur] = useState<string>();
+  // Les factures émises depuis l'export ; rien tant que le serveur n'a pas répondu (ou s'il ne répond pas).
+  const [depuis, setDepuis] = useState<number>();
+  useEffect(() => {
+    if (!ouvert) return;
+    let abandonne = false;
+    setDepuis(undefined);
+    facturesHorsDeLArchive(exportFait.factures).then(
+      (n) => !abandonne && setDepuis(n),
+      () => undefined,
+    );
+    return () => {
+      abandonne = true;
+    };
+  }, [ouvert, exportFait.exportFaitLe, exportFait.factures]);
+  const manquants = exportFait.pdfManquants;
+  const incomplete = manquants > 0 || (depuis ?? 0) > 0;
   const demander = async (): Promise<void> => {
     setOccupe(true);
     setErreur(undefined);
@@ -311,7 +353,22 @@ function ConfirmerSuppression({
       <div class="compte-form">
         <p>{phrases.confirmerDelai(formatDate(datePurge(new Date().toISOString())))}</p>
         <p>{phrases.confirmerEfface}</p>
-        <p class="suppression-copie">{phrases.confirmerCopie(heureDe(exportFaitLe))}</p>
+        <p class="suppression-copie">{phrases.confirmerCopie(heureDe(exportFait.exportFaitLe))}</p>
+        {manquants > 0 && <p class="field-issue">{phrases.confirmerPdfManquants(manquants)}</p>}
+        {depuis !== undefined && depuis > 0 && (
+          <p class="field-issue">{phrases.confirmerEmisesDepuis(depuis)}</p>
+        )}
+        {incomplete && (
+          <div class="row-actions">
+            <Button
+              icon="download"
+              onClick={() => void exporter()}
+              disabled={occupe || exportEnCours}
+            >
+              {phrases.reexporter}
+            </Button>
+          </div>
+        )}
         {erreur && (
           <p class="field-issue" role="alert">
             {erreur}
@@ -385,7 +442,13 @@ function DonneesEtSuppression() {
       {etat.exportFaitLe && (
         <ConfirmerSuppression
           ouvert={confirmation}
-          exportFaitLe={etat.exportFaitLe}
+          exportFait={{
+            exportFaitLe: etat.exportFaitLe,
+            factures: etat.factures ?? 0,
+            pdfManquants: etat.pdfManquants ?? 0,
+          }}
+          exporter={exporter}
+          exportEnCours={exportEnCours}
           fermer={() => setConfirmation(false)}
         />
       )}

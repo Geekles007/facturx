@@ -48,21 +48,25 @@ export function oublierSession(): void {
   }
 }
 
+/** Le fragment que Supabase met après le premier des deux liens d'un changement d'adresse. */
+const CONFIRMATION_PARTIELLE = /[#&]message=Confirmation(?:\+|%20)link(?:\+|%20)accepted/i;
+
 /**
  * Nature du retour d'un lien reçu par e-mail (confirmation, réinitialisation, changement
  * d'adresse) : `code` quand Supabase renvoie le code du flux PKCE, `erreur` quand le lien est
- * périmé ou invalide, `message` pour le premier des deux liens d'un changement d'adresse (Supabase
- * le dit, en anglais, dans `message`), rien pour une adresse ordinaire. Le fragment
- * `#access_token=…` du flux implicite n'en est pas un : le client n'accepte que PKCE, qui lie la
- * session au navigateur de la demande, et un lien fabriqué avec les jetons d'un autre compte ne
- * peut donc pas y ouvrir de session.
+ * périmé ou invalide, `message` pour le premier des deux liens d'un changement d'adresse —
+ * Supabase le dit, en anglais, dans le fragment (`#message=Confirmation link accepted…`) ; un
+ * autre `message` n'en est pas un, et ne fait pas charger `supabase-js` —, rien pour une adresse
+ * ordinaire. Le fragment `#access_token=…` du flux implicite n'en est pas un : le client n'accepte
+ * que PKCE, qui lie la session au navigateur de la demande, et un lien fabriqué avec les jetons d'un
+ * autre compte ne peut donc pas y ouvrir de session.
  */
 export function retourDeLien(): 'code' | 'erreur' | 'message' | undefined {
   try {
     const { search, hash } = globalThis.location;
     if (/[?#&]error_(?:code|description)=/.test(search + hash)) return 'erreur';
     if (/[?&]code=/.test(search)) return 'code';
-    if (/[?#&]message=/.test(search + hash)) return 'message';
+    if (CONFIRMATION_PARTIELLE.test(hash)) return 'message';
   } catch {
     // Hors d'un navigateur : aucun lien n'a ramené ici.
   }

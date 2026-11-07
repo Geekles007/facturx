@@ -34,6 +34,7 @@
  */
 
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
+import { dimensionsImage, logoTropGrand } from '../../shared/image.js';
 import { fromBase64, toBase64 } from '../../shared/portable.js';
 import type {
   Appearance,
@@ -256,14 +257,26 @@ function typeDe(octets: Uint8Array): keyof typeof PLAFONDS | undefined {
 }
 
 /**
- * Pourquoi `octets` ne peut pas être un logo (spec § 11) : ni PNG ni JPEG d'après leurs premiers
- * octets (`TYPE` : une police TrueType, que le bucket prend, n'en est pas un), ou plus de 1 Mio
- * (`TAILLE`). Rien s'il est admis. La page Entreprise le vérifie avant tout envoi.
+ * Pourquoi une image ne peut pas être déposée comme logo : ses dimensions illisibles (`TYPE` : un
+ * en-tête tronqué ou faux), ou au-delà du plafond en pixels (`DIMENSIONS`, Ruling 62). Rien sinon.
  */
-export function refusDuLogo(octets: Uint8Array): 'TYPE' | 'TAILLE' | undefined {
+function refusDesPixels(octets: Uint8Array): 'TYPE' | 'DIMENSIONS' | undefined {
+  const dimensions = dimensionsImage(octets);
+  if (!dimensions) return 'TYPE';
+  return logoTropGrand(dimensions) ? 'DIMENSIONS' : undefined;
+}
+
+/**
+ * Pourquoi `octets` ne peut pas être un logo (spec § 11, Ruling 62) : ni PNG ni JPEG d'après leurs
+ * premiers octets, ou un en-tête illisible (`TYPE` : une police TrueType, que le bucket prend, n'en
+ * est pas un), plus de 1 Mio (`TAILLE`), ou plus de `PLAFOND_LOGO` pixels (`DIMENSIONS`). Rien s'il
+ * est admis. La page Entreprise le vérifie avant tout envoi.
+ */
+export function refusDuLogo(octets: Uint8Array): 'TYPE' | 'TAILLE' | 'DIMENSIONS' | undefined {
   const type = typeDe(octets);
   if (type !== 'image/png' && type !== 'image/jpeg') return 'TYPE';
-  return octets.length > PLAFONDS[type] ? 'TAILLE' : undefined;
+  if (octets.length > PLAFONDS[type]) return 'TAILLE';
+  return refusDesPixels(octets);
 }
 
 /** `%PDF-`, l'en-tête d'un PDF. */
@@ -1070,13 +1083,16 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
     /**
      * Dépose un logo ou une police. Le type annoncé est celui que disent les octets (un navigateur
      * annonce mal un `.ttf`, et le bucket n'accepte que PNG, JPEG et TTF) ; un logo de plus de
-     * 1 Mio est refusé ici, avant le serveur. Un PDF ne se dépose que par l'émission.
+     * 1 Mio, d'en-tête illisible ou de plus de `PLAFOND_LOGO` pixels est refusé ici, avant le
+     * serveur (`emettre` le refuserait au rendu). Un PDF ne se dépose que par l'émission.
      */
     async setFile(key: string, bytes: Uint8Array): Promise<IDBValidKey> {
       if (key.startsWith('pdf-')) throw new ErreurConservation('EMISSION_SERVEUR');
       const type = typeDe(bytes);
       if (!type) throw new ErreurConservation('FICHIER', 'TYPE');
       if (bytes.length > PLAFONDS[type]) throw new ErreurConservation('FICHIER', 'TAILLE');
+      const pixels = type === 'font/ttf' ? undefined : refusDesPixels(bytes);
+      if (pixels) throw new ErreurConservation('FICHIER', pixels);
       const { error } = await sb.storage
         .from('fichiers')
         .upload(emplacement(key).chemin, bytes, { contentType: type, upsert: true });

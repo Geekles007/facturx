@@ -29,7 +29,6 @@ import {
 } from '../store.js';
 import { client } from './client.js';
 import { clesDuNavigateur, type Miroir, supabasePersistence } from './persistence.js';
-import { cleMarque } from './proposition.js';
 import { effacerRetourDeLien, oublierSession, retourDeLien } from './session.js';
 
 /** Version des CGU que l'utilisateur accepte en s'inscrivant ; le serveur refuse l'inscription sans elle. */
@@ -153,6 +152,8 @@ const ERREURS: Record<string, keyof Strings['compte']['errors']> = {
   signup_disabled: 'signupClosed',
   session_not_found: 'session',
   session_expired: 'session',
+  // `secure_password_change` : GoTrue demande une session de moins de 24 heures, ou un code.
+  reauthentication_needed: 'reauth',
 };
 
 /** Une phrase de l'interface pour l'erreur de l'authentification (jamais le texte anglais du serveur). */
@@ -310,12 +311,15 @@ async function ceQuiNEstPasParti(entrepriseId: string): Promise<string[]> {
 }
 
 /**
- * Efface de ce navigateur ce que le compte y gardait (relevé aux tâches 15, 16 et 20) : le miroir du
- * brouillon, son identifiant, la vue affichée, les valeurs locales (`kv-compte-*`) et la marque
- * d'import. Les données du Studio sans compte, et celles d'un autre compte, restent. Ne lève pas.
+ * Efface de ce navigateur ce que le compte y gardait (relevé aux tâches 15 et 16) : le miroir du
+ * brouillon, son identifiant, la vue affichée et les valeurs locales (`kv-compte-*`). Les données du
+ * Studio sans compte, celles d'un autre compte, et la marque d'import (`import-local-*`, Ruling 61)
+ * restent : la marque décrit les données de ce navigateur — elles y restent tant que l'utilisateur
+ * ne demande pas à les effacer (spec § 10) — et l'effacer ferait reproposer l'import, oublierait un
+ * refus, et reprendrait une seconde fois le même brouillon local. Ne lève pas.
  */
 async function oublierCeNavigateur(entrepriseId: string): Promise<void> {
-  const cles = [...Object.values(clesDuNavigateur(entrepriseId)), cleMarque(entrepriseId)];
+  const cles = Object.values(clesDuNavigateur(entrepriseId));
   await Promise.all(cles.map((cle) => local.remove('kv', cle).catch(() => undefined)));
 }
 

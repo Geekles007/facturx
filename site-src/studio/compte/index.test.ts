@@ -412,6 +412,16 @@ describe('changer d’adresse et de mot de passe', () => {
       error: new AuthApiError('Password should be at least 6 characters', 422, 'weak_password'),
     });
     await expect(changerMotDePasse('1')).rejects.toThrow(t.compte.errors.weak);
+    // `secure_password_change` (si la production l'active) : une connexion récente est demandée.
+    auth.updateUser.mockResolvedValue({
+      data: { user: null },
+      error: new AuthApiError(
+        'Password update requires reauthentication',
+        400,
+        'reauthentication_needed',
+      ),
+    });
+    await expect(changerMotDePasse('un-autre-secret')).rejects.toThrow(t.compte.errors.reauth);
   });
 });
 

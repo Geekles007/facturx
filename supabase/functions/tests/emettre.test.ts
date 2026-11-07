@@ -840,6 +840,65 @@ Deno.test('logo de plus de 1 Mo : le bucket l’accepte, l’émission le refuse
   assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
 });
 
+/** Un PNG réduit à sa signature et à son en-tête IHDR : `emettre` le refuse avant de le décoder. */
+function pngEntete(largeur: number, hauteur: number): Uint8Array {
+  const o = new Uint8Array(64);
+  o.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  const v = new DataView(o.buffer);
+  v.setUint32(16, largeur);
+  v.setUint32(20, hauteur);
+  o.set([8, 6, 0, 0, 0], 24);
+  return o;
+}
+
+Deno.test('logo de 4000 × 4000 pixels sous 1 Mo : 422 FICHIER avant le rendu, dimensions et plafond dits', async () => {
+  const compte = await creerCompte();
+  // Quelques octets, mais 64 millions de pixels à décoder : la mémoire d'un rendu n'y suffirait pas.
+  const { error } = await admin()
+    .storage.from('fichiers')
+    .upload(`${compte.entrepriseId}/logo-grand`, pngEntete(4000, 4000), {
+      contentType: 'image/png',
+    });
+  assertEquals(error, null);
+  const appearance = {
+    ...apparenceDeTest(),
+    logo: { key: 'logo-grand', type: 'png', position: 'left', height: 44, name: 'logo.png' },
+  };
+
+  const { status, corps, brouillon } = await emettre(compte, factureDeTest(), { appearance });
+  assertEquals(status, 422);
+  assertEquals(corps.code, 'ANOMALIES');
+  assertEquals(corps.details[0].code, 'FICHIER');
+  assertEquals(corps.details[0].path, 'appearance.logo');
+  assertEquals(corps.details[0].details, {
+    largeur: 4000,
+    hauteur: 4000,
+    plafond: { largeur: 2000, hauteur: 2000 },
+  });
+  assert(corps.details[0].message.includes('2000 × 2000'), corps.details[0].message);
+  assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
+  assertEquals(await brouillonExiste(brouillon.id), true);
+});
+
+Deno.test('logo PNG à l’en-tête illisible : 422 FICHIER, comme un fichier qui n’est pas un PNG', async () => {
+  const compte = await creerCompte();
+  const tronque = pngEntete(300, 120).subarray(0, 20);
+  const { error } = await admin()
+    .storage.from('fichiers')
+    .upload(`${compte.entrepriseId}/logo-tronque`, tronque, { contentType: 'image/png' });
+  assertEquals(error, null);
+  const appearance = {
+    ...apparenceDeTest(),
+    logo: { key: 'logo-tronque', type: 'png', position: 'left', height: 44, name: 'logo.png' },
+  };
+
+  const { status, corps } = await emettre(compte, factureDeTest(), { appearance });
+  assertEquals(status, 422);
+  assertEquals(corps.details[0].code, 'FICHIER');
+  assertEquals(corps.details[0].path, 'appearance.logo');
+  assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
+});
+
 Deno.test('texte que jsonb refuse (caractère nul, demi-substitut isolé) : 422 CORPS, rien d’émis ni déposé', async () => {
   const compte = await creerCompte();
   const brouillon = await brouillonDeTest(compte.entrepriseId);

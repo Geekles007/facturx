@@ -94,11 +94,21 @@ describe('retourDeLien', () => {
     expect(retourDeLien()).toBe('erreur');
   });
 
-  it('reconnaît le premier des deux liens d’un changement d’adresse', () => {
+  it('reconnaît le premier des deux liens d’un changement d’adresse, tel que Supabase le rend', () => {
     poserAdresse(
-      'https://exemple.test/studio/?message=Confirmation+link+accepted#message=Confirmation+link+accepted&sb=',
+      'https://exemple.test/studio/?message=Confirmation+link+accepted.+Please+proceed+to+confirm+link+sent+to+the+other+email#message=Confirmation+link+accepted.+Please+proceed+to+confirm+link+sent+to+the+other+email&sb=',
     );
     expect(retourDeLien()).toBe('message');
+  });
+
+  it('un autre `message` dans l’adresse n’en est pas un : supabase-js ne se charge pas pour lui', () => {
+    poserAdresse('https://exemple.test/studio/?message=x');
+    expect(retourDeLien()).toBeUndefined();
+    poserAdresse('https://exemple.test/studio/#message=bonjour');
+    expect(retourDeLien()).toBeUndefined();
+    // Le texte de Supabase dans la requête seule, sans son fragment : pas un retour de lien non plus.
+    poserAdresse('https://exemple.test/studio/?message=Confirmation+link+accepted');
+    expect(retourDeLien()).toBeUndefined();
   });
 
   it('ignore le fragment du flux implicite : un lien fabriqué n’ouvre aucune session', () => {

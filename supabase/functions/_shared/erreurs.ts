@@ -29,11 +29,16 @@ export type CodeErreur =
   | 'METHODE'
   | 'INTERNE';
 
-/** Une anomalie au format des `Issue` du SDK : le Studio ouvre l'onglet Contrôle sur `path`. */
+/**
+ * Une anomalie au format des `Issue` du SDK : le Studio ouvre l'onglet Contrôle sur `path`. `details`,
+ * facultatif, dit ce que le Studio peut redire dans sa langue (un logo trop grand : ses dimensions
+ * et le plafond).
+ */
 export interface Anomalie {
   code: string;
   path: string;
   message: string;
+  details?: Record<string, unknown>;
 }
 
 /** Les en-têtes CORS qui ne dépendent pas de la requête ; `Vary` : la réponse dépend de l'origine. */

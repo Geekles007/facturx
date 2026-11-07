@@ -46,7 +46,13 @@ import {
 } from '../library.js';
 import { ErreurConservation, type Persistence } from '../persistence.js';
 import { indexedDbPersistence, storage } from '../storage.js';
-import { enregistrerMaintenant, type Loaded, loadPersisted, store } from '../store.js';
+import {
+  enregistrerMaintenant,
+  type Loaded,
+  loadPersisted,
+  messageDeFichier,
+  store,
+} from '../store.js';
 import { startDraft } from '../workflows.js';
 import { client } from './client.js';
 import { PLAFOND_CORPS } from './emission.js';
@@ -309,7 +315,7 @@ function raisonDe(erreur: unknown): string {
   if (!(erreur instanceof ErreurConservation)) return raisons.refus;
   switch (erreur.code) {
     case 'FICHIER':
-      return t.compte.conservation.fichier;
+      return messageDeFichier(erreur.detail);
     case 'SESSION':
       sessionRefusee(401);
       return raisons.session;

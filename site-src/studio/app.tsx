@@ -382,7 +382,9 @@ async function newBlank(): Promise<void> {
 
 /**
  * Termine la session de ce navigateur ; le code du compte est déjà chargé quand on est connecté.
- * Quoi qu'il arrive, la page est rechargée sans session : le menu du compte ne reste jamais affiché
+ * Si une saisie n'a pas atteint le serveur et que l'utilisateur refuse de la perdre, rien ne se passe
+ * (`deconnecter` le lui a demandé). Sinon la page est rechargée sans session, quoi que réponde le
+ * serveur, ou si le module du compte ne se charge pas : le menu du compte ne reste jamais affiché
  * alors que la session n'existe plus.
  */
 async function seDeconnecter(): Promise<void> {

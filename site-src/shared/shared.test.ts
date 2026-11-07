@@ -17,7 +17,14 @@ import { labelsFor } from './rendu.js';
 const here = dirname(fileURLToPath(import.meta.url));
 
 test('aucun module partagé n’importe un fichier relatif (Deno ne résout pas .js → .ts)', () => {
-  for (const f of ['numerotation.ts', 'portable.ts', 'polices.ts', 'rendu.ts', 'destinataire.ts'])
+  for (const f of [
+    'numerotation.ts',
+    'portable.ts',
+    'polices.ts',
+    'rendu.ts',
+    'destinataire.ts',
+    'image.ts',
+  ])
     expect(readFileSync(join(here, f), 'utf8')).not.toMatch(/from\s+['"]\./);
 });
 
