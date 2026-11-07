@@ -35,6 +35,7 @@ import {
 } from './import.js';
 import { type PersistenceCompte, supabasePersistence } from './persistence.js';
 import {
+  entrepriseRenseignee,
   importAProposer,
   inventaireLocal,
   lireMarqueImport,
@@ -592,12 +593,39 @@ describe('un import refait n’écrase rien de ce que le compte a déjà (Ruling
 
   test('une entreprise du compte vide (état initial) est remplacée par celle du navigateur', async () => {
     const cible = enMemoire();
-    cible.kv.set('company', defaultCompany());
+    // Le profil que pose l'inscription (migration 000100) : celui du Studio, au moyen de paiement
+    // près, dont l'`uid` est `u0`.
+    const inscription = defaultCompany();
+    inscription.paymentMeans = inscription.paymentMeans.map((m) => ({ ...m, uid: 'u0' }));
+    cible.kv.set('company', inscription);
     const rapport = await importerLocal(sauvegarde(TROIS), cible.p, fauxImporter([]).importer);
     expect((cible.kv.get('company') as { seller: { name: string } }).seller.name).toBe(
       'Atelier Local',
     );
     expect(rapport.conserves).toEqual([]);
+  });
+
+  test('une entreprise du compte qui s’écarte en quoi que ce soit de l’inscription est gardée', async () => {
+    const changements: [string, (c: ReturnType<typeof defaultCompany>) => void][] = [
+      ['nom commercial', (c) => (c.seller.tradingName = 'Enseigne')],
+      ['devise par défaut', (c) => (c.defaults.currency = 'USD')],
+      ['adresse', (c) => (c.seller.address.city = 'Lyon')],
+      ['contact', (c) => (c.seller.contact.email = 'compta@exemple.fr')],
+      ['adresse électronique', (c) => (c.seller.electronicAddress.value = '732829320')],
+      [
+        'note par défaut',
+        (c) => c.defaults.notes.push({ uid: 'n-1', subjectCode: 'AAI', text: 'x' }),
+      ],
+    ];
+    for (const [quoi, changer] of changements) {
+      const cible = enMemoire();
+      const sienne = defaultCompany();
+      changer(sienne);
+      cible.kv.set('company', sienne);
+      const rapport = await importerLocal(sauvegarde(TROIS), cible.p, fauxImporter([]).importer);
+      expect(cible.kv.get('company'), quoi).toEqual(sienne);
+      expect(rapport.conserves, quoi).toEqual(['entreprise']);
+    }
   });
 
   test('numérotation déjà employée : gabarit et remise à zéro du compte gardés, rang au plus haut', async () => {
@@ -917,7 +945,129 @@ describe('la proposition d’import à la première connexion', () => {
     expect(await lireMarqueImport()).toMatchObject({ etat: 'fait' });
     expect((await lireMarqueImport())?.enAttente).toBeUndefined();
   });
+
+  /**
+   * La conservation du compte en mémoire, avec ce que `startDraft` emploie du brouillon : tant que
+   * `accepte.oui` est faux, le brouillon ouvert ne peut pas être quitté (sa saisie n'est pas sur le
+   * serveur), et le brouillon local ne peut pas devenir un brouillon du compte.
+   */
+  function compteQuiRetient(accepte: { oui: boolean }) {
+    const memoire = enMemoire();
+    const p = {
+      ...memoire.p,
+      entrepriseId: 'e-1',
+      brouillonCourant: () => undefined,
+      garderBrouillon: async () => undefined,
+      envoisTermines: async () => undefined,
+      quitterBrouillon: () => accepte.oui,
+    } as unknown as PersistenceCompte;
+    utiliser(p);
+    return memoire;
+  }
+
+  test('brouillon non repris, factures en attente : la reprise reprend les deux, puis la marque est faite', async () => {
+    await remplirLocal();
+    const accepte = { oui: false };
+    compteQuiRetient(accepte);
+    const reessayerApres = new Date(Date.now() + 30 * 60_000).toISOString();
+    const invoke = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { id: 'f-1', numero: 'F-2026-0001' }, error: null })
+      .mockResolvedValueOnce(
+        refusDeFonction(429, { code: 'LIMITE', message: 'trop', details: { reessayerApres } }),
+      )
+      .mockResolvedValue({ data: { id: 'f-x', numero: 'x' }, error: null });
+    session.sb = { functions: { invoke } };
+
+    const premiere = await importerCeNavigateur();
+    expect(premiere.brouillon).toBe('nonRepris');
+    expect(await lireMarqueImport()).toMatchObject({ etat: 'partiel', brouillonEnAttente: true });
+    expect(await importAProposer()).toMatchObject({ reprise: true, brouillonEnAttente: true });
+
+    // La reprise : les factures en attente et le brouillon, une seule fois.
+    accepte.oui = true;
+    const proposee = await importAProposer();
+    const reprise = await importerCeNavigateur({ reprise: proposee?.enAttente ?? [] });
+    expect(reprise).toMatchObject({ factures: 2, brouillon: 'repris' });
+    expect(store.get().form.buyer.name).toBe(sampleForm('2026-03-10').buyer.name);
+    const marque = await lireMarqueImport();
+    expect(marque).toMatchObject({ etat: 'fait' });
+    expect(marque?.brouillonEnAttente).toBeUndefined();
+    expect(marque?.brouillon).toMatch(/^[0-9a-f]{64}$/);
+    // Demandé encore : le brouillon est déjà repris.
+    expect(await importerCeNavigateur()).toMatchObject({ brouillon: 'dejaRepris' });
+  });
+
+  test('brouillon seul non repris (toutes les factures passées) : inachevé, et la reprise le reprend', async () => {
+    await remplirLocal();
+    const accepte = { oui: false };
+    const memoire = compteQuiRetient(accepte);
+    session.sb = {
+      functions: {
+        invoke: vi.fn().mockResolvedValue({ data: { id: 'f', numero: 'x' }, error: null }),
+      },
+    };
+
+    const premiere = await importerCeNavigateur();
+    expect(premiere).toMatchObject({ factures: 3, enAttente: [], brouillon: 'nonRepris' });
+    expect(premiere.arret).toBeUndefined();
+    // Pas « fait » : le brouillon reste à reprendre.
+    expect(await lireMarqueImport()).toMatchObject({ etat: 'partiel', brouillonEnAttente: true });
+    const proposee = await importAProposer();
+    expect(proposee).toMatchObject({ reprise: true, brouillonEnAttente: true });
+    expect(proposee?.enAttente).toBeUndefined();
+
+    // La reprise, sans facture à envoyer : le brouillon seul, rien de la bibliothèque.
+    accepte.oui = true;
+    memoire.journal.length = 0;
+    const reprise = await importerCeNavigateur({ reprise: proposee?.enAttente ?? [] });
+    expect(reprise).toMatchObject({ factures: 0, brouillon: 'repris' });
+    expect(memoire.journal.filter((l) => l.startsWith('put') || l === 'set company')).toEqual([]);
+    expect(await lireMarqueImport()).toMatchObject({ etat: 'fait' });
+  });
+
+  test('le brouillon local disparu entre-temps : la reprise marque l’import fait', async () => {
+    await remplirLocal();
+    const accepte = { oui: false };
+    compteQuiRetient(accepte);
+    session.sb = {
+      functions: {
+        invoke: vi.fn().mockResolvedValue({ data: { id: 'f', numero: 'x' }, error: null }),
+      },
+    };
+    await importerCeNavigateur();
+    expect(await lireMarqueImport()).toMatchObject({ etat: 'partiel', brouillonEnAttente: true });
+    // Ce navigateur n'a plus de brouillon saisi (l'exemple à la place).
+    await indexedDbPersistence.set('draft', {
+      form: sampleForm(),
+      appearance: defaultAppearance(),
+      sample: true,
+    });
+    const reprise = await importerCeNavigateur({ reprise: [] });
+    expect(reprise.brouillon).toBeUndefined();
+    expect(await lireMarqueImport()).toMatchObject({ etat: 'fait' });
+  });
 });
+
+describe.skipIf(!process.env.SUPABASE_URL)(
+  'l’entreprise que pose l’inscription, contre la pile',
+  () => {
+    test('le profil d’un compte neuf est « jamais renseigné » ; un nom commercial le fait renseigné', async () => {
+      const { sb, entrepriseId } = await compteDeTest();
+      const p = supabasePersistence(sb, entrepriseId);
+      const profil = await p.get<ReturnType<typeof defaultCompany>>('company');
+      expect(profil).toBeDefined();
+      expect(entrepriseRenseignee(profil)).toBe(false);
+      if (!profil) return;
+      expect(
+        entrepriseRenseignee({ ...profil, seller: { ...profil.seller, tradingName: 'E' } }),
+      ).toBe(true);
+      expect(
+        entrepriseRenseignee({ ...profil, defaults: { ...profil.defaults, currency: 'USD' } }),
+      ).toBe(true);
+    });
+  },
+);
 
 // ---------- contre la pile, `importer` servie ----------
 

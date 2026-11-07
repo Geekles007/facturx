@@ -101,7 +101,13 @@ export function reaction(
       return min && DATE_ISO.test(min) ? { kind: 'date', min, max } : { kind: 'date', max };
     }
     case 'DOUBLON':
-      return message(phrases.doublon(texteDe(details, 'numero') ?? ''));
+      // `compteur: false` : le gabarit n'a pas de compteur, il n'y a pas de numéro suivant à attendre.
+      return message(
+        phrases.doublon(
+          texteDe(details, 'numero') ?? '',
+          !(estObjet(details) && details.compteur === false),
+        ),
+      );
     case 'PDF_DEJA_DEPOSE':
       return message(phrases.pdfDejaDepose);
     case 'ANOMALIES': {

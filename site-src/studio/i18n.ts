@@ -749,8 +749,11 @@ const fr = {
       brouillonModifie:
         'Ce brouillon a changé ailleurs depuis son ouverture (un autre onglet ou un autre appareil) : rechargez la version enregistrée, ou gardez la vôtre, puis recommencez.',
       date: "La date d'émission sort des dates admises.",
-      doublon: (numero: string) =>
-        `Le numéro ${numero || 'attribué'} et les milliers qui le suivent dans votre numérotation sont déjà pris : changez le gabarit de la numérotation, puis recommencez.`,
+      /** `compteur` faux : le gabarit n'a pas de compteur (`{NNNN}`), il ne donne qu'un numéro. */
+      doublon: (numero: string, compteur: boolean) =>
+        compteur
+          ? `Le numéro ${numero || 'attribué'} et les milliers qui le suivent dans votre numérotation sont déjà pris : changez le gabarit de la numérotation, puis recommencez.`
+          : `Le numéro ${numero || 'attribué'} est déjà pris, et votre gabarit de numérotation n'a pas de compteur ({NNNN}) qui en donnerait un autre : ajoutez-en un, ou changez le gabarit, puis recommencez.`,
       pdfDejaDepose: 'Le PDF de cette facture est déjà déposé.',
       limite: (heure: string | undefined) =>
         heure
@@ -1090,6 +1093,8 @@ const fr = {
         "Un import précédent n'est pas allé au bout : reprenez-le. Ce qui est déjà dans le compte n'y est pas importé deux fois.",
       repriseFactures: (n: number) =>
         `Un import précédent n'est pas allé au bout : ${n} facture${n > 1 ? 's attendent' : ' attend'} encore. La reprise n'envoie qu'elle${n > 1 ? 's' : ''}.`,
+      repriseBrouillon:
+        "Votre brouillon en cours n'est pas encore devenu un brouillon du compte : la reprise le reprend.",
       explication:
         "L'import ajoute à votre compte ce qu'il n'a pas encore et ne remplace rien de ce qu'il a : les clients et les articles qui n'y sont pas ; chaque facture, relue dans son PDF Factur-X, avec son numéro ; le brouillon en cours, comme un brouillon de plus. Votre entreprise, votre apparence par défaut et les réglages de la numérotation (gabarit, remise à zéro) ne sont repris que si ceux du compte n'ont jamais été renseignés ; la numérotation ne recule jamais. Rien n'est effacé de ce navigateur.",
       plusTard: 'Vous pourrez aussi le faire plus tard, depuis « Mon compte ».',
@@ -1913,8 +1918,10 @@ const en: Strings = {
       brouillonModifie:
         'This draft was changed elsewhere since it was opened (another tab or another device): reload the saved version, or keep yours, then start again.',
       date: 'The issue date is outside the allowed dates.',
-      doublon: (numero: string) =>
-        `Number ${numero || 'assigned'} and the thousands that follow it in your sequence are already taken: change the numbering pattern, then start again.`,
+      doublon: (numero: string, compteur: boolean) =>
+        compteur
+          ? `Number ${numero || 'assigned'} and the thousands that follow it in your sequence are already taken: change the numbering pattern, then start again.`
+          : `Number ${numero || 'assigned'} is already taken, and your numbering pattern has no counter ({NNNN}) to give another one: add one, or change the pattern, then start again.`,
       pdfDejaDepose: 'The PDF of this invoice has already been uploaded.',
       limite: (heure: string | undefined) =>
         heure
@@ -2238,6 +2245,8 @@ const en: Strings = {
         'A previous import did not finish: resume it. Nothing already in the account is imported twice.',
       repriseFactures: (n: number) =>
         `A previous import did not finish: ${n} invoice${n === 1 ? ' is' : 's are'} still waiting. Resuming sends only ${n === 1 ? 'it' : 'them'}.`,
+      repriseBrouillon:
+        'Your draft in progress has not become an account draft yet: resuming carries it over.',
       explication:
         "Importing adds to your account what it does not have yet, and replaces nothing it has: the clients and items that are not in it; each invoice, read again from its Factur-X PDF, with its number; the draft in progress, as one more draft. Your company, default appearance and numbering settings (pattern, yearly reset) are carried over only if the account's were never filled in; numbering never goes back. Nothing is erased from this browser.",
       plusTard: 'You can also do it later, from “My account”.',

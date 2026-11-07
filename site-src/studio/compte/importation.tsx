@@ -51,6 +51,15 @@ interface Passe {
   auto?: boolean;
 }
 
+/** Deux passes en un bilan ; le brouillon, tel que la dernière passe qui s'en est occupée le dit. */
+function cumulerAvecBrouillon(
+  avant: RapportNavigateur,
+  apres: RapportNavigateur,
+): RapportNavigateur {
+  const brouillon = apres.brouillon ?? avant.brouillon;
+  return { ...cumuler(avant, apres), ...(brouillon ? { brouillon } : {}) };
+}
+
 /** « votre entreprise, 2 clients et 3 factures émises ». */
 function inventaireEnMots(i: Inventaire): string {
   const trouves = t.compte.importation.trouves;
@@ -118,12 +127,7 @@ export function DialogueImport() {
       essaisLimite.current = limite && auto ? essaisLimite.current + 1 : 0;
       setEtat({
         kind: 'bilan',
-        rapport: avant
-          ? {
-              ...cumuler(avant, rapport),
-              ...(avant.brouillon ? { brouillon: avant.brouillon } : {}),
-            }
-          : rapport,
+        rapport: avant ? cumulerAvecBrouillon(avant, rapport) : rapport,
       });
     } catch {
       setEtat({ kind: 'erreur' });
@@ -133,14 +137,15 @@ export function DialogueImport() {
   };
 
   /**
-   * Reprendre après un arrêt : pendant les factures, celles qui attendent seules ; avant elles
-   * (session, réseau dès l'entreprise), tout, de nouveau.
+   * Reprendre : après un arrêt avant les factures (session, réseau dès l'entreprise), tout, de
+   * nouveau ; sinon les factures qui attendent seules (aucune, si seul le brouillon restait), et le
+   * brouillon s'il n'avait pas pu être repris.
    */
   const reprendre = (avant: RapportNavigateur, auto = false) =>
     void lancer(
-      avant.arret?.etape === 'factures'
-        ? { avant, reprise: avant.enAttente.map((f) => f.uid), auto }
-        : { auto },
+      avant.arret?.etape === 'bibliotheque'
+        ? { auto }
+        : { avant, reprise: avant.enAttente.map((f) => f.uid), auto },
     );
 
   // Arrêté par la limite de débit : on reprend à l'heure dite, tant que le dialogue reste ouvert.
@@ -171,7 +176,15 @@ export function DialogueImport() {
         {etat.kind === 'offre' && (
           <Offre
             inventaire={etat.inventaire}
-            importer={() => void lancer({ reprise: etat.inventaire?.enAttente })}
+            importer={() =>
+              void lancer({
+                // Une reprise (factures en attente, brouillon à reprendre) n'envoie que cela.
+                reprise:
+                  etat.inventaire?.enAttente || etat.inventaire?.brouillonEnAttente
+                    ? (etat.inventaire.enAttente ?? [])
+                    : undefined,
+              })
+            }
             fermer={fermer}
           />
         )}
@@ -228,11 +241,15 @@ function Offre({
     );
   }
   const enAttente = inventaire.enAttente?.length ?? 0;
+  const reprise = enAttente > 0 || inventaire.brouillonEnAttente === true;
   return (
     <>
       <p class="import-trouve">{phrases.trouve(inventaireEnMots(inventaire))}</p>
-      {enAttente > 0 ? (
-        <p>{phrases.repriseFactures(enAttente)}</p>
+      {reprise ? (
+        <>
+          {enAttente > 0 && <p>{phrases.repriseFactures(enAttente)}</p>}
+          {inventaire.brouillonEnAttente && <p>{phrases.repriseBrouillon}</p>}
+        </>
       ) : (
         <>
           {inventaire.reprise && <p>{phrases.reprise}</p>}
@@ -245,7 +262,7 @@ function Offre({
           {phrases.pasMaintenant}
         </Button>
         <Button variant="primary" icon="upload" onClick={importer}>
-          {enAttente > 0 ? phrases.reprendre : phrases.importer}
+          {reprise ? phrases.reprendre : phrases.importer}
         </Button>
       </div>
     </>
@@ -313,7 +330,7 @@ function Bilan({
         </div>
       )}
       <div class="row-actions">
-        {arret && !arret.reessayerApres && (
+        {((arret && !arret.reessayerApres) || rapport.brouillon === 'nonRepris') && (
           <Button icon="refresh" onClick={reprendre}>
             {phrases.reprendre}
           </Button>

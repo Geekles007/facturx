@@ -130,7 +130,26 @@ describe('reaction', () => {
       message: '',
       details: { numero: 'F-2026-0007' },
     });
-    expect(doublon).toEqual({ kind: 'message', texte: t.compte.erreurs.doublon('F-2026-0007') });
+    expect(doublon).toEqual({
+      kind: 'message',
+      texte: t.compte.erreurs.doublon('F-2026-0007', true),
+    });
+    // Un gabarit sans compteur (`details.compteur: false`) : aucun numéro suivant à attendre, l'issue
+    // est d'en ajouter un.
+    const sansCompteur = reaction(409, {
+      code: 'DOUBLON',
+      message: '',
+      details: { numero: 'FACTURE', compteur: false },
+    });
+    expect(sansCompteur).toEqual({
+      kind: 'message',
+      texte: t.compte.erreurs.doublon('FACTURE', false),
+    });
+    expect(t.compte.erreurs.doublon('FACTURE', false)).not.toBe(
+      t.compte.erreurs.doublon('FACTURE', true),
+    );
+    expect(t.compte.erreurs.doublon('FACTURE', false)).toMatch(/compteur/);
+    expect(t.compte.erreurs.doublon('F-1', true)).toMatch(/suivent/);
     const interne = reaction(500, {
       code: 'INTERNE',
       message: '',

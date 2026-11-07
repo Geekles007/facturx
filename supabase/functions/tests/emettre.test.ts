@@ -715,7 +715,7 @@ Deno.test('borne de la recherche épuisée : 409 DOUBLON, aucun numéro consomm�
     });
     assertEquals(status, 409);
     assertEquals(corps.code, 'DOUBLON');
-    assertEquals(corps.details, { numero: 'F-2027-0001' });
+    assertEquals(corps.details, { numero: 'F-2027-0001', compteur: true });
     assertEquals(await numerotation(compte.entrepriseId), { prochain: 1, annee: 2026 });
     assertEquals(await brouillonExiste(brouillon.id), true);
   } finally {
@@ -727,6 +727,24 @@ Deno.test('borne de la recherche épuisée : 409 DOUBLON, aucun numéro consomm�
       }),
     );
   }
+});
+
+Deno.test('gabarit sans compteur, son numéro pris : 409 DOUBLON, `compteur: false`', async () => {
+  const compte = await creerCompte();
+  // Un gabarit sans `{N…}` ne donne qu'un numéro : la première émission le prend.
+  await base(
+    (sql) =>
+      sql`update numerotation set gabarit = 'UNIQUE' where entreprise_id = ${compte.entrepriseId}`,
+  );
+  const premiere = await emettre(compte);
+  assertEquals(premiere.status, 201);
+  assertEquals(premiere.corps.numero, 'UNIQUE');
+
+  const { status, corps, brouillon } = await emettre(compte);
+  assertEquals(status, 409);
+  assertEquals(corps.code, 'DOUBLON');
+  assertEquals(corps.details, { numero: 'UNIQUE', compteur: false });
+  assertEquals(await brouillonExiste(brouillon.id), true);
 });
 
 Deno.test('corps qui n’est pas du JSON : 422 ANOMALIES, Issue CORPS', async () => {

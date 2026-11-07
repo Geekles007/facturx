@@ -23,7 +23,7 @@
  * numérotation est en retard sur la leur (la remise à zéro annuelle repartirait sur leurs numéros, et
  * ni `prochain` ni `annee` n'y changeraient rien). Un numéro sauté n'est pas un trou : une facture le
  * porte. La recherche va par lots de rangs, une requête par lot, et s'arrête au bout d'une borne :
- * au-delà, 409 `DOUBLON`.
+ * au-delà, 409 `DOUBLON`, avec `details.compteur` faux si le gabarit n'a pas de compteur (`{N…}`).
  *
  * Tout refus survient avant la validation de la transaction : aucun numéro n'est consommé, et le
  * brouillon reste intact. Seul un PDF déjà déposé peut rester sans facture (étape 9) : l'Edge
@@ -340,16 +340,16 @@ Deno.serve(
       const numero = await premierNumeroLibre(tx, e, numbering.pattern, depart, invoice.issueDate);
       if (!numero) {
         const pris = formatNumber(numbering.pattern, depart, invoice.issueDate);
-        // Sans compteur, le gabarit ne donne que ce numéro-là.
-        const lesSuivants = COMPTEUR.test(numbering.pattern)
-          ? ` et les ${RANGS_PAR_LOT * LOTS_MAX - 1} suivants sont déjà pris`
-          : ' est déjà pris, et le gabarit n’en donne pas d’autre';
-        throw erreur(
-          409,
-          'DOUBLON',
-          `Le numéro ${pris}${lesSuivants} : changez le gabarit de la numérotation. ${SANS_NUMERO}.`,
-          { numero: pris },
-        );
+        // Sans compteur, le gabarit ne donne que ce numéro-là : `details.compteur` (additif) le dit
+        // au Studio, qui propose alors d'en ajouter un plutôt que d'attendre un numéro suivant.
+        const compteur = COMPTEUR.test(numbering.pattern);
+        const lesSuivants = compteur
+          ? ` et les ${RANGS_PAR_LOT * LOTS_MAX - 1} suivants sont déjà pris : changez le gabarit de la numérotation`
+          : ' est déjà pris, et le gabarit n’a pas de compteur qui en donnerait un autre : ajoutez-en un ({NNNN}), ou changez le gabarit';
+        throw erreur(409, 'DOUBLON', `Le numéro ${pris}${lesSuivants}. ${SANS_NUMERO}.`, {
+          numero: pris,
+          compteur,
+        });
       }
       const problemes = numberProblems(numero);
       if (problemes.length > 0) {

@@ -712,8 +712,10 @@ async function reprendreBrouillon(
  * Importe ce que ce navigateur garde du Studio sans compte dans le compte connecté (la conservation
  * derrière `storage`), puis montre ce que le compte a désormais, ouvre le brouillon repris et retient
  * l'issue pour la proposition de la première connexion : `fait`, ou `partiel` avec les factures qui
- * attendent (s'il s'est arrêté pendant elles). Avec `reprise`, seulement ces factures. Lève si le
- * compte ou IndexedDB ne répond pas avant de commencer.
+ * attendent (s'il s'est arrêté pendant elles) et le brouillon s'il n'a pas pu être repris. Avec
+ * `reprise`, seulement ces factures, et le brouillon s'il restait à reprendre ; « fait » seulement
+ * quand il est repris, ou qu'il n'y en a plus. Lève si le compte ou IndexedDB ne répond pas avant de
+ * commencer.
  */
 export async function importerCeNavigateur(
   options: OptionsImport = {},
@@ -725,14 +727,22 @@ export async function importerCeNavigateur(
   const dump = await indexedDbPersistence.dump();
   const rapport: RapportNavigateur = await importerLocal(dump, p, importerSurServeur, options);
   await rafraichir(rapport);
+  // Le brouillon : à une première passe, ou à une reprise s'il n'avait pas pu être repris.
+  const avant = await lireMarqueImport().catch(() => undefined);
+  const brouillonAReprendre = !options.reprise || avant?.brouillonEnAttente === true;
   let empreinte: string | undefined;
-  if (!options.reprise && rapport.arret?.etape !== 'bibliotheque') {
+  if (brouillonAReprendre && rapport.arret?.etape !== 'bibliotheque') {
     const repris = await reprendreBrouillon(objet(dump.kv));
     if (repris.issue) rapport.brouillon = repris.issue;
     empreinte = repris.empreinte;
   }
   const enAttente =
     rapport.arret?.etape === 'factures' ? rapport.enAttente.map((f) => f.uid) : undefined;
-  await retenirImport(rapport.arret ? 'partiel' : 'fait', { brouillon: empreinte, enAttente });
+  const brouillonEnAttente = rapport.brouillon === 'nonRepris';
+  await retenirImport(rapport.arret || brouillonEnAttente ? 'partiel' : 'fait', {
+    brouillon: empreinte,
+    enAttente,
+    brouillonEnAttente,
+  });
   return rapport;
 }
