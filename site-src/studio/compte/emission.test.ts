@@ -558,6 +558,33 @@ describe('emettreSurServeur', () => {
     expect(texteDuMessage()).toBe(`${t.compte.emission.refus(2)} ${t.compte.emission.aucunNumero}`);
   });
 
+  test('AVOIR_DEVISE : le champ de la devise, et la phrase qui dit pourquoi', async () => {
+    const { p } = fausseConservation();
+    demarrer(p);
+    faux.invoke.mockResolvedValue(
+      erreurHttp(422, {
+        code: 'ANOMALIES',
+        message: '',
+        details: [{ code: 'AVOIR_DEVISE', path: 'currency', message: 'En USD, citée en EUR.' }],
+      }),
+    );
+    const { form, appearance } = store.get();
+    expect(await emettreSurServeur()).toBe(false);
+    const ui = store.get().ui;
+    // Le champ de la devise, dans l'éditeur, et non l'onglet Contrôle.
+    expect(ui.tab).toBe('content');
+    expect(ui.focus?.path).toBe('currency');
+    // L'onglet Contrôle la garde aussi, dans la langue de l'interface.
+    expect(ui.refusServeur).toEqual({
+      form,
+      appearance,
+      issues: [{ code: 'AVOIR_DEVISE', path: 'currency', message: t.compte.erreurs.avoirDevise }],
+    });
+    expect(texteDuMessage()).toBe(
+      `${t.compte.emission.avoirDevise} ${t.compte.emission.aucunNumero}`,
+    );
+  });
+
   test('DATE : les dates admises, et le champ de la date', async () => {
     const { p } = fausseConservation();
     demarrer(p);

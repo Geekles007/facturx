@@ -4,7 +4,7 @@
  * numérotation : un numéro émis ne se réutilise pas, la séquence avance d'un cran à chaque émission.
  */
 
-import { centsToString, DepositError, withDeposits } from 'facturx-sdk';
+import { centsToString, DepositError, isCreditNoteType, withDeposits } from 'facturx-sdk';
 import { putFile } from './files.js';
 import { t } from './i18n.js';
 import {
@@ -69,6 +69,24 @@ export function creditNoteForm(original: InvoiceForm, today = isoToday()): Invoi
   copy.businessProcess = '';
   copy.prepaid = '';
   return copy;
+}
+
+/**
+ * Les factures de l'historique qu'un avoir cite et qui ne sont pas dans sa devise (Ruling 49) : un
+ * avoir est dans la devise de la facture qu'il corrige, et le serveur refuse d'émettre les autres.
+ * Rien pour un document qui n'est pas un avoir, ni pour une facture citée hors de l'historique.
+ */
+export function citeesDansUneAutreDevise(
+  form: InvoiceForm,
+  history: readonly SavedInvoice[],
+): { numero: string; devise: string }[] {
+  if (!isCreditNoteType(form.typeCode)) return [];
+  return form.references.precedingInvoices.flatMap((citee) => {
+    const facture = history.find((h) => h.summary.id === citee.id.trim());
+    return facture && facture.summary.currency !== form.currency
+      ? [{ numero: facture.summary.id, devise: facture.summary.currency }]
+      : [];
+  });
 }
 
 /**

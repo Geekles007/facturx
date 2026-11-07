@@ -421,6 +421,14 @@ function reagir(r: Reaction, envoi: Envoi): false {
       });
       focusField(r.issues[0]?.path ?? '', 'check');
       return refus(phrases.refus(r.issues.length));
+    case 'devise':
+      // Un avoir dans une autre devise que sa facture (Ruling 49) : l'éditeur, sur la devise ;
+      // l'onglet Contrôle garde l'anomalie.
+      ui({
+        refusServeur: { form: envoi.form, appearance: envoi.appearance, issues: r.issues },
+      });
+      focusField('currency');
+      return refus(phrases.avoirDevise);
     case 'message':
       if (r.action === 'renvoyerConfirmation') {
         toast(`${r.texte} ${phrases.aucunNumero}`, 'error', 15_000, {

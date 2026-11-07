@@ -121,6 +121,46 @@ function lireCorps(texte: string): Corps {
   };
 }
 
+/**
+ * Un avoir est dans la devise des factures qu'il cite (Ruling 49) : la vue de suivi et le contrôle des
+ * paiements déduisent son TTC du reste dû de sa facture, sans conversion, et la base refuse l'écriture
+ * d'un tel avoir (`AVOIR_DEVISE`, migration 000900). Le refus vient ici, avant le verrou et avant le
+ * dépôt du PDF : 422 `ANOMALIES`, une `Issue` sur la devise (`currency`). Seules les factures de
+ * l'entreprise sont lues : un numéro d'une autre entreprise ne laisse rien voir de sa devise (il
+ * reste inconnu, `ORIGINE` à l'étape 8). Une facture émise ne change plus : le contrôle n'a pas besoin
+ * du verrou. Une facture que le SDK ne saurait lire (type, devise ou références absents) passe ici
+ * sans contrôle : la validation la refusera.
+ */
+async function controlerDeviseDeLAvoir(e: string, invoice: Invoice): Promise<void> {
+  const { typeCode, currency } = invoice as { typeCode?: unknown; currency?: unknown };
+  const references = (invoice as { references?: { precedingInvoices?: unknown } }).references;
+  const precedentes = references?.precedingInvoices;
+  if (typeof typeCode !== 'string' || typeof currency !== 'string' || !Array.isArray(precedentes)) {
+    return;
+  }
+  const numeros = precedentes.flatMap((p) =>
+    estObjet(p) && typeof p.id === 'string' && p.id !== '' ? [p.id] : [],
+  );
+  if (numeros.length === 0) return;
+  const autres = await sql<{ numero: string; devise: string }[]>`
+    select numero, devise from public.factures
+     where public.est_un_avoir(${typeCode}) and entreprise_id = ${e}
+       and numero in ${sql(numeros)} and devise <> ${currency}
+     order by numero`;
+  if (autres.length === 0) return;
+  const citees = autres.map((f) => `${f.numero} (${f.devise})`).join(', ');
+  throw anomalies(
+    [
+      {
+        code: 'AVOIR_DEVISE',
+        path: 'currency',
+        message: `L’avoir est en ${currency} ; la facture citée ${citees} ne l’est pas : un avoir est dans la devise de la facture qu’il corrige.`,
+      },
+    ],
+    `L’avoir n’est pas dans la devise de la facture qu’il cite : ${SANS_NUMERO}.`,
+  );
+}
+
 /** La facture déjà émise depuis ce brouillon, s'il y en a une. */
 async function factureDuBrouillon(
   q: Requetes,
@@ -186,8 +226,10 @@ Deno.serve(
     const deja = await factureDuBrouillon(sql, e, brouillonId);
     if (deja) return json(deja, 200);
 
-    // 3. Vérifier le brouillon : ce qu'on émet est ce que l'utilisateur voit.
+    // 3. Vérifier le brouillon : ce qu'on émet est ce que l'utilisateur voit. Un avoir est dans la
+    // devise des factures qu'il cite (Ruling 49) : refusé ici, avant le verrou.
     await formulaireDuBrouillon(sql, e, brouillonId, version, false);
+    await controlerDeviseDeLAvoir(e, invoice);
 
     // 4. La transaction, sur la connexion directe. `set local` annonce l'émission au déclencheur de
     // la numérotation, qui la laisse seule changer l'année et repartir à 1 (migration 000200).
@@ -306,8 +348,9 @@ Deno.serve(
         `La facture est trop imbriquée : ${SANS_NUMERO}.`,
       );
 
-      // 8. Un avoir cite des factures de l'entreprise, et la première devient son origine. La liste
-      // des types d'avoir est celle de la base, que la vue de suivi applique aussi.
+      // 8. Un avoir cite des factures de l'entreprise, et la première devient son origine ; elles sont
+      // dans sa devise (étape 3). La liste des types d'avoir est celle de la base, que la vue de suivi
+      // applique aussi.
       let origine: string | null = null;
       const [{ avoir }] = await tx<{ avoir: boolean }[]>`
         select public.est_un_avoir(${facture.typeCode}) as avoir`;

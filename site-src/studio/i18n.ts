@@ -121,6 +121,8 @@ const fr = {
     nature: "Nature de l'opération",
     natureHint: 'Mention obligatoire de la réforme ; elle détermine le cadre de facturation.',
     currency: 'Devise',
+    avoirDevise: (citees: string) =>
+      `Facture citée dans une autre devise : ${citees}. Un avoir est dans la devise de la facture qu'il corrige ; le serveur refusera de l'émettre.`,
     businessProcess: 'Cadre de facturation (BT-23)',
     processing: 'Traitement attendu (BR-FR-20)',
     vatOnDebits: 'TVA sur les débits',
@@ -762,6 +764,8 @@ const fr = {
       tropGros:
         'La demande dépasse 10 Mo, le plus que le serveur accepte : allégez ou retirez des pièces jointes, puis recommencez.',
       inconnue: 'Le serveur a refusé la demande : réessayez dans un instant.',
+      avoirDevise:
+        "La devise de cet avoir n'est pas celle de la facture qu'il cite : un avoir est dans la devise de la facture qu'il corrige.",
     },
     /** Émettre en mode compte : la facture part au serveur, qui la numérote. */
     emission: {
@@ -815,6 +819,8 @@ const fr = {
         "Une émission précédente de ce brouillon est encore en train d'aboutir : patientez un instant, puis réessayez. Si elle a abouti, le nouvel essai retrouvera la facture, sans en émettre une seconde.",
       erreurLocale:
         "Le Studio n'a pas pu préparer l'émission : rien n'est parti. Rechargez la page, puis émettez de nouveau.",
+      avoirDevise:
+        "Cet avoir n'est pas dans la devise de la facture qu'il cite : choisissez la devise de cette facture (Document, plus d'options), puis émettez de nouveau.",
       renvoyer: "Renvoyer l'e-mail de confirmation",
       confirmationRenvoyee: (email: string) =>
         `Un nouvel e-mail de confirmation est parti vers ${email} : ouvrez le lien qu'il contient, puis émettez de nouveau.`,
@@ -1098,6 +1104,8 @@ const en: Strings = {
     nature: 'Nature of the transaction',
     natureHint: 'Mandatory under the French reform; it sets the billing framework.',
     currency: 'Currency',
+    avoirDevise: (citees: string) =>
+      `Cited invoice in another currency: ${citees}. A credit note is in the currency of the invoice it corrects; the server will refuse to issue it.`,
     businessProcess: 'Billing framework (BT-23)',
     processing: 'Expected processing (BR-FR-20)',
     vatOnDebits: 'VAT on debits',
@@ -1723,6 +1731,8 @@ const en: Strings = {
       tropGros:
         'The request exceeds 10 MB, the most the server accepts: shrink or remove attachments, then start again.',
       inconnue: 'The server refused the request: try again in a moment.',
+      avoirDevise:
+        'The currency of this credit note is not that of the invoice it cites: a credit note is in the currency of the invoice it corrects.',
     },
     emission: {
       aucunNumero: 'No number was used.',
@@ -1771,6 +1781,8 @@ const en: Strings = {
         'A previous issue of this draft is still completing: wait a moment, then try again. If it went through, the new attempt will find the invoice without issuing a second one.',
       erreurLocale:
         'The Studio could not prepare the issue: nothing was sent. Reload the page, then issue again.',
+      avoirDevise:
+        'This credit note is not in the currency of the invoice it cites: choose that invoice’s currency (Document, more options), then issue again.',
       renvoyer: 'Resend the confirmation email',
       confirmationRenvoyee: (email: string) =>
         `A new confirmation email was sent to ${email}: open the link it contains, then issue again.`,

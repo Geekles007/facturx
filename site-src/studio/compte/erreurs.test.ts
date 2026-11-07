@@ -104,6 +104,26 @@ describe('reaction', () => {
     });
   });
 
+  test('AVOIR_DEVISE : la devise en cause, avec la phrase de l’interface (Ruling 49)', () => {
+    const r = reaction(422, {
+      code: 'ANOMALIES',
+      message: '',
+      details: [
+        {
+          code: 'AVOIR_DEVISE',
+          path: 'currency',
+          message: 'L’avoir est en USD ; la facture F-1 qu’il cite est en EUR.',
+        },
+      ],
+    });
+    // La phrase du serveur n'est qu'en français : l'interface dit la sienne, dans sa langue.
+    expect(r).toEqual({
+      kind: 'devise',
+      issues: [{ code: 'AVOIR_DEVISE', path: 'currency', message: t.compte.erreurs.avoirDevise }],
+    });
+    expect(t.compte.erreurs.avoirDevise).toMatch(/devise/);
+  });
+
   test('les détails du serveur passent dans le message : numéro, identifiant, heure', () => {
     const doublon = reaction(409, {
       code: 'DOUBLON',

@@ -564,6 +564,39 @@ Deno.test('avoir importé : rattaché à la facture de l’entreprise qui porte 
   });
 });
 
+Deno.test('avoir importé dans une autre devise que la facture citée : importé, mais pas rattaché', async () => {
+  const compte = await creerCompte();
+  const propre = await importerFacture(compte, factureLocale('F-2025-0050'));
+  assertEquals(propre.status, 201);
+  const avoirEn = (numero: string, devise: string): Invoice => ({
+    ...factureLocale(numero, '2025-04-02'),
+    typeCode: '381',
+    currency: devise,
+    references: { precedingInvoices: [{ id: 'F-2025-0050', issueDate: '2025-03-14' as IsoDate }] },
+  });
+  const origineDe = (id: string) =>
+    base(
+      async (sql) =>
+        (
+          await sql<{ devise: string; facture_origine_id: string | null }[]>`
+          select devise, facture_origine_id from factures where id = ${id}`
+        )[0],
+    );
+
+  // En USD, la facture citée en EUR : l'avoir entre dans le compte, sans origine, sans erreur ; la
+  // facture en EUR garde tout son reste dû.
+  const usd = await importerFacture(compte, avoirEn('A-2025-0050', 'USD'));
+  assertEquals(usd.status, 201);
+  assertEquals(await origineDe(usd.corps.id), { devise: 'USD', facture_origine_id: null });
+  // En EUR, le même avoir se rattache.
+  const eur = await importerFacture(compte, avoirEn('A-2025-0051', 'EUR'));
+  assertEquals(eur.status, 201);
+  assertEquals(await origineDe(eur.corps.id), {
+    devise: 'EUR',
+    facture_origine_id: propre.corps.id,
+  });
+});
+
 Deno.test('une facture qui n’est pas un avoir ne prend pas d’origine, même si elle en cite une', async () => {
   const compte = await creerCompte();
   assertEquals((await importerFacture(compte, factureLocale('F-2025-0042'))).status, 201);

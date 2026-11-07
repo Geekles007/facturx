@@ -403,6 +403,50 @@ Deno.test('avoir : la facture citée doit être de l’entreprise, puis facture_
   assertEquals(ligne, { type_code: '381', facture_origine_id: propre.corps.id });
 });
 
+Deno.test('avoir dans une autre devise que la facture citée : 422 AVOIR_DEVISE, aucun numéro consommé', async () => {
+  const autre = await creerCompte();
+  const compte = await creerCompte();
+  // Une facture en EUR de l'entreprise, et le même numéro, en USD, dans une autre entreprise.
+  await insererFactures(compte, ['AD-EUR-1']);
+  await base(
+    (sql) => sql`
+      insert into factures (entreprise_id, numero, type_code, date_emission, client_nom, devise, ht,
+                            ttc, net_a_payer, invoice, form, appearance, pdf_chemin, sdk_version,
+                            origine, emise_par)
+      values (${autre.entrepriseId}, 'AD-USD-1', '380', (now() at time zone 'Europe/Paris')::date,
+              'Client', 'USD', 100, 120, 120, '{}', '{}', '{}',
+              ${autre.entrepriseId}::text || '/ecrite.pdf', '0', 'emise', ${autre.userId})`,
+  );
+  const avoirEn = (devise: string, numero: string): Invoice => ({
+    ...factureDeTest(),
+    typeCode: '381',
+    currency: devise,
+    references: { precedingInvoices: [{ id: numero, issueDate: aujourdhui() as IsoDate }] },
+  });
+
+  const { status, corps, brouillon } = await emettre(compte, avoirEn('USD', 'AD-EUR-1'));
+  assertEquals(status, 422);
+  assertEquals(corps.code, 'ANOMALIES');
+  assertEquals(corps.details.length, 1);
+  assertEquals(corps.details[0].code, 'AVOIR_DEVISE');
+  assertEquals(corps.details[0].path, 'currency');
+  assert(corps.details[0].message.includes('AD-EUR-1'));
+  // Rien d'émis, rien de consommé, le brouillon intact.
+  assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
+  assertEquals(await nombreDeFactures(compte.entrepriseId), 1);
+  assertEquals(await brouillonExiste(brouillon.id), true);
+
+  // Un avoir qui cite le numéro d'une autre entreprise : la devise de celle-ci ne transparaît pas, la
+  // facture est inconnue (ORIGINE), comme si le numéro n'existait nulle part.
+  const etrangere = await emettre(compte, avoirEn('EUR', 'AD-USD-1'));
+  assertEquals(etrangere.status, 422);
+  assertEquals(
+    etrangere.corps.details.map((i: Corps) => i.code),
+    ['ORIGINE'],
+  );
+  assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
+});
+
 Deno.test('adresse non confirmée : 403 NON_CONFIRME', async () => {
   const compte = await creerCompte();
   // La session reste valable ; c'est l'adresse qui ne l'est plus (le serveur d'auth le dit).

@@ -204,16 +204,20 @@ Deno.serve(
       }
 
       // 6. Un avoir cite la facture qu'il corrige : la première des références, si l'entreprise l'a
-      // déjà (l'import se fait dans l'ordre des dates, factures avant avoirs), sinon aucune origine,
-      // et jamais d'erreur. La liste des types d'avoir est celle de la base, que la vue de suivi
-      // applique aussi.
+      // déjà (l'import se fait dans l'ordre des dates, factures avant avoirs) et dans la devise de
+      // l'avoir, sinon aucune origine, et jamais d'erreur. Un avoir est dans la devise de sa facture
+      // (Ruling 49) : rattaché à une facture d'une autre devise, il en retrancherait son TTC sans
+      // conversion, et la base le refuserait (`AVOIR_DEVISE`, migration 000900) ; importé sans origine,
+      // il reste dans l'historique. La liste des types d'avoir est celle de la base, que la vue de
+      // suivi applique aussi.
       let origine: string | null = null;
       const citee = facture.references?.precedingInvoices?.[0]?.id;
       const [{ avoir }] = await tx<{ avoir: boolean }[]>`
         select public.est_un_avoir(${facture.typeCode}) as avoir`;
       if (avoir && typeof citee === 'string') {
         const [trouvee] = await tx<{ id: string }[]>`
-          select id from public.factures where entreprise_id = ${e} and numero = ${citee}`;
+          select id from public.factures
+           where entreprise_id = ${e} and numero = ${citee} and devise = ${facture.currency}`;
         origine = trouvee?.id ?? null;
       }
 

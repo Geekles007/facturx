@@ -4,7 +4,8 @@
  * recharger le brouillon, ouvrir l'onglet Contrôle sur les anomalies, ou indiquer les dates admises.
  *
  * Les phrases sont celles de l'interface (`i18n.ts`), jamais le `message` du serveur, qui n'est
- * qu'en français ; les détails utiles (dates, numéro, identifiant de requête, heure) y passent. Un
+ * qu'en français ; les détails utiles (dates, numéro, identifiant de requête, heure) y passent. Les
+ * anomalies (422) gardent le leur, sauf celles que l'interface sait dire (`AVOIR_DEVISE`). Un
  * code inconnu, ou des détails mal formés, donnent un message générique : jamais une exception.
  * Chaque parcours (émettre, relancer, importer) dit en plus ce que le refus laisse intact.
  */
@@ -25,6 +26,8 @@ export type Reaction =
   | { kind: 'message'; texte: string; action?: 'renvoyerConfirmation' }
   | { kind: 'recharger'; texte: string }
   | { kind: 'controle'; issues: Issue[] }
+  /** Un avoir dans une autre devise que la facture qu'il cite (Ruling 49) : la devise à corriger. */
+  | { kind: 'devise'; issues: Issue[] }
   | { kind: 'date'; min?: string; max: string };
 
 const estObjet = (v: unknown): v is Record<string, unknown> =>
@@ -92,8 +95,15 @@ export function reaction(
       return message(phrases.doublon(texteDe(details, 'numero') ?? ''));
     case 'PDF_DEJA_DEPOSE':
       return message(phrases.pdfDejaDepose);
-    case 'ANOMALIES':
-      return { kind: 'controle', issues: anomalies(details) };
+    case 'ANOMALIES': {
+      // `AVOIR_DEVISE` se dit dans la langue de l'interface, et mène à la devise.
+      const issues = anomalies(details).map((i) =>
+        i.code === 'AVOIR_DEVISE' ? { ...i, message: phrases.avoirDevise } : i,
+      );
+      return issues.some((i) => i.code === 'AVOIR_DEVISE')
+        ? { kind: 'devise', issues }
+        : { kind: 'controle', issues };
+    }
     case 'LIMITE':
       return message(phrases.limite(heure(details)));
     case 'ENVOI':
