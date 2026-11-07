@@ -208,7 +208,7 @@ Dans Coolify, l'application du site : deux **variables de construction** (cocher
 
 `pnpm site:build` refuse une clé de service (`scripts/cle-supabase.mjs`) : le bundle du Studio est public. L'URL entre aussi dans la CSP de l'image (`connect-src`), à la construction.
 
-Ce qu'on doit voir : sur `https://facturx.ibird.dev/studio/`, « Se connecter » et « Créer un compte gratuit » dans l'en-tête ; la console du navigateur ne signale aucune violation de CSP.
+Ce qu'on doit voir : sur `https://facturx.ibird.dev/studio/`, « Se connecter » et « Créer un compte gratuit » dans l'en-tête ; la console du navigateur ne signale aucune violation de CSP. Les deux variables font aussi publier les pages du compte (`site/README.md`, « Pages avec ou sans compte ») : l'accueil dit « avec ou sans compte » et son bouton « Créer un compte gratuit » ouvre la création (`studio/?compte=creer`) ; `/cgu/` et `/sous-traitance/` répondent 200, alors qu'elles répondaient 404 sur le site sans compte.
 
 ### 1.10 Vérifications après le premier déploiement
 
@@ -340,6 +340,8 @@ En plus des sauvegardes quotidiennes du plan Pro (*Database → Backups*, sur le
 7. **La restauration d'essai**, une fois au moins avant l'ouverture (spec § 11) : section 4, dans la pile locale. On doit y retrouver la facture émise en 1.10 et son PDF.
 
 ### 1.13 Avant d'ouvrir les comptes au public
+
+Les pages du site ne parlent du compte que sur une image construite avec `FACTURX_SUPABASE_URL` et `FACTURX_SUPABASE_KEY` (Ruling 66, `site/README.md`, « Pages avec ou sans compte ») : un déploiement de `main` sans elles publie un site sans compte, sans « avec ou sans compte », sans bouton de création, sans CGU ni accord de sous-traitance, quelle que soit la date d'ouverture. À l'inverse, dès que les deux variables sont posées (1.9), l'accueil propose le compte et les CGU sont publiées : les blocs « À compléter » des pages légales (ci-dessous) sont donc à remplir avant 1.9, et non seulement avant d'annoncer l'ouverture.
 
 - D74 confirmée, ou la décision qui la remplace prise et faite (1.11).
 - La restauration d'essai réussie (1.12, 7).

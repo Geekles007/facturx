@@ -988,6 +988,12 @@ footer {
   }
 }
 
+/* La variante d'une page pour un site construit sans compte (scripts/publier-site.mjs la garde et
+   retire ce qui est marqué data-compte) : cachée dans les pages telles que le dépôt les sert. */
+[data-sans-compte] {
+  display: none;
+}
+
 /* Ce que l'éditeur doit encore renseigner : visible, jamais confondu avec le texte */
 .a-completer {
   padding: 12px 14px;

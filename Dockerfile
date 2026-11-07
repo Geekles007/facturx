@@ -29,6 +29,9 @@ ENV FACTURX_SUPABASE_URL=$FACTURX_SUPABASE_URL \
 # mustangproject), les compile, puis produit site/validateur/. Nécessite un accès réseau pendant
 # la construction.
 RUN pnpm site:dist
+# Les pages publiées, dans /app/publie : sans projet Supabase, ni texte du compte, ni CGU, ni
+# accord de sous-traitance (scripts/publier-site.mjs) ; jamais le README de site/.
+RUN node scripts/publier-site.mjs /app/publie
 
 # --- Étape 2 : servir
 FROM nginx:1.27-alpine
@@ -61,9 +64,7 @@ RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/goaccess-report.sh \
     && echo 'location /stats/ { return 404; }' >/etc/nginx/stats.conf \
     && /usr/local/bin/ecrire-csp.sh "$FACTURX_SUPABASE_URL" \
     && nginx -t
-COPY --from=build /app/site /usr/share/nginx/html
-# Documentation de développement : pas de raison de la publier.
-RUN rm -f /usr/share/nginx/html/README.md
+COPY --from=build /app/publie /usr/share/nginx/html
 EXPOSE 80
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["nginx", "-g", "daemon off;"]

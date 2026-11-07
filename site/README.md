@@ -1,6 +1,6 @@
 # Site
 
-Six pages : la présentation (`index.html`), le **validateur en ligne** (`validateur/`), qui exécute les schematrons officiels dans le navigateur de l'utilisateur — aucun fichier n'est transmis —, le **Studio** (`studio/`), où l'on compose une facture conforme à son image — dans le navigateur sans compte, avec un compte sur un serveur (voir « Le Studio ») —, et trois textes juridiques : les CGU (`cgu/`), la politique de confidentialité (`confidentialite/`) et l'accord de sous-traitance (`sous-traitance/`). Chacune a sa version anglaise sous `en/`.
+Six pages : la présentation (`index.html`), le **validateur en ligne** (`validateur/`), qui exécute les schematrons officiels dans le navigateur de l'utilisateur — aucun fichier n'est transmis —, le **Studio** (`studio/`), où l'on compose une facture conforme à son image — dans le navigateur sans compte, avec un compte sur un serveur (voir « Le Studio ») —, et trois textes juridiques : les CGU (`cgu/`), la politique de confidentialité (`confidentialite/`) et l'accord de sous-traitance (`sous-traitance/`). Chacune a sa version anglaise sous `en/`. Les CGU et l'accord de sous-traitance ne sont publiés que sur un site construit avec un compte (voir « Pages avec ou sans compte »).
 
 ## Déployer avec Coolify
 
@@ -13,7 +13,8 @@ branche `main`, **Build Pack : Dockerfile**, **Port Exposes : 80**, puis le doma
 `https://facturx.ibird.dev` et *Deploy*. Rien d'autre à régler pour un site sans compte : ni commande
 de build, ni dossier de publication, ni variable d'environnement. Le compte du Studio demande deux
 variables de construction, `FACTURX_SUPABASE_URL` et `FACTURX_SUPABASE_KEY` : voir
-[`docs/compte.md`](../docs/compte.md), § 1.9.
+[`docs/compte.md`](../docs/compte.md), § 1.9. Sans elles, les pages publiées ne parlent pas du
+compte : voir « Pages avec ou sans compte ».
 
 Trois points à connaître.
 
@@ -172,7 +173,7 @@ le JavaScript : le décompte ne voit que des contrôles humains.
 
 **Sans compte, rien n'est transmis.** Le Studio n'envoie rien à un serveur, hors le décompte décrit plus bas : brouillon, entreprise, clients, catalogue, historique des factures émises (PDF compris) et numérotation vivent dans IndexedDB, dans le navigateur du visiteur, et nulle part ailleurs. L'onglet « Bibliothèque › Sauvegarde » télécharge l'ensemble dans un fichier que le visiteur garde où il veut, et le restaure. Si le stockage est indisponible (navigation privée stricte), le Studio travaille en mémoire et le dit dans un bandeau. Tant que le navigateur ne garde pas de session, et qu'on n'arrive pas par un lien reçu par e-mail, le Studio ne télécharge ni `supabase-js` ni le code du compte (`site-src/studio/compte/`, chargé par `import()`, à la première connexion).
 
-**Avec un compte, les données sont chez Supabase.** Brouillons, entreprise, clients, catalogue, numérotation, factures émises avec leur PDF, paiements et relances sont dans un projet de la région `eu-west-3` (Paris). L'hébergeur les chiffre au repos, mais le service les lit : l'émission, la numérotation, le calcul du reste dû et les relances se font sur le serveur (fonctions `supabase/functions/`). Le navigateur garde la session (`localStorage`) et une copie du brouillon ouvert (IndexedDB), pour ne rien perdre de la saisie si le réseau ou la session lâche. Le pied de l'éditeur dit l'un ou l'autre mode (`app.footPrivacy`, `app.footPrivacyCompte`, `site-src/studio/i18n.ts`). Un site construit sans l'une de ces deux variables, `FACTURX_SUPABASE_URL` ou `FACTURX_SUPABASE_KEY`, n'a aucun bouton de compte : c'est le Studio sans compte seul. Mise en service : [`docs/compte.md`](../docs/compte.md).
+**Avec un compte, les données sont chez Supabase.** Brouillons, entreprise, clients, catalogue, numérotation, factures émises avec leur PDF, paiements et relances sont dans un projet de la région `eu-west-3` (Paris). L'hébergeur les chiffre au repos, mais le service les lit : l'émission, la numérotation, le calcul du reste dû et les relances se font sur le serveur (fonctions `supabase/functions/`). Le navigateur garde la session (`localStorage`) et une copie du brouillon ouvert (IndexedDB), pour ne rien perdre de la saisie si le réseau ou la session lâche. Le pied de l'éditeur dit l'un ou l'autre mode (`app.footPrivacy`, `app.footPrivacyCompte`, `site-src/studio/i18n.ts`). Un site construit sans l'une de ces deux variables, `FACTURX_SUPABASE_URL` ou `FACTURX_SUPABASE_KEY`, n'a aucun bouton de compte : c'est le Studio sans compte seul, et ses pages ne parlent pas du compte (voir « Pages avec ou sans compte »). Le lien « Créer un compte gratuit » de l'accueil ouvre `studio/?compte=creer` : le Studio ouvre alors le dialogue de connexion sur la création d'un compte, et retire le paramètre de l'adresse. Mise en service : [`docs/compte.md`](../docs/compte.md).
 
 **Ce qu'il emprunte.** Le runtime XSLT, les trois schematrons et le code du validateur servent aussi aux « Validateurs officiels » de l'onglet Contrôle : la page les désigne par `data-assets="../validateur/"`, sans copie. La page anglaise déclare en plus `data-studio="../../studio/"` pour les polices et le bundle.
 
@@ -182,6 +183,26 @@ le JavaScript : le décompte ne voit que des contrôles humains.
 
 **Vérifier.** Après déploiement, `/studio` doit rediriger vers `/studio/`, `curl -sI https://facturx.ibird.dev/studio/polices/geist-regular.ttf` répondre 200, et `/studio/compteur/facture` 204. Puis, dans un navigateur : l'exemple de la première visite doit afficher « Conforme », et l'onglet Contrôle le verdict des trois schematrons.
 
+## Pages avec ou sans compte
+
+Les pages de `site/` sont écrites pour un site **avec** compte. Ce qui ne vaut que pour le compte y
+est marqué (Ruling 66), et [`scripts/publier-site.mjs`](../scripts/publier-site.mjs) en tire les
+pages publiées, dans un autre dossier ; `site/` n'est jamais modifié :
+
+- `data-compte` sur un élément (un bloc, une phrase dans un `<span>`, une ligne de tableau, un lien
+  vers les CGU) : sans compte, il disparaît avec son contenu ;
+- `data-sans-compte` sur la variante d'un élément pour un site sans compte (un intitulé, une
+  description, un titre renuméroté) : avec un compte, elle disparaît. `style.css` la cache dans les
+  pages telles que le dépôt les sert : en développement, on voit le site avec compte.
+
+Le compte est offert quand `FACTURX_SUPABASE_URL` et `FACTURX_SUPABASE_KEY` sont tous deux
+renseignés, la règle du Studio (`compteActif`). Sans eux, les pages `cgu/` et `sous-traitance/` (et
+leurs versions anglaises) ne sont pas publiées, et la publication échoue si une page publiée y mène
+encore. La marque qui reste est retirée ; `README.md` n'est jamais publié. Le
+[`Dockerfile`](../Dockerfile) publie dans `/app/publie`, que nginx sert. Une phrase qui ne vaut que
+pour le compte, ajoutée sans marque, est ce que `scripts/publier-site.test.mjs` cherche (Supabase,
+Brevo, « Créer un compte », « avec ou sans compte »…) : le test échoue.
+
 ## Déployer sans Coolify (rsync)
 
 ### 1. Construire
@@ -189,23 +210,26 @@ le JavaScript : le décompte ne voit que des contrôles humains.
 ```bash
 pnpm install    # la première fois, ou après un `git pull`
 pnpm site:dist
+node scripts/publier-site.mjs dist/site    # les pages publiées (voir « Pages avec ou sans compte »)
 ```
 
 `pnpm site:dist` enchaîne `pnpm build` (le SDK, dont dépend le bundle), `pnpm validator:fetch`
 (runtime Saxon-JS et jeux de règles compressés, mis en cache après le premier appel),
 `pnpm downloads:fetch` (le relevé des téléchargements npm, voir plus bas) et `pnpm site:build`
 (bundle esbuild du validateur et exemples). Le contrôle `pnpm site:check`
-(types, tests, bundle) fait partie de `pnpm check` et tourne en CI.
+(types, tests, bundle) fait partie de `pnpm check` et tourne en CI. Les variables
+`FACTURX_SUPABASE_URL` et `FACTURX_SUPABASE_KEY` valent pour les deux dernières commandes : le
+bundle du Studio et les pages publiées doivent dire le même mode.
 
 ### 2. Envoyer
 
 ```bash
-rsync -av --delete --exclude '.DS_Store' --exclude 'README.md' site/ utilisateur@hote:/chemin/vers/www/
+rsync -av --delete --exclude '.DS_Store' dist/site/ utilisateur@hote:/chemin/vers/www/
 ```
 
 `--delete` retire du serveur les fichiers disparus localement, dont les anciens fragments de bundle,
-qui portent une empreinte dans leur nom. `README.md` est de la documentation de développement :
-sans l'exclure, elle serait lisible publiquement.
+qui portent une empreinte dans leur nom. Envoyer `dist/site/` et non `site/` : seules les pages
+publiées disent le bon mode, et `README.md`, documentation de développement, n'y est pas.
 
 ### 3. Servir
 
