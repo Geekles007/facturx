@@ -28,11 +28,11 @@
  *    l'utilisateur à la passe suivante si celle-ci échoue : l'étape se rejoue comme les autres. Elle
  *    vaut pour tout utilisateur supprimé, y compris à la main depuis le tableau de bord.
  *
- * L'ordre (Storage, Auth, base) n'est pas celui de la spec § 12 (base, puis Auth) : il donne le même
- * résultat, mais une passe interrompue se rejoue. La suppression de l'entreprise est la dernière étape,
- * et c'est elle qui retire l'entreprise de la liste des comptes à purger : tant qu'elle n'a pas eu lieu,
- * l'entreprise garde sa date et la passe suivante reprend tout, les étapes a et b étant idempotentes (un
- * objet ou un utilisateur déjà partis ne sont pas une erreur). Dans l'ordre de la spec, un échec à
+ * L'ordre (Storage, Auth, base, celui que la spec § 12 décrit désormais) est choisi pour qu'une passe
+ * interrompue se rejoue. La suppression de l'entreprise est la dernière étape d'un compte, et c'est elle
+ * qui retire l'entreprise de la liste des comptes à purger : tant qu'elle n'a pas eu lieu, l'entreprise
+ * garde sa date et la passe suivante reprend tout, les étapes a et b étant idempotentes (un objet ou un
+ * utilisateur déjà partis ne sont pas une erreur). Dans l'autre ordre (base, puis Auth), un échec à
  * l'étape Auth laisserait des utilisateurs sans entreprise, que plus rien ne désignerait.
  *
  * Une erreur sur une entreprise ne bloque ni les autres ni les orphelins : elle est journalisée (son
