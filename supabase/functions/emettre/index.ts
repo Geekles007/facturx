@@ -18,6 +18,13 @@
  * 1er janvier de son année (Ruling 30) : une facture de l'année précédente prendrait le rang 1 de la
  * série en cours. Elle passe par l'import des factures locales.
  *
+ * Le numéro attribué est le premier libre de la numérotation (Ruling 55) : des factures importées
+ * (`origine = 'importee'`) peuvent occuper les rangs qui suivent, en particulier quand l'année de la
+ * numérotation est en retard sur la leur (la remise à zéro annuelle repartirait sur leurs numéros, et
+ * ni `prochain` ni `annee` n'y changeraient rien). Un numéro sauté n'est pas un trou : une facture le
+ * porte. La recherche va par lots de rangs, une requête par lot, et s'arrête au bout d'une borne :
+ * au-delà, 409 `DOUBLON`.
+ *
  * Tout refus survient avant la validation de la transaction : aucun numéro n'est consommé, et le
  * brouillon reste intact. Seul un PDF déjà déposé peut rester sans facture (étape 9) : l'Edge
  * Function `purger` efface ces orphelins au bout d'un jour, et on ne tente pas de le faire ici, dans
@@ -50,6 +57,16 @@ import { controlerDate } from './regles.ts';
 
 /** Émissions par heure et par compte (spec § 11), comptées sur `factures.emise_le`. */
 const LIMITE_PAR_HEURE = 60;
+
+/**
+ * La recherche du premier numéro libre (Ruling 55) : des lots de 100 rangs, chacun vérifié en une
+ * requête, 100 lots au plus (10 000 numéros pris d'affilée) avant de renoncer (409 `DOUBLON`).
+ */
+const RANGS_PAR_LOT = 100;
+const LOTS_MAX = 100;
+
+/** Le compteur d'un gabarit (`{N…}`) : sans lui, toutes les factures auraient le même numéro. */
+const COMPTEUR = /\{N+\}/;
 
 const SANS_NUMERO = 'aucun numéro n’a été consommé';
 
@@ -159,6 +176,37 @@ async function controlerDeviseDeLAvoir(e: string, invoice: Invoice): Promise<voi
     ],
     `L’avoir n’est pas dans la devise de la facture qu’il cite : ${SANS_NUMERO}.`,
   );
+}
+
+/**
+ * Le premier numéro de la numérotation que l'entreprise n'a pas encore, à partir du rang `depart`
+ * (Ruling 55) ; rien si les `RANGS_PAR_LOT × LOTS_MAX` suivants sont tous pris. Chaque lot est
+ * vérifié en une requête, la liste passée comme un seul tableau (`= any($1::text[])`) : une liste
+ * dépliée (`in (...)`) compterait un paramètre par numéro. Exact sous le verrou de la numérotation,
+ * que prend aussi `importer`.
+ */
+async function premierNumeroLibre(
+  q: Requetes,
+  entrepriseId: string,
+  gabarit: string,
+  depart: number,
+  date: string,
+): Promise<string | undefined> {
+  // Un gabarit sans compteur (`{N…}`) ne donne qu'un numéro : un seul lot suffit à le savoir pris.
+  const lots = COMPTEUR.test(gabarit) ? LOTS_MAX : 1;
+  for (let lot = 0; lot < lots; lot++) {
+    const debut = depart + lot * RANGS_PAR_LOT;
+    const numeros = Array.from({ length: RANGS_PAR_LOT }, (_, i) =>
+      formatNumber(gabarit, debut + i, date),
+    );
+    const pris = await q<{ numero: string }[]>`
+      select numero from public.factures
+       where entreprise_id = ${entrepriseId} and numero = any(${numeros}::text[])`;
+    const occupes = new Set(pris.map((l) => l.numero));
+    const libre = numeros.find((n) => !occupes.has(n));
+    if (libre !== undefined) return libre;
+  }
+  return undefined;
 }
 
 /** La facture déjà émise depuis ce brouillon, s'il y en a une. */
@@ -281,18 +329,28 @@ Deno.serve(
         );
       }
 
-      // 6. Attribuer le numéro.
+      // 6. Attribuer le numéro : le premier libre de la numérotation (Ruling 55).
       const numbering: Numbering = {
         pattern: ligne.gabarit,
         next: ligne.prochain,
         yearly: ligne.annuelle,
         year: ligne.annee,
       };
-      const numero = formatNumber(
-        numbering.pattern,
-        nextRank(numbering, invoice.issueDate),
-        invoice.issueDate,
-      );
+      const depart = nextRank(numbering, invoice.issueDate);
+      const numero = await premierNumeroLibre(tx, e, numbering.pattern, depart, invoice.issueDate);
+      if (!numero) {
+        const pris = formatNumber(numbering.pattern, depart, invoice.issueDate);
+        // Sans compteur, le gabarit ne donne que ce numéro-là.
+        const lesSuivants = COMPTEUR.test(numbering.pattern)
+          ? ` et les ${RANGS_PAR_LOT * LOTS_MAX - 1} suivants sont déjà pris`
+          : ' est déjà pris, et le gabarit n’en donne pas d’autre';
+        throw erreur(
+          409,
+          'DOUBLON',
+          `Le numéro ${pris}${lesSuivants} : changez le gabarit de la numérotation. ${SANS_NUMERO}.`,
+          { numero: pris },
+        );
+      }
       const problemes = numberProblems(numero);
       if (problemes.length > 0) {
         throw anomalies(
@@ -306,16 +364,6 @@ Deno.serve(
                 },
           ),
           `Le gabarit de la numérotation produit un numéro invalide : ${SANS_NUMERO}.`,
-        );
-      }
-      const [existant] = await tx`
-        select 1 from public.factures where entreprise_id = ${e} and numero = ${numero}`;
-      if (existant) {
-        throw erreur(
-          409,
-          'DOUBLON',
-          `Le numéro ${numero} existe déjà : relevez le prochain numéro de la numérotation. ${SANS_NUMERO}.`,
-          { numero },
         );
       }
       // Le numéro proposé par le Studio, et la référence de paiement qui le rappelait.

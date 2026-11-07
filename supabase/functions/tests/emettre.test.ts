@@ -626,18 +626,107 @@ Deno.test('jeton valide d’un compte qui n’est membre d’aucune entreprise :
   assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
 });
 
-Deno.test('numéro déjà présent dans l’entreprise : 409 DOUBLON, aucun numéro consommé', async () => {
+// Avant le Ruling 55, ce cas rendait 409 `DOUBLON` (« relevez le prochain numéro ») : le numéro
+// attribué est désormais le premier libre, et la numérotation repart après lui.
+Deno.test('numéro déjà présent dans l’entreprise : le premier numéro libre est attribué', async () => {
   const compte = await creerCompte();
   // Le numéro que la numérotation attribuerait, déjà pris (import, gabarit changé).
-  const numero = `F-${aujourdhui().slice(0, 4)}-0001`;
-  await insererFactures(compte, [numero]);
+  const annee = aujourdhui().slice(0, 4);
+  await insererFactures(compte, [`F-${annee}-0001`]);
 
-  const { status, corps, brouillon } = await emettre(compte);
-  assertEquals(status, 409);
-  assertEquals(corps.code, 'DOUBLON');
-  assertEquals(corps.details, { numero });
-  assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
-  assertEquals(await brouillonExiste(brouillon.id), true);
+  const { status, corps } = await emettre(compte);
+  assertEquals(status, 201);
+  assertEquals(corps.numero, `F-${annee}-0002`);
+  assertEquals((await numerotation(compte.entrepriseId)).prochain, 3);
+});
+
+/**
+ * Des factures importées, datées de `date`, sous les numéros `F-<annee>-<rang>` de `premier` à
+ * `dernier` (une seule requête) : ce que l'import des données locales laisse dans le compte.
+ */
+function importerRangs(
+  compte: Compte,
+  annee: number,
+  premier: number,
+  dernier: number,
+  date: string,
+): Promise<unknown> {
+  return base(
+    (sql) => sql`
+      insert into factures (entreprise_id, numero, type_code, date_emission, client_nom, devise, ht,
+                            ttc, net_a_payer, invoice, form, appearance, pdf_chemin, sdk_version,
+                            origine, emise_par)
+      select ${compte.entrepriseId},
+             'F-' || ${annee}::text || '-' || lpad(i::text, greatest(4, length(i::text)), '0'),
+             '380', ${date}::date, 'Client', 'EUR', 100, 120, 120, '{}', '{}', '{}',
+             ${compte.entrepriseId}::text || '/importee-' || i || '.pdf', '0', 'importee',
+             ${compte.userId}
+        from generate_series(${premier}::int, ${dernier}::int) i`,
+  );
+}
+
+/** Une numérotation encore en 2026 (l'année ne change que sous le drapeau de l'émission). */
+function numerotationEn2026(compte: Compte): Promise<unknown> {
+  return base((sql) =>
+    sql.begin(async (tx) => {
+      await tx`set local facturx.emission = 'on'`;
+      await tx`update numerotation set annee = 2026, prochain = 1
+                where entreprise_id = ${compte.entrepriseId}`;
+    }),
+  );
+}
+
+Deno.test('année du serveur en retard sur les factures importées : le numéro suivant les importées (Ruling 55)', async () => {
+  const compte = await creerCompte();
+  await numerotationEn2026(compte);
+  // Importées en 2027 avant toute émission : la numérotation du serveur est restée en 2026, et la
+  // première émission de 2027 repart à 1 (remise à zéro annuelle).
+  await importerRangs(compte, 2027, 1, 3, '2027-01-05');
+
+  const { status, corps } = await emettre(compte, factureDeTest(1, '2027-01-06'), {
+    enTetes: { 'x-facturx-aujourdhui': '2027-01-06' },
+  });
+  assertEquals(status, 201);
+  assertEquals(corps.numero, 'F-2027-0004');
+  assertEquals(await numerotation(compte.entrepriseId), { prochain: 5, annee: 2027 });
+});
+
+Deno.test('numéros pris au-delà d’un lot de recherche : le premier libre, plus loin', async () => {
+  const compte = await creerCompte();
+  await numerotationEn2026(compte);
+  await importerRangs(compte, 2027, 1, 150, '2027-01-05');
+
+  const { status, corps } = await emettre(compte, factureDeTest(1, '2027-01-06'), {
+    enTetes: { 'x-facturx-aujourdhui': '2027-01-06' },
+  });
+  assertEquals(status, 201);
+  assertEquals(corps.numero, 'F-2027-0151');
+  assertEquals(await numerotation(compte.entrepriseId), { prochain: 152, annee: 2027 });
+});
+
+Deno.test('borne de la recherche épuisée : 409 DOUBLON, aucun numéro consommé', async () => {
+  const compte = await creerCompte();
+  await numerotationEn2026(compte);
+  // 100 lots de 100 rangs, tous pris.
+  await importerRangs(compte, 2027, 1, 10_000, '2027-01-05');
+  try {
+    const { status, corps, brouillon } = await emettre(compte, factureDeTest(1, '2027-01-06'), {
+      enTetes: { 'x-facturx-aujourdhui': '2027-01-06' },
+    });
+    assertEquals(status, 409);
+    assertEquals(corps.code, 'DOUBLON');
+    assertEquals(corps.details, { numero: 'F-2027-0001' });
+    assertEquals(await numerotation(compte.entrepriseId), { prochain: 1, annee: 2026 });
+    assertEquals(await brouillonExiste(brouillon.id), true);
+  } finally {
+    // Dix mille lignes de test ne restent pas sur la pile : la transaction de purge les efface.
+    await base((sql) =>
+      sql.begin(async (tx) => {
+        await tx`set local facturx.purge = 'on'`;
+        await tx`delete from factures where entreprise_id = ${compte.entrepriseId}`;
+      }),
+    );
+  }
 });
 
 Deno.test('corps qui n’est pas du JSON : 422 ANOMALIES, Issue CORPS', async () => {
