@@ -68,12 +68,14 @@ function facture(uid: string, numero: string): SavedInvoice {
 }
 
 /**
- * Le début des fichiers que le Studio dépose : un logo PNG (signature et en-tête IHDR, 64 × 32) ou
- * JPEG (SOI et SOF0, 64 × 32), dont la conservation du compte lit les dimensions ; une police TTF.
+ * Le début des fichiers que le Studio dépose : un logo PNG (signature, en-tête IHDR, 64 × 32, puis
+ * IEND : la conservation du compte parcourt ses blocs jusque-là, et ne lit rien après) ou JPEG (SOI
+ * et SOF0, 64 × 32), dont elle lit les dimensions ; une police TTF.
  */
 const PNG = [
   ...[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
-  ...[0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 64, 0, 0, 0, 32, 8, 6, 0, 0, 0],
+  ...[0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 64, 0, 0, 0, 32, 8, 6, 0, 0, 0, 0, 0, 0, 0],
+  ...[0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44, 0, 0, 0, 0],
 ];
 const JPEG = [0xff, 0xd8, 0xff, 0xc0, 0x00, 0x0b, 8, 0, 32, 0, 64, 1, 1, 0x11, 0];
 const TTF = [0x00, 0x01, 0x00, 0x00];

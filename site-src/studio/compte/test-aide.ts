@@ -180,9 +180,11 @@ export async function insererFacture(
 }
 
 /**
- * Une image réduite à ses en-têtes — PNG : signature et IHDR ; JPEG : SOI et SOF0 —, complétée de
- * zéros jusqu'à `taille` octets : ce que lisent les contrôles de type, de poids et de dimensions d'un
- * logo, sans rien à décoder.
+ * Une image réduite à ses en-têtes — PNG : signature, IHDR, puis un bloc de remplissage et IEND ;
+ * JPEG : SOI et SOF0, complété de zéros —, de `taille` octets (au moins ceux des en-têtes) : ce que
+ * lisent les contrôles de type, de poids et de dimensions d'un logo, sans rien à décoder. Le PNG est
+ * bien formé (chaque bloc dans le fichier, IEND à la fin) : `dimensionsImage` le parcourt jusqu'au
+ * bout, comme le décodeur de pdf-lib.
  */
 export function imageDeTest(
   type: 'png' | 'jpeg',
@@ -190,20 +192,26 @@ export function imageDeTest(
   hauteur: number,
   taille = 64,
 ): Uint8Array {
-  const entete =
-    type === 'png'
-      ? [
-          ...[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
-          ...[0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52],
-          ...[largeur >>> 24, (largeur >>> 16) & 0xff, (largeur >>> 8) & 0xff, largeur & 0xff],
-          ...[hauteur >>> 24, (hauteur >>> 16) & 0xff, (hauteur >>> 8) & 0xff, hauteur & 0xff],
-          ...[8, 6, 0, 0, 0],
-        ]
-      : [
-          ...[0xff, 0xd8, 0xff, 0xc0, 0x00, 0x0b, 8],
-          ...[hauteur >> 8, hauteur & 0xff, largeur >> 8, largeur & 0xff],
-          ...[1, 1, 0x11, 0],
-        ];
+  const u32 = (n: number) => [n >>> 24, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
+  if (type === 'png') {
+    const debut = [
+      ...[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+      ...[0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, ...u32(largeur), ...u32(hauteur), 8, 6, 0, 0, 0],
+      ...[0, 0, 0, 0],
+    ];
+    // Un bloc privé (`zzZz`) remplit jusqu'à `taille`, IEND compris (12 octets chacun, au moins).
+    const remplissage = Math.max(0, taille - debut.length - 24);
+    const octets = new Uint8Array(debut.length + 24 + remplissage);
+    octets.set(debut);
+    octets.set([...u32(remplissage), 0x7a, 0x7a, 0x5a, 0x7a], debut.length);
+    octets.set([0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44], octets.length - 12);
+    return octets;
+  }
+  const entete = [
+    ...[0xff, 0xd8, 0xff, 0xc0, 0x00, 0x0b, 8],
+    ...[hauteur >> 8, hauteur & 0xff, largeur >> 8, largeur & 0xff],
+    ...[1, 1, 0x11, 0],
+  ];
   const octets = new Uint8Array(Math.max(taille, entete.length));
   octets.set(entete);
   return octets;

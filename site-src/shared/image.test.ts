@@ -4,21 +4,42 @@ import { dimensionsImage, logoTropGrand, PLAFOND_LOGO } from './image.js';
 /**
  * Les dimensions d'un logo lues dans ses octets, sans décoder l'image (Ruling 62) : l'en-tête IHDR
  * d'un PNG, le premier segment SOFn d'un JPEG (de base ou progressif). Un en-tête tronqué, ou qui
- * n'est pas celui qu'on attend, ne donne rien : l'image est refusée.
+ * n'est pas celui qu'on attend, ne donne rien : l'image est refusée. Un PNG se lit bloc par bloc,
+ * jusqu'à IEND, comme le décodeur de pdf-lib : un second IHDR (le décodeur garde le dernier), une
+ * animation (`acTL`, `fcTL`, `fdAT`, décodée image par image), une profondeur de 16 bits ou un bloc
+ * dont la longueur dépasse le fichier le font refuser.
  */
 
-/** Un PNG réduit à sa signature et à son en-tête IHDR (le reste n'est pas lu). */
-function png(largeur: number, hauteur: number): Uint8Array {
-  const o = new Uint8Array(33);
-  o.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-  const v = new DataView(o.buffer);
-  v.setUint32(8, 13);
-  o.set([0x49, 0x48, 0x44, 0x52], 12);
-  v.setUint32(16, largeur);
-  v.setUint32(20, hauteur);
-  o.set([8, 6, 0, 0, 0], 24);
-  return o;
+/** Un bloc PNG : sa longueur, son type, ses données, et un CRC (que personne ne vérifie ici). */
+function bloc(type: string, donnees: number[] = []): number[] {
+  const longueur = donnees.length;
+  return [
+    longueur >>> 24,
+    (longueur >>> 16) & 0xff,
+    (longueur >>> 8) & 0xff,
+    longueur & 0xff,
+    ...Array.from(type, (c) => c.charCodeAt(0)),
+    ...donnees,
+    0,
+    0,
+    0,
+    0,
+  ];
 }
+
+const u32 = (n: number): number[] => [n >>> 24, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
+
+/** Le bloc IHDR : largeur, hauteur, profondeur, RVBA, sans entrelacement. */
+const ihdr = (largeur: number, hauteur: number, profondeur = 8): number[] =>
+  bloc('IHDR', [...u32(largeur), ...u32(hauteur), profondeur, 6, 0, 0, 0]);
+
+/** Un PNG : la signature, puis les blocs donnés. */
+const pngDe = (...blocs: number[][]): Uint8Array =>
+  Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...blocs.flat()]);
+
+/** Un PNG bien formé : IHDR, un IDAT (jamais décodé ici), IEND. */
+const png = (largeur: number, hauteur: number): Uint8Array =>
+  pngDe(ihdr(largeur, hauteur), bloc('IDAT', [0x78, 0x9c, 1, 2, 3]), bloc('IEND'));
 
 /** Un segment JPEG : son marqueur, sa longueur (deux octets, comptés), sa charge. */
 const segment = (marqueur: number, charge: number[]): number[] => [
@@ -70,6 +91,71 @@ describe('dimensionsImage', () => {
     ).toBeUndefined();
     expect(dimensionsImage(new TextEncoder().encode('GIF89a……'))).toBeUndefined();
     expect(dimensionsImage(new Uint8Array())).toBeUndefined();
+  });
+});
+
+describe('dimensionsImage : un PNG se lit bloc par bloc, comme le décodeur de pdf-lib', () => {
+  test('des blocs connus ou non, puis IEND ; ce qui suit IEND n’est pas lu', () => {
+    const texte = bloc(
+      'tEXt',
+      Array.from('Software\0Studio', (c) => c.charCodeAt(0)),
+    );
+    const p = pngDe(ihdr(640, 200), texte, bloc('zzZz', [1, 2]), bloc('IDAT', [1]), bloc('IEND'));
+    expect(dimensionsImage(p)).toEqual({ largeur: 640, hauteur: 200 });
+    expect(dimensionsImage(Uint8Array.from([...png(300, 120), 0xde, 0xad]))).toEqual({
+      largeur: 300,
+      hauteur: 120,
+    });
+  });
+
+  test('un second IHDR : refusé (le décodeur garderait le dernier, au-delà du plafond)', () => {
+    const deux = pngDe(ihdr(100, 100), bloc('IDAT', [1]), ihdr(40_000, 40_000), bloc('IEND'));
+    expect(dimensionsImage(deux)).toBeUndefined();
+    expect(dimensionsImage(pngDe(ihdr(100, 100), ihdr(100, 100), bloc('IEND')))).toBeUndefined();
+  });
+
+  test('un PNG animé (acTL, fcTL ou fdAT) : refusé, ses images seraient décodées une à une', () => {
+    const actl = bloc('acTL', [...u32(2), ...u32(0)]);
+    const fctl = bloc('fcTL', [
+      ...u32(0),
+      ...u32(40_000),
+      ...u32(40_000),
+      ...new Array(14).fill(0),
+    ]);
+    expect(dimensionsImage(pngDe(ihdr(100, 100), actl, bloc('IDAT', [1]), bloc('IEND')))).toBe(
+      undefined,
+    );
+    expect(dimensionsImage(pngDe(ihdr(100, 100), fctl, bloc('IDAT', [1]), bloc('IEND')))).toBe(
+      undefined,
+    );
+    expect(
+      dimensionsImage(pngDe(ihdr(100, 100), bloc('IDAT', [1]), bloc('fdAT', [0, 0, 0, 1, 2]))),
+    ).toBeUndefined();
+  });
+
+  test('une profondeur de 16 bits : refusée (jamais produite par le Studio, jamais mesurée)', () => {
+    expect(dimensionsImage(pngDe(ihdr(100, 100, 16), bloc('IDAT', [1]), bloc('IEND')))).toBe(
+      undefined,
+    );
+    expect(dimensionsImage(pngDe(ihdr(100, 100, 8), bloc('IDAT', [1]), bloc('IEND')))).toEqual({
+      largeur: 100,
+      hauteur: 100,
+    });
+  });
+
+  test('une longueur de bloc fausse, ou un fichier qui s’arrête avant IEND : refusé', () => {
+    // Un IDAT qui annonce plus d'octets que le fichier n'en a.
+    const long = Uint8Array.from(pngDe(ihdr(100, 100), bloc('IDAT', [1, 2, 3]), bloc('IEND')));
+    new DataView(long.buffer).setUint32(33, 0xffff_fff0);
+    expect(dimensionsImage(long)).toBeUndefined();
+    // Un IHDR qui n'a pas ses 13 octets.
+    const court = pngDe(bloc('IHDR', [...u32(100), ...u32(100)]), bloc('IEND'));
+    expect(dimensionsImage(court)).toBeUndefined();
+    // Tronqué dans un bloc, entre deux blocs, ou sans IEND.
+    const entier = png(300, 120);
+    expect(dimensionsImage(entier.subarray(0, entier.length - 3))).toBeUndefined();
+    expect(dimensionsImage(entier.subarray(0, 33 + 2))).toBeUndefined();
+    expect(dimensionsImage(pngDe(ihdr(300, 120), bloc('IDAT', [1])))).toBeUndefined();
   });
 });
 

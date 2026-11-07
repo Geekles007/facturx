@@ -840,15 +840,33 @@ Deno.test('logo de plus de 1 Mo : le bucket l’accepte, l’émission le refuse
   assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
 });
 
-/** Un PNG réduit à sa signature et à son en-tête IHDR : `emettre` le refuse avant de le décoder. */
-function pngEntete(largeur: number, hauteur: number): Uint8Array {
-  const o = new Uint8Array(64);
-  o.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
-  const v = new DataView(o.buffer);
-  v.setUint32(16, largeur);
-  v.setUint32(20, hauteur);
-  o.set([8, 6, 0, 0, 0], 24);
-  return o;
+/**
+ * Un PNG réduit à sa signature, à son en-tête IHDR et à IEND (`emettre` en parcourt les blocs) : il
+ * le refuse avant de le décoder. `blocs` s'insère entre les deux (type, données ; CRC nul).
+ */
+function pngEntete(
+  largeur: number,
+  hauteur: number,
+  blocs: { type: string; donnees: number[] }[] = [],
+): Uint8Array {
+  const bloc = (type: string, donnees: number[]) => {
+    const o = new Uint8Array(12 + donnees.length);
+    new DataView(o.buffer).setUint32(0, donnees.length);
+    o.set(new TextEncoder().encode(type), 4);
+    o.set(donnees, 8);
+    return [...o];
+  };
+  const entete = new Uint8Array(13);
+  const v = new DataView(entete.buffer);
+  v.setUint32(0, largeur);
+  v.setUint32(4, hauteur);
+  entete.set([8, 6, 0, 0, 0], 8);
+  return Uint8Array.from([
+    ...[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+    ...bloc('IHDR', [...entete]),
+    ...blocs.flatMap((b) => bloc(b.type, b.donnees)),
+    ...bloc('IEND', []),
+  ]);
 }
 
 Deno.test('logo de 4000 × 4000 pixels sous 1 Mo : 422 FICHIER avant le rendu, dimensions et plafond dits', async () => {
@@ -897,6 +915,46 @@ Deno.test('logo PNG à l’en-tête illisible : 422 FICHIER, comme un fichier qu
   assertEquals(corps.details[0].code, 'FICHIER');
   assertEquals(corps.details[0].path, 'appearance.logo');
   assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
+});
+
+Deno.test('logo PNG au second IHDR, ou animé : 422 FICHIER avant le rendu, rien de consommé', async () => {
+  const compte = await creerCompte();
+  const u32 = (n: number) => [n >>> 24, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
+  // Le décodeur de pdf-lib garde le dernier IHDR, et décode chaque image d'une animation à la taille
+  // de son fcTL : le premier IHDR ne dit rien de la mémoire du rendu.
+  const cas = {
+    'logo-deux-ihdr': pngEntete(100, 100, [
+      { type: 'IHDR', donnees: [...u32(40_000), ...u32(40_000), 8, 6, 0, 0, 0] },
+    ]),
+    'logo-anime': pngEntete(100, 100, [
+      { type: 'acTL', donnees: [...u32(1), ...u32(0)] },
+      {
+        type: 'fcTL',
+        donnees: [...u32(0), ...u32(40_000), ...u32(40_000), ...new Array(14).fill(0)],
+      },
+      { type: 'fdAT', donnees: [...u32(1), 0x78, 0x9c, 1, 2, 3] },
+    ]),
+  };
+  for (const [cle, octets] of Object.entries(cas)) {
+    const { error } = await admin()
+      .storage.from('fichiers')
+      .upload(`${compte.entrepriseId}/${cle}`, octets, { contentType: 'image/png' });
+    assertEquals(error, null);
+    const appearance = {
+      ...apparenceDeTest(),
+      logo: { key: cle, type: 'png', position: 'left', height: 44, name: 'logo.png' },
+    };
+    const { status, corps, brouillon } = await emettre(compte, factureDeTest(), { appearance });
+    assertEquals(status, 422, cle);
+    assertEquals(corps.details[0].code, 'FICHIER', cle);
+    assertEquals(corps.details[0].path, 'appearance.logo', cle);
+    // Le refus de `lireFichier`, qui nomme le fichier, et non l'échec du décodeur après coup : des
+    // données d'image valides n'y auraient pas échoué, et la mémoire du rendu y serait passée.
+    assert(corps.details[0].message.includes(`Le fichier ${cle} `), corps.details[0].message);
+    assertEquals(await brouillonExiste(brouillon.id), true, cle);
+  }
+  assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
+  assertEquals(await nombreDeFactures(compte.entrepriseId), 0);
 });
 
 Deno.test('texte que jsonb refuse (caractère nul, demi-substitut isolé) : 422 CORPS, rien d’émis ni déposé', async () => {

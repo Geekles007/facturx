@@ -232,7 +232,7 @@ Le Studio affiche « envoyée » et jamais « reçue » : le fournisseur a accep
 - Une Edge Function retrouve l'entreprise depuis le jeton, jamais depuis le corps de la requête.
 - La clé de service n'existe que dans les secrets des fonctions.
 - Buckets `factures` et `fichiers` privés, règles par préfixe `{entreprise_id}/`, URL signées de 60 secondes.
-- Fichiers déposés : logo en PNG ou JPEG de 1 Mo et de 2000 × 2000 pixels au plus (dimensions lues dans l'en-tête, sans décoder l'image), police TTF de 2 Mo au plus, type vérifié à l'ouverture et non d'après l'extension.
+- Fichiers déposés : logo en PNG ou JPEG de 1 Mo et de 2000 × 2000 pixels au plus (dimensions lues dans l'en-tête, sans décoder l'image ; un PNG est parcouru bloc par bloc jusqu'à IEND, comme le décodeur de pdf-lib, et refusé s'il a un second IHDR, des blocs d'animation APNG, une profondeur de 16 bits ou un bloc qui déborde du fichier), police TTF de 2 Mo au plus, type vérifié à l'ouverture et non d'après l'extension.
 - Limites de débit : `emettre` 60 par heure et par compte ; relances (§ 9) ; authentification selon les réglages de Supabase.
 - Sauvegardes : les sauvegardes quotidiennes du plan Pro, plus un dump hebdomadaire chiffré, déposé chez un autre hébergeur européen, avec une restauration testée au moins une fois avant l'ouverture.
 - Le site n'a aujourd'hui aucune CSP. Une session vit désormais dans le navigateur : une CSP est ajoutée à `docker/nginx.conf`, avec `connect-src` limité au site et au projet Supabase.

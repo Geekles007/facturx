@@ -24,9 +24,17 @@ export interface Dimensions {
 }
 
 const SIGNATURE_PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-/** `IHDR`, le premier bloc d'un PNG, qui porte la largeur et la hauteur. */
-const IHDR = [0x49, 0x48, 0x44, 0x52];
 
+/**
+ * Les blocs d'un PNG animé (APNG) : `acTL` l'annonce, `fcTL` et `fdAT` portent chaque image. Le
+ * décodeur de pdf-lib (UPNG) décode chaque image à la taille que dit son `fcTL`, sans borne, avant
+ * de refuser l'animation : rien de ce que dit l'IHDR ne la borne.
+ */
+const BLOCS_ANIMES = new Set(['acTL', 'fcTL', 'fdAT']);
+
+/** Le type d'un bloc, ses quatre lettres ASCII. */
+const typeDuBloc = (o: Uint8Array, i: number): string =>
+  String.fromCharCode(o[i] as number, o[i + 1] as number, o[i + 2] as number, o[i + 3] as number);
 /** Les SOFn d'un JPEG (C0 à CF), sauf C4 (DHT), C8 (JPG) et CC (DAC), qui n'en sont pas. */
 const estSof = (marqueur: number): boolean =>
   marqueur >= 0xc0 &&
@@ -35,11 +43,30 @@ const estSof = (marqueur: number): boolean =>
   marqueur !== 0xc8 &&
   marqueur !== 0xcc;
 
-/** Les dimensions d'un PNG, d'après son en-tête IHDR. */
+/**
+ * Les dimensions d'un PNG, d'après son en-tête IHDR, s'il est le seul qui compte. Le décodeur de
+ * pdf-lib lit les blocs jusqu'à IEND, et garde le dernier IHDR qu'il rencontre : les blocs sont donc
+ * parcourus de même, chacun dans les limites du fichier, et rien n'est rendu pour un second IHDR, un
+ * bloc d'animation, une profondeur de 16 bits (2000 × 2000 pixels doublent alors de poids au
+ * décodage, ce qui n'a pas été mesuré ; le Studio n'en produit jamais), un bloc qui déborde du
+ * fichier, ou un fichier qui s'arrête avant IEND. Ce qui suit IEND n'est pas lu, par lui non plus.
+ */
 function dimensionsPng(o: Uint8Array): Dimensions | undefined {
-  if (o.length < 24 || !IHDR.every((octet, i) => o[12 + i] === octet)) return undefined;
   const vue = new DataView(o.buffer, o.byteOffset, o.byteLength);
-  return { largeur: vue.getUint32(16), hauteur: vue.getUint32(20) };
+  // IHDR vient en premier, et fait 13 octets.
+  if (o.length < 33 || typeDuBloc(o, 12) !== 'IHDR' || vue.getUint32(8) !== 13) return undefined;
+  if (o[24] === 16) return undefined;
+  const dimensions = { largeur: vue.getUint32(16), hauteur: vue.getUint32(20) };
+  // Chaque bloc : longueur (4 octets), type (4), données, CRC (4).
+  for (let i = 33; ; ) {
+    if (i + 12 > o.length) return undefined;
+    const longueur = vue.getUint32(i);
+    const type = typeDuBloc(o, i + 4);
+    if (i + 12 + longueur > o.length) return undefined;
+    if (type === 'IEND') return dimensions;
+    if (type === 'IHDR' || BLOCS_ANIMES.has(type)) return undefined;
+    i += 12 + longueur;
+  }
 }
 
 /**
@@ -73,8 +100,9 @@ function dimensionsJpeg(o: Uint8Array): Dimensions | undefined {
 
 /**
  * Les dimensions d'une image PNG ou JPEG, lues dans ses en-têtes, sans la décoder. Rien si ce n'est
- * ni l'un ni l'autre, si l'en-tête est tronqué ou faux, ou si une dimension est nulle : une telle
- * image est refusée comme logo.
+ * ni l'un ni l'autre, si l'en-tête est tronqué ou faux, si une dimension est nulle, ou si le PNG
+ * n'est pas une image fixe de 8 bits au plus bien formée (voir `dimensionsPng`) : une telle image est
+ * refusée comme logo.
  */
 export function dimensionsImage(octets: Uint8Array): Dimensions | undefined {
   const png = SIGNATURE_PNG.every((octet, i) => octets[i] === octet);
