@@ -1,6 +1,6 @@
 # Comptes, factures conservées et suivi des paiements — design
 
-*3 novembre 2026. Design validé section par section. Mis à jour le 7 novembre 2026 : les § 6 à 13 décrivent le service tel qu'il est construit.*
+*3 novembre 2026. Design validé section par section. Mis à jour le 7 novembre 2026 : des passages des § 6 à 13 ont été mis à jour d'après le service construit (l'émission, la purge, les erreurs, l'import, la sécurité des fichiers) ; le code et ses commentaires font foi là où ils précisent ce texte.*
 
 ## 1. Contexte
 
@@ -150,7 +150,7 @@ L'Edge Function `emettre` reçoit `{ brouillonId, version, invoice, appearance }
 5. **Contrôler la date.** `issueDate` ne doit être ni postérieure à aujourd'hui (Europe/Paris), ni antérieure à la date de la dernière facture émise par l'entreprise. En numérotation annuelle, elle ne doit pas non plus être antérieure au 1er janvier de l'année de la numérotation : sans cette borne, une facture de décembre prendrait le rang 1 de la série courante, et celle de janvier commencerait à 2. Hors de ces bornes : 409. La numérotation reste chronologique.
 6. **Attribuer le numéro.** Rang selon `nextRank`, numéro selon `formatNumber`, contrôle par `numberProblems`. Si ce numéro est déjà pris (une facture importée le porte), le serveur prend le premier libre qui suit ; s'il n'y en a pas dans les suivants, 409 `DOUBLON`. Ces fonctions quittent `library.ts` pour `site-src/shared/numerotation.ts`, que le Studio importe et que `pnpm compte:preparer` copie dans les fonctions (§ 5). En mode compte, on ne saisit pas de numéro à la main : le Studio propose le numéro suivant, et le serveur le remplace par celui qu'il attribue.
 7. **Valider.** `validateInvoice` sur la facture numérotée. Des anomalies : 422 avec la liste, annulation de la transaction.
-8. **Pour un avoir**, vérifier que chaque facture citée existe dans l'entreprise, et renseigner `facture_origine_id`. Un avoir est dans la devise des factures qu'il cite : sinon, 422 avec une `Issue` `AVOIR_DEVISE` sur la devise, avant le verrou et avant le dépôt du PDF.
+8. **Pour un avoir**, vérifier que chaque facture citée existe dans l'entreprise, et renseigner `facture_origine_id`. Un avoir est dans la devise des factures qu'il cite : sinon, 422 avec une `Issue` `AVOIR_DEVISE` sur la devise. Ce contrôle-là n'attend pas l'étape 8 : il a lieu juste après l'étape 3, avant le verrou de l'étape 4 et avant le dépôt du PDF (une facture émise ne change plus, il n'a pas besoin du verrou).
 9. **Produire le PDF.** `renderInvoicePdf` puis `embedFacturX`, avec les polices du bucket `polices`, ou la police et le logo de l'utilisateur depuis `fichiers`. Déposer le PDF dans `factures`.
 10. **Enregistrer** la facture, avancer la numérotation (`advance`), supprimer le brouillon, valider la transaction.
 
@@ -259,8 +259,9 @@ Les fonctions répondent `{ code, message, details? }` avec ces statuts :
 |---|---|---|---|
 | 401 | `SESSION` | jeton absent ou expiré | renvoie à la connexion, en gardant le brouillon |
 | 403 | `DROITS`, `NON_CONFIRME`, `SUPPRESSION` | pas membre ; adresse non confirmée ; suppression du compte demandée | explique ; propose de renvoyer la confirmation, ou d'annuler la suppression |
-| 409 | `BROUILLON_MODIFIE`, `DATE`, `DOUBLON`, `PDF_DEJA_DEPOSE` | version périmée ; date hors bornes (`details.min` et `details.max`) ; numéro déjà importé, ou déjà pris sans numéro libre dans les suivants (`emettre`) ; PDF déjà déposé (repli du § 7) | recharge le brouillon ; indique la date admise ; liste les doublons de l'import, ou invite à changer le gabarit |
-| 413 | `ANOMALIES` | corps de la requête de plus de 10 Mio (`emettre`, `importer`) ; `details` porte une `Issue` de code `CORPS` | demande d'alléger les pièces jointes |
+| 405 | `METHODE` | une autre méthode que POST (`purger`), avec l'en-tête `Allow: POST` | — (appelée par `pg_cron`, jamais par le Studio) |
+| 409 | `BROUILLON_MODIFIE`, `DATE`, `DOUBLON`, `PDF_DEJA_DEPOSE`, `SUPPRESSION` | version périmée ; date hors bornes (`details.min` et `details.max`) ; numéro déjà importé, ou déjà pris sans numéro libre dans les suivants (`emettre`) ; PDF déjà déposé (repli du § 7) ; annulation d'une suppression demandée il y a plus de 30 jours (`supprimer-compte`, `details.suppressionDemandeeLe`) | recharge le brouillon ; indique la date admise ; liste les doublons de l'import, ou invite à changer le gabarit ; dit que la suppression ne peut plus être annulée |
+| 413 | `ANOMALIES` | corps de la requête trop grand : plus de 10 Mio (`emettre`, `importer`), 100 Kio (`relancer`), 1 Kio (`supprimer-compte`) ; `details` porte une `Issue` de code `CORPS` | demande d'alléger les pièces jointes |
 | 422 | `ANOMALIES` | `validateInvoice` refuse, ou un avoir n'est pas dans la devise de la facture qu'il cite (`AVOIR_DEVISE`) ; `details` porte les `Issue` | ouvre l'onglet Contrôle sur le champ en cause (`focusField`), ou le champ de la devise |
 | 429 | `LIMITE` | limite de débit ; `details.reessayerApres` (date ISO) ; pour `relancer`, `details.cause` dit laquelle : `delai` (trois jours sur la facture), `jour` (vingt envois du jour), `tentatives` (soixante refus du jour) ou `verrou` (une autre relance de l'entreprise est en cours d'envoi) | indique quand réessayer, et pour une relance la limite en cause |
 | 502 | `ENVOI` | Brevo refuse | dit que la relance n'est pas partie |
