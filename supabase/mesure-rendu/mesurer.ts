@@ -10,7 +10,8 @@
  * Commandes :
  *   logo <sortie.png> [--grand]
  *       un logo PNG sous 1 Mio : du bruit RVBA de 510 × 510 (presque incompressible), ou, avec --grand,
- *       des aplats de 4 000 × 4 000 (quelques Ko, mais 64 Mo de pixels à décoder).
+ *       des aplats de 2 000 × 2 000, le plus grand logo qu'acceptent le Studio et `emettre` (PLAFOND_LOGO,
+ *       site-src/shared/image.ts) : quelques Ko, mais 16 Mo de pixels à décoder.
  *   rendu --config <nom> --regular <ttf> --gras <ttf> [--logo <png|jpg>] [--lignes 50] [--extreme]
  *         [--redeployer] --sortie <fichier.jsonl>
  *       la fonction jetable `mesure-rendu` : le froid (trois requêtes d'un seul rendu sur un worker
@@ -217,10 +218,10 @@ function png(
 
 function logo(sortie: string, grand: boolean): void {
   const octets = grand
-    ? // Quatre bandes de couleur unie : l'image d'un logo exporté en très grand.
+    ? // Des bandes de couleur unie : un logo exporté en très grand, au plafond des dimensions.
       png(
-        4000,
-        4000,
+        2000,
+        2000,
         (_, y) =>
           [
             [176, 65, 62, 255],
@@ -234,7 +235,7 @@ function logo(sortie: string, grand: boolean): void {
       });
   if (octets.length > 1024 * 1024) arreter(`logo de ${octets.length} octets : au-delà de 1 Mio.`);
   Deno.writeFileSync(sortie, octets);
-  console.log(`${sortie} : ${octets.length} octets, ${grand ? '4000 × 4000' : '510 × 510'} RVBA`);
+  console.log(`${sortie} : ${octets.length} octets, ${grand ? '2000 × 2000' : '510 × 510'} RVBA`);
 }
 
 // ---------------------------------------------------------------------------------------------------
