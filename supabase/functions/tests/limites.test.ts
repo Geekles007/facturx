@@ -143,13 +143,16 @@ Deno.test('le délai, le plafond du jour et le plafond des refus : 429 LIMITE, l
   const delai = await limite({ envoyees: 1, bloquee: true, libreLe: libre, minuitSuivant: minuit });
   assertEquals(delai.status, 429);
   assertEquals(delai.corps.code, 'LIMITE');
-  assertEquals(delai.corps.details, { reessayerApres: libre.toISOString() });
+  assertEquals(delai.corps.details, { reessayerApres: libre.toISOString(), cause: 'delai' });
 
   // Vingt envoyées dans le jour : minuit ; dix-neuf : rien.
   const jour = await limite({ duJour: 20, minuitSuivant: minuit });
-  assertEquals(jour.corps.details, { reessayerApres: minuit.toISOString() });
+  assertEquals(jour.corps.details, { reessayerApres: minuit.toISOString(), cause: 'jour' });
   const refus = await limite({ refuseesDuJour: 60, minuitSuivant: minuit });
-  assertEquals(refus.corps.details, { reessayerApres: minuit.toISOString() });
+  assertEquals(refus.corps.details, {
+    reessayerApres: minuit.toISOString(),
+    cause: 'tentatives',
+  });
   const { tx } = fausseTransaction({ duJour: 19, refuseesDuJour: 59, minuitSuivant: minuit });
   assertEquals(await appliquerLimites(tx, 'e', 'f', requete()), 1);
 
@@ -161,7 +164,8 @@ Deno.test('le délai, le plafond du jour et le plafond des refus : 429 LIMITE, l
     duJour: 20,
     minuitSuivant: minuit,
   });
-  assertEquals(ensemble.corps.details, { reessayerApres: libre.toISOString() });
+  // La cause est celle de l'échéance annoncée.
+  assertEquals(ensemble.corps.details, { reessayerApres: libre.toISOString(), cause: 'delai' });
   const tot = new Date('2026-11-06T20:00:00Z');
   const ensembleTot = await limite({
     envoyees: 1,
@@ -170,7 +174,7 @@ Deno.test('le délai, le plafond du jour et le plafond des refus : 429 LIMITE, l
     duJour: 20,
     minuitSuivant: minuit,
   });
-  assertEquals(ensembleTot.corps.details, { reessayerApres: minuit.toISOString() });
+  assertEquals(ensembleTot.corps.details, { reessayerApres: minuit.toISOString(), cause: 'jour' });
   // Un délai déjà échu ne bloque pas.
   const { tx: echu } = fausseTransaction({ envoyees: 2, bloquee: false, libreLe: tot });
   assertEquals(await appliquerLimites(echu, 'e', 'f', requete()), 3);
@@ -181,8 +185,10 @@ Deno.test('un verrou qui n’est pas venu à temps (55P03) : 429 LIMITE, réessa
   const { status, corps } = await limite({ erreurVerrou: '55P03' });
   assertEquals(status, 429);
   assertEquals(corps.code, 'LIMITE');
-  const apres = new Date((corps.details as { reessayerApres: string }).reessayerApres).getTime();
+  const details = corps.details as { reessayerApres: string; cause: string };
+  const apres = new Date(details.reessayerApres).getTime();
   assert(apres >= avant + 9_000 && apres <= Date.now() + 11_000, String(apres - avant));
+  assertEquals(details.cause, 'verrou');
 
   // Toute autre erreur du verrou est une panne, pas une limite.
   const { tx } = fausseTransaction({ erreurVerrou: '08006' });

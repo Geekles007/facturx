@@ -274,7 +274,8 @@ Deno.test('deuxième relance immédiate : 429 LIMITE, avec l’heure où réessa
   assertEquals(status, 429);
   assertEquals(corps.code, 'LIMITE');
   assertEquals(typeof corps.message, 'string');
-  assertEquals(Object.keys(corps.details), ['reessayerApres']);
+  assertEquals(Object.keys(corps.details).sort(), ['cause', 'reessayerApres']);
+  assertEquals(corps.details.cause, 'delai');
   // 72 heures après la relance partie.
   assertEquals(
     new Date(corps.details.reessayerApres).getTime(),
@@ -426,6 +427,7 @@ Deno.test('plafond : 20 relances par jour et par entreprise, la 21e donne 429 ju
   assertEquals(status, 429);
   assertEquals(corps.code, 'LIMITE');
   assertEquals(corps.details.reessayerApres, await minuitSuivant(aujourdhui()));
+  assertEquals(corps.details.cause, 'jour');
   assertEquals(await relancesDe(vingtEtUnieme), []);
   assertEquals(await envoyeesDuJour(compte.entrepriseId), 20);
 });
@@ -742,6 +744,7 @@ Deno.test('plafond lâche des refus : 60 tentatives refusées par jour, puis 429
   assertEquals(status, 429);
   assertEquals(corps.code, 'LIMITE');
   assertEquals(corps.details.reessayerApres, await minuitSuivant(aujourdhui()));
+  assertEquals(corps.details.cause, 'tentatives');
   assertEquals(await messagesRemis(a), []);
   // Les refus d'hier ne comptent pas.
   const autre = await compteRelanceur();
@@ -869,6 +872,7 @@ Deno.test('délai et plafond en défaut ensemble : réessayer après le plus tar
   const delai = derniere.getTime() + 72 * HEURE;
   const minuit = new Date(await minuitSuivant(aujourdhui())).getTime();
   assertEquals(new Date(corps.details.reessayerApres).getTime(), Math.max(delai, minuit));
+  assertEquals(corps.details.cause, delai > minuit ? 'delai' : 'jour');
 });
 
 Deno.test('relances simultanées de la même facture : une seule part, les autres donnent 429', async () => {
@@ -1021,6 +1025,7 @@ Deno.test('verrou tenu trop longtemps : 429 LIMITE au bout de 10 secondes, rien 
   // Réessayer dans quelques secondes.
   const apres = new Date(corps.details.reessayerApres).getTime();
   assert(apres > attente.fin - 1_000 && apres < attente.fin + 30_000, corps.details.reessayerApres);
+  assertEquals(corps.details.cause, 'verrou');
   assertEquals(await messagesRemis(factureId), []);
   assertEquals(await relancesDe(factureId), []);
 

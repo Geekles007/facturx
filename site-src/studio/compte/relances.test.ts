@@ -513,6 +513,38 @@ describe('envoyerRelance (faux client)', () => {
     });
   });
 
+  test('429 : la limite que la réponse nomme, chacune sa phrase ; sans cause connue, la générique', async () => {
+    const apres = new Date(Date.now() + 72 * 3600 * 1000).toISOString();
+    const moment = finDAttente({ reessayerApres: apres });
+    for (const cause of ['delai', 'jour', 'tentatives', 'verrou'] as const) {
+      invoke.mockResolvedValueOnce(
+        refusDe(429, { code: 'LIMITE', message: '', details: { reessayerApres: apres, cause } }),
+      );
+      expect(await envoyerRelance(ENVOI)).toEqual({
+        kind: 'refus',
+        refus: { texte: sans(phrases.refus.limites[cause](moment)) },
+      });
+    }
+    // Quatre phrases distinctes, et distinctes de la générique.
+    const textes = Object.values(phrases.refus.limites).map((f) => f(moment));
+    expect(new Set([...textes, phrases.refus.limite(moment)]).size).toBe(5);
+    expect(phrases.refus.limites.delai(moment)).toContain(moment);
+    expect(phrases.refus.limites.verrou(moment)).toMatch(/quelques secondes/);
+    // Une cause absente, inconnue ou mal formée : le message générique.
+    for (const details of [
+      { reessayerApres: apres },
+      { reessayerApres: apres, cause: 'autre' },
+      { reessayerApres: apres, cause: 3 },
+      { reessayerApres: apres, cause: null },
+    ]) {
+      invoke.mockResolvedValueOnce(refusDe(429, { code: 'LIMITE', message: '', details }));
+      expect(await envoyerRelance(ENVOI)).toEqual({
+        kind: 'refus',
+        refus: { texte: sans(phrases.refus.limite(moment)) },
+      });
+    }
+  });
+
   test('401 : la session est dite expirée, et la connexion s’ouvre', async () => {
     for (const corps of [{ code: 'SESSION', message: '' }, { msg: 'Invalid JWT' }]) {
       store.set((s) => ({ ui: { ...s.ui, compte: compteUi('e-1'), connexion: undefined } }));
@@ -610,7 +642,7 @@ describe.skipIf(pile)('la relance contre la pile, `relancer` servie (simulateur 
     expect(moment).toMatch(/\d/);
     expect(await envoyerRelance(preparee)).toEqual({
       kind: 'refus',
-      refus: { texte: sans(phrases.refus.limite(moment)) },
+      refus: { texte: sans(phrases.refus.limites.delai(moment)) },
     });
     expect(await relancesDe(factureId)).toHaveLength(1);
   }, 60_000);
@@ -627,7 +659,9 @@ describe.skipIf(pile)('la relance contre la pile, `relancer` servie (simulateur 
     expect(await relancer(factureId, 'compta@client-demo.fr')).toEqual({
       kind: 'refus',
       refus: {
-        texte: sans(phrases.refus.limite(finDAttente({ reessayerApres: libre.toISOString() }))),
+        texte: sans(
+          phrases.refus.limites.delai(finDAttente({ reessayerApres: libre.toISOString() })),
+        ),
       },
     });
   }, 60_000);

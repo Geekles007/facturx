@@ -362,6 +362,19 @@ export type IssueRelance =
   | { kind: 'sansReponse' }
   | { kind: 'refus'; refus: RefusRelance };
 
+/** Ce qui retient la relance, d'après `details.cause` du 429 (relancer/limites.ts). */
+const CAUSES = ['delai', 'jour', 'tentatives', 'verrou'] as const;
+type CauseLimite = (typeof CAUSES)[number];
+
+/** La cause d'un 429, si la réponse en nomme une que le Studio connaît. */
+function causeDe(details: unknown): CauseLimite | undefined {
+  const cause =
+    typeof details === 'object' && details !== null
+      ? (details as { cause?: unknown }).cause
+      : undefined;
+  return CAUSES.find((c) => c === cause);
+}
+
 /** Un refus, et ce qu'il garantit : aucune relance n'est partie. */
 const sansEnvoi = (texte: string, plus: Omit<RefusRelance, 'texte'> = {}): RefusRelance => ({
   texte: `${texte} ${t.compte.relance.aucuneEnvoyee}`,
@@ -399,7 +412,9 @@ function anomalie(issue: Issue | undefined): RefusRelance {
  * Le refus de `relancer`, de statut `statut`, dans la langue de l'interface : jamais le `message` du
  * serveur, qui n'est qu'en français. La réaction commune (`reaction`) dit la session, la confirmation
  * de l'adresse, la suppression du compte, le refus du service d'envoi et la panne ; la relance dit
- * le reste (facture, anomalies, limites). Un code qu'elle ne connaît pas : le message générique.
+ * le reste (facture, anomalies, et la limite que `details.cause` nomme : délai de la facture, plafond
+ * du jour, tentatives refusées, autre envoi en cours). Un code qu'elle ne connaît pas : le message
+ * générique.
  */
 function refusDeRelance(
   statut: number,
@@ -415,8 +430,12 @@ function refusDeRelance(
   switch (corps.code) {
     case 'DROITS':
       return sansEnvoi(phrases.droits);
-    case 'LIMITE':
-      return sansEnvoi(phrases.limite(finDAttente(corps.details)));
+    case 'LIMITE': {
+      // La limite que la réponse nomme ; sans cause connue, le message générique.
+      const moment = finDAttente(corps.details);
+      const cause = causeDe(corps.details);
+      return sansEnvoi(cause ? phrases.limites[cause](moment) : phrases.limite(moment));
+    }
     case 'NON_CONFIRME':
     case 'SUPPRESSION':
       return sansEnvoi(r.texte, r.action ? { action: r.action } : {});

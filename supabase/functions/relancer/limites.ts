@@ -7,6 +7,10 @@
  *   - 60 relances refusées par le service d'envoi par jour de Paris et par entreprise (un plafond
  *     lâche : une tentative refusée n'envoie rien, mais elle ne doit pas se répéter sans fin).
  *
+ * Chaque 429 `LIMITE` porte `details.reessayerApres` (ISO) et `details.cause`, ce qui retient la
+ * relance : `delai` (72 h sur la facture), `jour` (20 envois du jour), `tentatives` (60 refus du jour)
+ * ou `verrou` (une autre relance de l'entreprise en cours d'envoi). Le Studio dit la bonne limite.
+ *
  * Le verrou est consultatif et par entreprise : il fait se suivre les relances de l'entreprise, de sorte
  * que chacune compte ce que la précédente a consigné. Il est pris avant tout comptage, et le jour est
  * lu dans la base après lui, dans la requête qui compte : une relance qui a attendu le verrou jusqu'à
@@ -35,6 +39,9 @@ export const NIVEAU_MAX = 3;
 /** Combien de temps une relance attend le verrou de l'entreprise, en secondes. */
 export const ATTENTE_VERROU = 10;
 
+/** Ce qui retient la relance : `details.cause` de la réponse 429. */
+export type CauseLimite = 'delai' | 'jour' | 'tentatives' | 'verrou';
+
 /** Le complément de chaque message de refus : rien n'a été envoyé. */
 const SANS_ENVOI = 'aucune relance n’est partie';
 
@@ -47,7 +54,7 @@ export const cleDuVerrou = (entrepriseId: string): string => `relancer:${entrepr
  * ni pour le délai. Le jour de Paris est celui de la base au moment du comptage, sauf si l'en-tête de
  * test en impose un (`aujourdhuiImpose(req)`, lu ici et non par l'appelant : l'appelant n'a ainsi pas
  * de jour à donner, et ne peut pas en donner un lu avant le verrou). Lève 429 `LIMITE`, avec
- * `details.reessayerApres` : si deux limites sont atteintes, la plus tardive.
+ * `details.reessayerApres` et `details.cause` : si deux limites sont atteintes, la plus tardive.
  */
 export async function appliquerLimites(
   tx: Requetes,
@@ -65,7 +72,10 @@ export async function appliquerLimites(
       429,
       'LIMITE',
       `Une autre relance de l’entreprise est en cours d’envoi : réessayez dans quelques secondes. ${SANS_ENVOI}.`,
-      { reessayerApres: new Date(Date.now() + ATTENTE_VERROU * 1000).toISOString() },
+      {
+        reessayerApres: new Date(Date.now() + ATTENTE_VERROU * 1000).toISOString(),
+        cause: 'verrou' satisfies CauseLimite,
+      },
     );
   }
 
@@ -101,22 +111,25 @@ export async function appliquerLimites(
       from b`;
 
   // Plusieurs limites en défaut ensemble : réessayer après la plus tardive.
-  const limites: { apres: Date; message: string }[] = [];
+  const limites: { apres: Date; cause: CauseLimite; message: string }[] = [];
   if (bloquee && libre_le) {
     limites.push({
       apres: libre_le,
+      cause: 'delai',
       message: `Cette facture a déjà été relancée il y a moins de ${DELAI_HEURES} heures.`,
     });
   }
   if (envoyees_du_jour >= PLAFOND_PAR_JOUR) {
     limites.push({
       apres: minuit_suivant,
+      cause: 'jour',
       message: `${PLAFOND_PAR_JOUR} relances ont déjà été envoyées aujourd’hui.`,
     });
   }
   if (refusees_du_jour >= PLAFOND_REFUSEES_PAR_JOUR) {
     limites.push({
       apres: minuit_suivant,
+      cause: 'tentatives',
       message: `${PLAFOND_REFUSEES_PAR_JOUR} tentatives d’envoi ont déjà été refusées aujourd’hui.`,
     });
   }
@@ -124,6 +137,7 @@ export async function appliquerLimites(
     const tardive = limites.reduce((a, b) => (b.apres > a.apres ? b : a));
     throw erreur(429, 'LIMITE', `${tardive.message} Réessayez plus tard : ${SANS_ENVOI}.`, {
       reessayerApres: tardive.apres.toISOString(),
+      cause: tardive.cause,
     });
   }
   return Math.min(envoyees + 1, NIVEAU_MAX);

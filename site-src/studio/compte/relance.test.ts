@@ -236,10 +236,32 @@ describe('le formulaire de relance', () => {
     expect(faux.invoke).not.toHaveBeenCalled();
   });
 
+  test('une adresse préremplie que le serveur refuserait : l’avertissement d’emblée', () => {
+    for (const adresse of ['a@b.fr; c@d.fr', 'compta@client', 'Compta <a@b.fr>']) {
+      demonter();
+      const arbre = rendre(FormulaireRelance, accessoires(preparee(adresse)));
+      expect({ adresse, avertie: texte(arbre).includes(phrases.destinataireInvalide) }).toEqual({
+        adresse,
+        avertie: true,
+      });
+      expect(envoyer(arbre)?.props.disabled).toBe(true);
+    }
+    // Une adresse valide, ou vide (l'aide le dit), ne l'affiche pas.
+    for (const adresse of ['compta@client-demo.fr', ' compta@client-demo.fr ', '']) {
+      demonter();
+      const arbre = rendre(FormulaireRelance, accessoires(preparee(adresse)));
+      expect(texte(arbre)).not.toContain(phrases.destinataireInvalide);
+    }
+  });
+
   test('une tentative d’envoi montre aussi l’avertissement d’une adresse non valide', async () => {
-    const props = accessoires(preparee('client'));
+    // Tapée, sans quitter le champ : rien pendant la frappe…
+    const props = accessoires(preparee(''));
     let arbre = rendre(FormulaireRelance, props);
+    (saisie(arbre, phrases.destinataire).props.onValue as (v: string) => void)('client');
+    arbre = rendre(FormulaireRelance, props);
     expect(texte(arbre)).not.toContain(phrases.destinataireInvalide);
+    // … et l'avertissement dès qu'un envoi est tenté.
     soumettre(arbre);
     await attendre();
     arbre = rendre(FormulaireRelance, props);

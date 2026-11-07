@@ -1043,11 +1043,22 @@ const fr = {
         corps:
           'Le message est vide, dépasse 10 000 caractères, ou contient un caractère que le serveur refuse.',
         illisible: 'Le serveur ne lit pas cette demande : rechargez la page, puis recommencez.',
-        /** La réponse ne dit pas laquelle des limites (délai, plafonds du jour, envoi en cours). */
+        /** Une limite dont la réponse ne dit pas la cause. */
         limite: (moment: string | undefined) =>
           moment
             ? `Une limite des relances est atteinte : réessayez après ${moment}.`
             : 'Une limite des relances est atteinte : réessayez plus tard.',
+        /** La limite que la réponse nomme (`details.cause`). */
+        limites: {
+          delai: (moment: string | undefined) =>
+            `Cette facture a déjà été relancée il y a moins de trois jours : ${moment ? `réessayez après ${moment}` : 'réessayez plus tard'}.`,
+          jour: (moment: string | undefined) =>
+            `Vingt relances ont déjà été envoyées aujourd'hui, le plus par jour : ${moment ? `réessayez après ${moment}` : 'réessayez demain'}.`,
+          tentatives: (moment: string | undefined) =>
+            `Trop de tentatives d'envoi ont été refusées aujourd'hui par le service d'envoi : ${moment ? `réessayez après ${moment}` : 'réessayez demain'}.`,
+          verrou: (_moment: string | undefined) =>
+            "Une autre relance de l'entreprise est en cours d'envoi : réessayez dans quelques secondes.",
+        },
       },
       ouvrirEntreprise: "Ouvrir la fiche de l'entreprise",
       renvoyer: "Renvoyer l'e-mail de confirmation",
@@ -2066,6 +2077,16 @@ const en: Strings = {
           moment
             ? `A reminder limit has been reached: try again after ${moment}.`
             : 'A reminder limit has been reached: try again later.',
+        limites: {
+          delai: (moment: string | undefined) =>
+            `This invoice was already reminded less than three days ago: ${moment ? `try again after ${moment}` : 'try again later'}.`,
+          jour: (moment: string | undefined) =>
+            `Twenty reminders have already been sent today, the daily maximum: ${moment ? `try again after ${moment}` : 'try again tomorrow'}.`,
+          tentatives: (moment: string | undefined) =>
+            `Too many sending attempts were refused today by the sending service: ${moment ? `try again after ${moment}` : 'try again tomorrow'}.`,
+          verrou: (_moment: string | undefined) =>
+            'Another reminder of your company is being sent: try again in a few seconds.',
+        },
       },
       ouvrirEntreprise: 'Open the company record',
       renvoyer: 'Resend the confirmation email',

@@ -143,8 +143,12 @@ export function FormulaireRelance({
   const [corps, setCorps] = useState(preparee.corps);
   const [etat, setEtat] = useState<Etat>({ kind: 'saisie' });
   const [confirmation, setConfirmation] = useState<string>();
-  // L'adresse a été quittée, ou un envoi tenté : son avertissement peut paraître (pas pendant la frappe).
-  const [adresseVue, setAdresseVue] = useState(false);
+  // L'adresse a été quittée, ou un envoi tenté : son avertissement peut paraître (pas pendant la
+  // frappe). Une adresse préremplie que le serveur refuserait le montre d'emblée : sinon « Envoyer »
+  // serait désactivé sans dire pourquoi.
+  const [adresseVue, setAdresseVue] = useState(
+    () => preparee.destinataire.trim() !== '' && !peutEnvoyer(preparee.destinataire),
+  );
   // Le second clic d'un double clic arrive avant le nouveau rendu : cette marque l'arrête, l'état non.
   const enVol = useRef(false);
 
