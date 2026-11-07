@@ -8,11 +8,18 @@ import { sampleForm } from '../sample.js';
 import { store } from '../store.js';
 import { resteDeLigne } from './factures.js';
 import { lecteurPdfIntegre } from './fiche.js';
+import { ajouterJours, periode } from './periode.js';
 import {
   annulerPaiement,
   aujourdhuiParis,
+  type ChiffresDevise,
+  chiffresParDevise,
   DUREE_URL_PDF_S,
+  deviseDuCompte,
+  ECHEANCES_JOURS,
+  echeancesProches,
   enregistrerPaiement,
+  facturesEnRetard,
   filtrer,
   type LigneSuivi,
   ligneSuivi,
@@ -27,6 +34,7 @@ import {
   paiementsDe,
   pdfDe,
   relancesDe,
+  tableauDeBord,
   urlPdf,
 } from './suivi.js';
 import { adminDeTest, compteDeTest } from './test-aide.js';
@@ -79,6 +87,7 @@ function fauxClient(reponses: Reponse[] = []) {
     for (const m of [
       'select',
       'eq',
+      'in',
       'gte',
       'lte',
       'is',
@@ -101,6 +110,10 @@ function fauxClient(reponses: Reponse[] = []) {
   const client = {
     from: (table: string) => {
       appels.push(['from', table]);
+      return requete();
+    },
+    rpc: (fonction: string, args: unknown) => {
+      appels.push(['rpc', fonction, args]);
       return requete();
     },
   };
@@ -428,6 +441,162 @@ describe('l’affichage (sans pile)', () => {
   });
 });
 
+describe('le tableau de bord (sans pile)', () => {
+  const chiffres = (devise: string, n: number): ChiffresDevise => ({
+    devise,
+    factureHt: n,
+    encaisse: n + 1,
+    resteAEncaisser: n + 2,
+    retardMontant: n + 3,
+    retardNombre: n + 4,
+  });
+  const zeros = (devise: string): ChiffresDevise => ({
+    devise,
+    factureHt: 0,
+    encaisse: 0,
+    resteAEncaisser: 0,
+    retardMontant: 0,
+    retardNombre: 0,
+  });
+
+  test('une ligne par devise, lue par `tableau_de_bord`, telle que la base la rend', async () => {
+    const { client, appels } = fauxClient([
+      {
+        data: [
+          {
+            devise: 'EUR',
+            facture_ht: '13500',
+            encaisse: 2600,
+            reste_a_encaisser: '20800',
+            retard_montant: 7200,
+            retard_nombre: 2,
+          },
+          {
+            devise: 'USD',
+            facture_ht: 29500,
+            encaisse: '0',
+            reste_a_encaisser: 36600,
+            retard_montant: '1200',
+            retard_nombre: 1,
+          },
+        ],
+      },
+    ]);
+    connecter(client, 'e-1');
+    // Deux lignes, chacune telle quelle : rien d'additionné d'une devise à l'autre.
+    expect(await tableauDeBord('2026-11-01', '2026-11-30')).toEqual([
+      {
+        devise: 'EUR',
+        factureHt: 13500,
+        encaisse: 2600,
+        resteAEncaisser: 20800,
+        retardMontant: 7200,
+        retardNombre: 2,
+      },
+      {
+        devise: 'USD',
+        factureHt: 29500,
+        encaisse: 0,
+        resteAEncaisser: 36600,
+        retardMontant: 1200,
+        retardNombre: 1,
+      },
+    ]);
+    // Un seul appel : la fonction de la base, sur la période demandée.
+    expect(appels).toEqual([
+      ['rpc', 'tableau_de_bord', { debut: '2026-11-01', fin: '2026-11-30' }],
+    ]);
+  });
+
+  test('aucune devise présente : aucune ligne ; un refus : levé avec sa phrase', async () => {
+    connecter(fauxClient([{ data: [] }]).client, 'e-1');
+    expect(await tableauDeBord('2026-01-01', '2026-12-31')).toEqual([]);
+    connecter(
+      fauxClient([{ data: null, error: { message: 'Bad gateway' }, status: 502 }]).client,
+      'e-1',
+    );
+    await expect(tableauDeBord('2026-01-01', '2026-12-31')).rejects.toThrow(
+      phrases.erreurs.serveur,
+    );
+    // La session refusée : la connexion s'ouvre.
+    connecter(
+      fauxClient([{ data: null, error: { message: 'JWT expired' }, status: 401 }]).client,
+      'e-1',
+    );
+    await expect(tableauDeBord('2026-01-01', '2026-12-31')).rejects.toThrow(
+      phrases.erreurs.session,
+    );
+    expect(store.get().ui.connexion).toBe('connexion');
+    // Sans compte chargé : rien ne part.
+    session.sb = aucunAppel;
+    store.set((s) => ({ ui: { ...s.ui, compte: undefined } }));
+    await expect(tableauDeBord('2026-01-01', '2026-12-31')).rejects.toThrow(
+      phrases.erreurs.sansCompte,
+    );
+    await expect(facturesEnRetard()).rejects.toThrow(phrases.erreurs.sansCompte);
+    await expect(echeancesProches('2026-11-07')).rejects.toThrow(phrases.erreurs.sansCompte);
+  });
+
+  test('la devise du compte d’abord, à zéro si elle n’a rien ; puis les autres, chacune telle quelle', () => {
+    // Aucune ligne : la devise du compte, à zéro.
+    expect(chiffresParDevise([], 'EUR')).toEqual([zeros('EUR')]);
+    expect(chiffresParDevise([], 'CHF')).toEqual([zeros('CHF')]);
+    // La devise du compte en tête, les autres dans l'ordre de leur code.
+    const usd = chiffres('USD', 10);
+    const eur = chiffres('EUR', 20);
+    const chf = chiffres('CHF', 30);
+    expect(chiffresParDevise([usd, eur, chf], 'EUR')).toEqual([eur, chf, usd]);
+    expect(chiffresParDevise([usd, eur, chf], 'USD')).toEqual([usd, chf, eur]);
+    // La devise du compte n'a rien : ses zéros, puis les lignes de la base, sans rien y ajouter.
+    expect(chiffresParDevise([usd], 'EUR')).toEqual([zeros('EUR'), usd]);
+  });
+
+  test('la devise du compte : celle du profil, ou l’EUR', () => {
+    const avant = store.get().company;
+    try {
+      store.set({ company: { ...avant, defaults: { ...avant.defaults, currency: 'USD' } } });
+      expect(deviseDuCompte()).toBe('USD');
+      store.set({ company: { ...avant, defaults: { ...avant.defaults, currency: ' ' } } });
+      expect(deviseDuCompte()).toBe('EUR');
+    } finally {
+      store.set({ company: avant });
+    }
+  });
+
+  test('les factures en retard : la vue, `en_retard`, la plus en retard d’abord', async () => {
+    const { client, appels } = fauxClient([{ data: [] }]);
+    connecter(client, 'e-1');
+    expect(await facturesEnRetard()).toEqual([]);
+    expect(appels).toEqual([
+      ['from', 'suivi_factures'],
+      ['select', expect.stringContaining('jours_retard')],
+      ['eq', 'entreprise_id', 'e-1'],
+      ['eq', 'statut', 'en_retard'],
+      ['order', 'jours_retard', { ascending: false }],
+      ['order', 'numero', { ascending: true }],
+      ['range', 0, 999],
+    ]);
+  });
+
+  test('les échéances des 15 prochains jours : à payer ou payées en partie, échéance dans [J, J + 15]', async () => {
+    expect(ECHEANCES_JOURS).toBe(15);
+    const { client, appels } = fauxClient([{ data: [] }]);
+    connecter(client, 'e-1');
+    expect(await echeancesProches('2026-11-25')).toEqual([]);
+    expect(appels).toEqual([
+      ['from', 'suivi_factures'],
+      ['select', expect.stringContaining('date_echeance')],
+      ['eq', 'entreprise_id', 'e-1'],
+      ['in', 'statut', ['a_payer', 'payee_en_partie']],
+      ['gte', 'date_echeance', '2026-11-25'],
+      ['lte', 'date_echeance', '2026-12-10'],
+      ['order', 'date_echeance', { ascending: true }],
+      ['order', 'numero', { ascending: true }],
+      ['range', 0, 999],
+    ]);
+  });
+});
+
 // ---------- contre la pile ----------
 
 /**
@@ -487,16 +656,22 @@ async function factureEmise(modifier?: (f: InvoiceForm) => void) {
  * Une facture insérée comme `emettre` l'enregistre (sans PDF : ces essais n'en lisent pas), par la
  * clé de service. Rend son identifiant.
  *
- * Son numéro est unique sur toute la pile : ces lignes y restent (une facture ne se supprime pas), et
- * les jeux de données des tests de la base (supabase/tests/) retrouvent leurs factures par leur seul
- * numéro (`F-1`, `A-1`…), toutes entreprises confondues.
+ * Son numéro est unique sur toute la pile : ces lignes y restent (une facture ne se supprime pas), à
+ * côté des jeux de données des tests de la base (supabase/tests/), qui numérotent les leurs `F-1`,
+ * `A-1`… (03-suivi.test.sql les retrouve par entreprise, et s'assure que des factures d'une autre
+ * entreprise aux mêmes numéros ne le gênent pas).
  */
 async function insererFacture(
   entrepriseId: string,
   options: {
     prefixe: string;
     typeCode?: string;
+    ht?: number;
     ttc?: number;
+    devise?: string;
+    /** Dates `AAAA-MM-JJ` : émise aujourd'hui (à Paris) et sans échéance, sauf mention contraire. */
+    emission?: string;
+    echeance?: string;
     origine?: string;
     pdfChemin?: (id: string) => string;
   },
@@ -510,10 +685,11 @@ async function insererFacture(
     entreprise_id: entrepriseId,
     numero: `${options.prefixe}-SUIVI-${id.slice(0, 8)}`,
     type_code: options.typeCode ?? '380',
-    date_emission: aujourdhuiParis(),
+    date_emission: options.emission ?? aujourdhuiParis(),
+    date_echeance: options.echeance ?? null,
     client_nom: 'Client',
-    devise: 'EUR',
-    ht: 10000,
+    devise: options.devise ?? 'EUR',
+    ht: options.ht ?? 10000,
     ttc,
     net_a_payer: ttc,
     invoice: {},
@@ -665,6 +841,106 @@ describe.skipIf(!process.env.SUPABASE_URL)('le suivi contre la pile, factures in
       [2, 'refusee', 'Relance 2'],
       [1, 'envoyee', 'Relance 1'],
     ]);
+  }, 60_000);
+
+  test('le tableau de bord : une ligne par devise, les retards et les échéances, rien de mélangé', async () => {
+    const { sb, entrepriseId } = await compteDeTest();
+    connecter(sb, entrepriseId);
+    const J = aujourdhuiParis();
+    const jour = (n: number) => ajouterJours(J, n);
+    // Les factures de la période sont émises aujourd'hui ; les anciennes, il y a 400 jours : hors du
+    // mois comme de l'année, quel que soit le jour où l'essai tourne.
+    const ancienne = jour(-400);
+    const facture = (prefixe: string, o: Omit<Parameters<typeof insererFacture>[1], 'prefixe'>) =>
+      insererFacture(entrepriseId, { prefixe, ...o });
+    // EUR : E1 payée en partie (échéance J + 10) ; E2 et E3 en retard (30 et 3 jours) ; E4 à J + 16,
+    // hors des quinze jours ; E5 à l'échéance du jour ; E6 à J + 15, mais payée.
+    const e1 = await facture('E1', { ht: 10000, ttc: 12000, echeance: jour(10) });
+    const e2 = await facture('E2', {
+      ht: 5000,
+      ttc: 6000,
+      emission: ancienne,
+      echeance: jour(-30),
+    });
+    const e3 = await facture('E3', { ht: 1000, ttc: 1200, emission: ancienne, echeance: jour(-3) });
+    await facture('E4', { ht: 2000, ttc: 2400, echeance: jour(16) });
+    const e5 = await facture('E5', { ht: 1000, ttc: 1200, echeance: J });
+    const e6 = await facture('E6', { ht: 500, ttc: 600, echeance: jour(15) });
+    // USD : U1 à J + 15, créditée par l'avoir UA ; U2 en retard de 10 jours.
+    const u1 = await facture('U1', { devise: 'USD', ht: 30000, ttc: 36000, echeance: jour(15) });
+    const u2 = await facture('U2', {
+      devise: 'USD',
+      ht: 1000,
+      ttc: 1200,
+      emission: ancienne,
+      echeance: jour(-10),
+    });
+    await facture('UA', { devise: 'USD', typeCode: '381', ht: 500, ttc: 600, origine: u1 });
+    for (const [id, montant] of [
+      [e1, 2000],
+      [e6, 600],
+    ] as const) {
+      expect(
+        await enregistrerPaiement({ factureId: id, date: J, montant, moyen: 'virement' }),
+      ).toEqual({ ok: true });
+    }
+
+    // EUR : facturé E1 + E4 + E5 + E6 ; encaissé 2 000 + 600 ; reste E1 10 000 + E2 + E3 + E4 + E5 ;
+    // en retard E2 + E3. USD : facturé U1 − UA ; reste U1 36 000 − 600 + U2 ; en retard U2.
+    // Additionnées, ces deux lignes en feraient une de 43 000, 2 600, 57 400, 8 400 et 3.
+    const attendu: ChiffresDevise[] = [
+      {
+        devise: 'EUR',
+        factureHt: 13500,
+        encaisse: 2600,
+        resteAEncaisser: 20800,
+        retardMontant: 7200,
+        retardNombre: 2,
+      },
+      {
+        devise: 'USD',
+        factureHt: 29500,
+        encaisse: 0,
+        resteAEncaisser: 36600,
+        retardMontant: 1200,
+        retardNombre: 1,
+      },
+    ];
+    for (const type of ['mois', 'annee'] as const) {
+      const { debut, fin } = periode(type, J);
+      expect(await tableauDeBord(debut, fin)).toEqual(attendu);
+    }
+    // Une période qui ne contient que les anciennes : rien de facturé ni d'encaissé, l'état à date.
+    expect(await tableauDeBord(ancienne, ancienne)).toEqual([
+      { ...attendu[0], factureHt: 6000, encaisse: 0 },
+      { ...attendu[1], factureHt: 1000 },
+    ]);
+
+    // Les retards, du plus ancien au plus récent, chacun dans sa devise.
+    expect(
+      (await facturesEnRetard()).map((l) => [l.factureId, l.joursRetard, l.devise, l.resteDu]),
+    ).toEqual([
+      [e2, 30, 'EUR', 6000],
+      [u2, 10, 'USD', 1200],
+      [e3, 3, 'EUR', 1200],
+    ]);
+    // Les échéances de [J, J + 15] encore à payer : E5 (le jour même), E1, U1 (la borne) ; ni E4
+    // (J + 16), ni E6 (payée), ni les retards.
+    expect(
+      (await echeancesProches(J)).map((l) => [l.factureId, l.statut, l.devise, l.resteDu]),
+    ).toEqual([
+      [e5, 'a_payer', 'EUR', 1200],
+      [e1, 'payee_en_partie', 'EUR', 10000],
+      [u1, 'a_payer', 'USD', 35400],
+    ]);
+
+    // Un autre compte n'en voit rien : aucune ligne, aucun retard, aucune échéance.
+    const autre = await compteDeTest();
+    connecter(autre.sb, autre.entrepriseId);
+    const { debut, fin } = periode('annee', J);
+    expect(await tableauDeBord(debut, fin)).toEqual([]);
+    expect(await facturesEnRetard()).toEqual([]);
+    expect(await echeancesProches(J)).toEqual([]);
   }, 60_000);
 });
 

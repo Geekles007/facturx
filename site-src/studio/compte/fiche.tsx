@@ -112,10 +112,13 @@ async function factureEnregistree(id: string): Promise<SavedInvoice | undefined>
 export function Fiche({
   factureId,
   retour,
+  libelleRetour = t.compte.suivi.fiche.retour,
   fermer,
 }: {
   factureId: string;
   retour: () => void;
+  /** Où mène `retour` : la liste des factures, ou le tableau de bord. */
+  libelleRetour?: string;
   fermer: () => void;
 }) {
   const phrases = t.compte.suivi.fiche;
@@ -296,7 +299,7 @@ export function Fiche({
     <div class="page-inner">
       <header class="page-tete">
         <Button size="sm" variant="ghost" icon="chevronRight" class="retour" onClick={retour}>
-          {phrases.retour}
+          {libelleRetour}
         </Button>
         <h2>
           {ligne && <span class="numero">{ligne.numero}</span>}

@@ -1,9 +1,11 @@
 /**
  * Le suivi des factures du compte : la liste avec leur statut de paiement, les paiements et les
- * relances d'une facture, l'enregistrement et l'annulation d'un paiement, et le PDF.
+ * relances d'une facture, l'enregistrement et l'annulation d'un paiement, le PDF, et le tableau de
+ * bord (ses chiffres par devise, les factures en retard, les échéances proches).
  *
  * La base calcule : statut, encaissé, avoirs et reste dû viennent de la vue `suivi_factures`
- * (migration 000300), jamais d'une addition faite ici. Les écritures passent par les règles de la
+ * (migration 000300), les chiffres du tableau de bord de `tableau_de_bord` (migration 000800, une
+ * ligne par devise), jamais d'une addition faite ici. Les écritures passent par les règles de la
  * base (déclencheurs de la migration 000200) : un paiement ne dépasse pas le reste dû, ne vise pas
  * un avoir ni une date future, et ne vise jamais la facture d'une autre entreprise (42501, sans rien
  * en révéler) ; une annulation pose `annule_le` à l'heure du serveur, une seule fois. Leurs refus
@@ -18,6 +20,7 @@ import { t } from '../i18n.js';
 import { type InputError, parseScaled } from '../model.js';
 import { store, ui } from '../store.js';
 import { client } from './client.js';
+import { ajouterJours } from './periode.js';
 
 export type Statut = 'payee' | 'a_rembourser' | 'en_retard' | 'payee_en_partie' | 'a_payer';
 
@@ -289,26 +292,36 @@ export function filtrer<Q>(requete: Q, f: FiltresSuivi): Q {
   return q as unknown as Q;
 }
 
+/** Ce que rend une page de la vue. */
+type PageDeLaVue = PromiseLike<{ data: unknown; error: Echec | null; status: number }>;
+
+/**
+ * Toutes les lignes d'une requête sur la vue, page par page : `page(de, a)` rend la requête bornée
+ * à ces rangs (inclus), déjà ordonnée.
+ */
+async function lignesDeLaVue(page: (de: number, a: number) => PageDeLaVue): Promise<LigneSuivi[]> {
+  const lignes: LigneSuivi[] = [];
+  for (let debut = 0; ; debut += PAGE) {
+    const r = await page(debut, debut + PAGE - 1);
+    if (r.error) throw echecDeLecture(r.error, statutDe(r));
+    const lot = (r.data ?? []) as LigneVue[];
+    lignes.push(...lot.map(versLigne));
+    if (lot.length < PAGE) return lignes;
+  }
+}
+
 /**
  * Les factures de l'entreprise (avoirs exceptés : ils n'ont pas de statut de paiement), filtrées,
  * la plus récemment émise d'abord.
  */
 export async function listerSuivi(f: FiltresSuivi): Promise<LigneSuivi[]> {
   const { sb, E } = contexte();
-  const lignes: LigneSuivi[] = [];
-  for (let debut = 0; ; debut += PAGE) {
-    const r = await filtrer(
-      sb.from('suivi_factures').select(COLONNES_SUIVI).eq('entreprise_id', E),
-      f,
-    )
+  return lignesDeLaVue((de, a) =>
+    filtrer(sb.from('suivi_factures').select(COLONNES_SUIVI).eq('entreprise_id', E), f)
       .order('date_emission', { ascending: false })
       .order('numero', { ascending: false })
-      .range(debut, debut + PAGE - 1);
-    if (r.error) throw echecDeLecture(r.error, statutDe(r));
-    const lot = (r.data ?? []) as unknown as LigneVue[];
-    lignes.push(...lot.map(versLigne));
-    if (lot.length < PAGE) return lignes;
-  }
+      .range(de, a),
+  );
 }
 
 /** La ligne de suivi d'une facture, relue ; rien si elle n'en a pas (un avoir, une autre entreprise). */
@@ -398,6 +411,125 @@ export async function relancesDe(factureId: string): Promise<Relance[]> {
     objet: l.objet,
     etat: l.etat,
   }));
+}
+
+// ---------- tableau de bord ----------
+
+/**
+ * Les cinq chiffres du tableau de bord pour une devise (spec § 8), en centimes de cette devise :
+ * jamais additionnés à ceux d'une autre.
+ */
+export interface ChiffresDevise {
+  devise: string;
+  /** Le HT des factures émises dans la période, moins celui des avoirs émis dans la période. */
+  factureHt: number;
+  /** Les paiements non annulés datés de la période. */
+  encaisse: number;
+  /** À date, quelle que soit la période : la somme des restes dus positifs. */
+  resteAEncaisser: number;
+  /** À date : le reste dû des factures en retard, et leur nombre. */
+  retardMontant: number;
+  retardNombre: number;
+}
+
+interface LigneTableau {
+  devise: string;
+  facture_ht: number | string;
+  encaisse: number | string;
+  reste_a_encaisser: number | string;
+  retard_montant: number | string;
+  retard_nombre: number | string;
+}
+
+/** Les échéances que le tableau de bord montre : celles des 15 prochains jours, aujourd'hui compris. */
+export const ECHEANCES_JOURS = 15;
+
+/**
+ * Les chiffres du tableau de bord sur la période `[debut, fin]` (`AAAA-MM-JJ`, bornes incluses) :
+ * une ligne par devise présente, telle que `tableau_de_bord` la calcule, rangée par code de devise.
+ * Aucune ligne quand rien n'est à montrer.
+ */
+export async function tableauDeBord(debut: string, fin: string): Promise<ChiffresDevise[]> {
+  const { sb } = contexte();
+  // La fonction ne lit que l'entreprise du compte : la RLS s'y applique (`security invoker`).
+  const r = await sb.rpc('tableau_de_bord', { debut, fin });
+  if (r.error) throw echecDeLecture(r.error, statutDe(r));
+  return ((r.data ?? []) as LigneTableau[]).map((l) => ({
+    devise: l.devise,
+    // `bigint` : un nombre JSON, ou un texte selon le réglage du serveur.
+    factureHt: Number(l.facture_ht),
+    encaisse: Number(l.encaisse),
+    resteAEncaisser: Number(l.reste_a_encaisser),
+    retardMontant: Number(l.retard_montant),
+    retardNombre: Number(l.retard_nombre),
+  }));
+}
+
+/** La devise du compte : celle du profil de l'entreprise (`devise`), ou l'EUR. */
+export function deviseDuCompte(devise = store.get().company.defaults.currency): string {
+  // Un profil enregistré avant que la devise n'y soit n'en a pas : l'EUR, là aussi.
+  return devise?.trim() || 'EUR';
+}
+
+/**
+ * Les chiffres dans l'ordre de l'affichage : la devise du compte d'abord, puis les autres par code.
+ * La devise du compte est toujours là : sans ligne pour elle (rien à montrer, ou aucune ligne du
+ * tout), elle vaut zéro partout. Les lignes de la base passent telles quelles : rien n'est
+ * additionné, converti ni recalculé.
+ */
+export function chiffresParDevise(
+  lignes: readonly ChiffresDevise[],
+  devise: string,
+): ChiffresDevise[] {
+  const duCompte = lignes.find((l) => l.devise === devise) ?? {
+    devise,
+    factureHt: 0,
+    encaisse: 0,
+    resteAEncaisser: 0,
+    retardMontant: 0,
+    retardNombre: 0,
+  };
+  const autres = lignes
+    .filter((l) => l.devise !== devise)
+    .sort((a, b) => a.devise.localeCompare(b.devise));
+  return [duCompte, ...autres];
+}
+
+/** Les factures en retard, la plus en retard d'abord (la vue en donne les jours, à la date de Paris). */
+export async function facturesEnRetard(): Promise<LigneSuivi[]> {
+  const { sb, E } = contexte();
+  return lignesDeLaVue((de, a) =>
+    sb
+      .from('suivi_factures')
+      .select(COLONNES_SUIVI)
+      .eq('entreprise_id', E)
+      .eq('statut', 'en_retard')
+      .order('jours_retard', { ascending: false })
+      .order('numero', { ascending: true })
+      .range(de, a),
+  );
+}
+
+/**
+ * Les échéances des 15 prochains jours : les factures à payer ou payées en partie dont l'échéance
+ * tombe dans `[aujourdhui, aujourdhui + 15]` (`aujourdhui` : la date de Paris), la plus proche
+ * d'abord. Une échéance passée est un retard, pas une échéance.
+ */
+export async function echeancesProches(aujourdhui: string): Promise<LigneSuivi[]> {
+  const { sb, E } = contexte();
+  const fin = ajouterJours(aujourdhui, ECHEANCES_JOURS);
+  return lignesDeLaVue((de, a) =>
+    sb
+      .from('suivi_factures')
+      .select(COLONNES_SUIVI)
+      .eq('entreprise_id', E)
+      .in('statut', ['a_payer', 'payee_en_partie'])
+      .gte('date_echeance', aujourdhui)
+      .lte('date_echeance', fin)
+      .order('date_echeance', { ascending: true })
+      .order('numero', { ascending: true })
+      .range(de, a),
+  );
 }
 
 // ---------- écritures ----------

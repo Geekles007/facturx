@@ -3,12 +3,13 @@
  * Brouillons, Clients, Catalogue et Entreprise, dans cet ordre. Elle prend la place du bouton
  * Bibliothèque de la barre du haut ; sans compte, rien ne change.
  *
- * Les factures et la fiche d'une facture s'ouvrent dans une page modale (`<dialog>`, au-dessus de
- * tout) : l'éditeur reste dessous, tel quel, et rien ne s'y tape tant qu'elle est ouverte. Ce qui
- * crée un document (Nouvelle facture, et les actions de la fiche) passe par les chemins de la barre
- * d'outils, qui ne quittent le brouillon ouvert qu'une fois sa saisie sur le serveur. Clients,
- * Catalogue et Entreprise ouvrent les onglets de la bibliothèque, Brouillons la liste du compte. Le
- * tableau de bord n'existe pas encore : son entrée est là, désactivée.
+ * Le tableau de bord, les factures et la fiche d'une facture s'ouvrent dans une page modale
+ * (`<dialog>`, au-dessus de tout) : l'éditeur reste dessous, tel quel, et rien ne s'y tape tant
+ * qu'elle est ouverte. Une facture s'ouvre depuis la liste ou depuis le tableau de bord, et sa fiche
+ * ramène là d'où l'on vient. Ce qui crée un document (Nouvelle facture, et les actions de la fiche)
+ * passe par les chemins de la barre d'outils, qui ne quittent le brouillon ouvert qu'une fois sa
+ * saisie sur le serveur. Clients, Catalogue et Entreprise ouvrent les onglets de la bibliothèque,
+ * Brouillons la liste du compte.
  *
  * Chargé par `import()` depuis app.tsx, avec le reste du compte.
  */
@@ -20,7 +21,9 @@ import { Button, type IconName, Menu, type MenuItem } from '../ui.js';
 import { Brouillons } from './brouillons.js';
 import { Factures } from './factures.js';
 import { Fiche } from './fiche.js';
+import type { TypePeriode } from './periode.js';
 import type { FiltresSuivi } from './suivi.js';
+import { TableauDeBord } from './tableau.js';
 
 export type Entree =
   | 'tableau'
@@ -52,15 +55,21 @@ const ICONES: Record<Entree, IconName> = {
   entreprise: 'building',
 };
 
-/** Ce que la page modale montre : la liste des factures, ou la fiche de l'une d'elles. */
-export type Page = { vue: 'factures' } | { vue: 'fiche'; factureId: string };
+/**
+ * Ce que la page modale montre : le tableau de bord, la liste des factures, ou la fiche de l'une
+ * d'elles, ouverte depuis l'un ou l'autre.
+ */
+export type Page =
+  | { vue: 'tableau' }
+  | { vue: 'factures' }
+  | { vue: 'fiche'; factureId: string; depuis: 'tableau' | 'factures' };
 
 export function Navigation({ nouvelleFacture }: { nouvelleFacture: () => Promise<void> }) {
   const phrases = t.compte.navigation;
   const [page, setPage] = useState<Page>();
   const [brouillons, setBrouillons] = useState(false);
   const actions: Record<Entree, () => void> = {
-    tableau: () => undefined,
+    tableau: () => setPage({ vue: 'tableau' }),
     factures: () => setPage({ vue: 'factures' }),
     nouvelle: () => void nouvelleFacture(),
     brouillons: () => setBrouillons(true),
@@ -73,7 +82,6 @@ export function Navigation({ nouvelleFacture }: { nouvelleFacture: () => Promise
       label: phrases[entree],
       icon: ICONES[entree],
       onSelect: actions[entree],
-      ...(entree === 'tableau' ? { disabled: true, hint: phrases.bientot } : {}),
     }),
   );
   return (
@@ -95,8 +103,9 @@ export function Navigation({ nouvelleFacture }: { nouvelleFacture: () => Promise
 }
 
 /**
- * La page modale des factures. Elle garde les filtres de la liste le temps d'aller à une fiche et
- * d'en revenir ; la liste est relue à chaque retour (un paiement a pu changer un statut).
+ * La page modale du compte. Elle garde les filtres de la liste et la période du tableau de bord le
+ * temps d'aller à une fiche et d'en revenir ; la liste et le tableau de bord sont relus à chaque
+ * retour (un paiement a pu changer un statut).
  */
 function PageDuCompte({
   page,
@@ -107,6 +116,7 @@ function PageDuCompte({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [filtres, setFiltres] = useState<FiltresSuivi>({});
+  const [periode, setPeriode] = useState<TypePeriode>('mois');
   const ouverte = page !== undefined;
   useEffect(() => {
     const dialogue = ref.current;
@@ -120,17 +130,25 @@ function PageDuCompte({
     <dialog
       ref={ref}
       class="dialog page-compte"
-      aria-label={t.compte.suivi.liste.titre}
+      aria-label={page?.vue === 'tableau' ? t.compte.tableau.titre : t.compte.suivi.liste.titre}
       onClose={fermer}
       onClick={(event) => {
         if (event.target === ref.current) fermer();
       }}
     >
+      {page?.vue === 'tableau' && (
+        <TableauDeBord
+          periode={periode}
+          changerPeriode={setPeriode}
+          ouvrir={(factureId) => naviguer({ vue: 'fiche', factureId, depuis: 'tableau' })}
+          fermer={fermer}
+        />
+      )}
       {page?.vue === 'factures' && (
         <Factures
           filtres={filtres}
           changerFiltres={setFiltres}
-          ouvrir={(factureId) => naviguer({ vue: 'fiche', factureId })}
+          ouvrir={(factureId) => naviguer({ vue: 'fiche', factureId, depuis: 'factures' })}
           fermer={fermer}
         />
       )}
@@ -138,7 +156,10 @@ function PageDuCompte({
         <Fiche
           key={page.factureId}
           factureId={page.factureId}
-          retour={() => naviguer({ vue: 'factures' })}
+          retour={() => naviguer({ vue: page.depuis })}
+          libelleRetour={
+            page.depuis === 'tableau' ? t.compte.tableau.retour : t.compte.suivi.fiche.retour
+          }
           fermer={fermer}
         />
       )}

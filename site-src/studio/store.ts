@@ -103,6 +103,11 @@ export interface UiState {
    * ne s'y tape, et l'éditeur est inerte, jusqu'à la réponse.
    */
   emissionEnCours: boolean;
+  /**
+   * La facture à relancer (mode compte) : « Relancer » la pose, pour le dialogue de relance, qui la
+   * lit. Rien d'autre ne s'en sert.
+   */
+  relance: string | undefined;
 }
 
 /** Ce que le serveur a refusé d'émettre, et pourquoi (des `Issue` du SDK, et les siennes). */
@@ -189,6 +194,7 @@ const initialUi = (): UiState => ({
   connexion: undefined,
   refusServeur: undefined,
   emissionEnCours: false,
+  relance: undefined,
 });
 
 let state: StudioState = {

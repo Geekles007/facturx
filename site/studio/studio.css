@@ -2269,9 +2269,79 @@ input[type="date"].input {
   background: var(--paper-bg);
 }
 
+/* Le tableau de bord : la période, un bloc de quatre chiffres par devise, les retards, les échéances. */
+.tableau-periode {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.tableau-devise {
+  display: grid;
+  gap: 6px;
+}
+.tableau-devise h3 {
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.tableau-chiffres {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.tableau-chiffres div {
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.tableau-chiffres .intitule {
+  color: var(--faint);
+  font-size: 12px;
+}
+.tableau-chiffres .valeur {
+  margin: 2px 0 0;
+  font: 600 18px / 1.25 var(--sans);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.tableau-chiffres .aide {
+  margin: 0;
+  color: var(--muted);
+  font: 400 12px / 1.3 var(--sans);
+}
+/* Des retards : le bloc prend la couleur du statut « En retard ». */
+.tableau-chiffres .retard {
+  background: var(--ko-soft);
+  color: var(--ko);
+}
+.tableau-chiffres .retard .intitule,
+.tableau-chiffres .retard .aide {
+  color: inherit;
+}
+.liste-tableau {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+/* La ligne s'ouvre sur la fiche ; « Relancer » est à côté, pas dedans (un bouton dans un bouton). */
+.liste-tableau li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
 @media (max-width: 900px) {
   .fiche {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .tableau-chiffres {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .fiche-pdf iframe {
     height: 70vh;
@@ -2304,6 +2374,14 @@ input[type="date"].input {
   }
   .page-tete {
     padding: 10px 8px 8px 10px;
+  }
+  /* « Relancer » passe sous sa ligne, à droite : la ligne garde toute la largeur. */
+  .liste-tableau li {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .liste-tableau li > .btn-ui {
+    justify-self: end;
   }
 }
 

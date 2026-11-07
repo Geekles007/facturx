@@ -19,6 +19,7 @@ import { buildInvoice, type InvoiceForm, isoToday, uid } from './model.js';
 import { ErreurConservation, estDuCompte } from './persistence.js';
 import type { Assets } from './pipeline.js';
 import { buildFacturX, download, fileStem } from './pipeline.js';
+import { fragmentNonCharge } from './rechargement.js';
 import { storage } from './storage.js';
 import { brouillonAffiche, enregistrerMaintenant, store, toast, ui } from './store.js';
 
@@ -110,7 +111,8 @@ export async function issueInvoice(assets: Assets, options: { record: boolean })
   if (options.record && store.get().ui.compte) {
     const emission = await import('./compte/emission.js').catch(() => undefined);
     if (!emission) {
-      toast(t.compte.emission.chargement, 'error', 9000);
+      // Le navigateur garde l'échec : chaque nouvel essai échouerait aussitôt, jusqu'au rechargement.
+      fragmentNonCharge(t.compte.emission.chargement);
       return false;
     }
     return emission.emettreSurServeur();

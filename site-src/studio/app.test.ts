@@ -41,6 +41,10 @@ vi.mock('preact/hooks', () => ({
 vi.mock('./compte/navigation.js', () => {
   throw new Error('chargement impossible');
 });
+// Le module des brouillons non plus : seuls les boutons des bandeaux de conflit le demandent.
+vi.mock('./compte/brouillons.js', () => {
+  throw new Error('chargement impossible');
+});
 
 // L'enregistrement qui précède un rechargement de la page : on en tient l'issue.
 const enregistrer = vi.fn(async () => true);
@@ -245,6 +249,42 @@ describe('la navigation du compte remplace le bouton Bibliothèque', () => {
     expect(rendre(nav).some((v) => v.props.title === t.compte.conservation.rechargerPage)).toBe(
       false,
     );
+  });
+});
+
+describe('le module des brouillons ne se charge pas', () => {
+  test('le bandeau de conflit le dit, en nommant ce module, et propose de recharger la page', async () => {
+    ui({
+      compte: {
+        email: 'essai@facturx.test',
+        confirme: true,
+        entrepriseId: 'e-1',
+        suppressionDemandeeLe: undefined,
+        session: 'active',
+      },
+      conflit: true,
+      issued: undefined,
+      sample: false,
+    });
+    let bandeaux: VNode | undefined;
+    for (const v of parcourir(App())) {
+      if (typeof v.type === 'function' && (v.type as { name: string }).name === 'Banners') {
+        for (const w of parcourir((v.type as (p: unknown) => unknown)(v.props))) {
+          if (typeof w.type === 'function' && (w.type as { name: string }).name === 'CompteBanners')
+            bandeaux = w;
+        }
+      }
+    }
+    if (!bandeaux) throw new Error('CompteBanners absent');
+    const noeuds = [...parcourir((bandeaux.type as (p: unknown) => unknown)(bandeaux.props))];
+    const recharger = noeuds.find((v) => v.props.children === t.compte.conservation.recharger);
+    if (!recharger) throw new Error('bouton absent');
+    (recharger.props.onClick as () => void)();
+    await vi.waitFor(() =>
+      expect(store.get().ui.toast?.text).toBe(t.compte.brouillons.moduleNonCharge),
+    );
+    expect(store.get().ui.toast?.text).not.toBe(t.compte.errors.loadFailed);
+    expect(store.get().ui.toast?.action?.label).toBe(t.compte.conservation.rechargerPage);
   });
 });
 

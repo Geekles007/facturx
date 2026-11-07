@@ -733,6 +733,8 @@ const fr = {
       repli:
         "Le brouillon suivant n'a pas pu être ouvert : une facture vierge s'ouvre à sa place. Vos autres brouillons ne sont pas touchés.",
       reprendre: 'Reprendre',
+      moduleNonCharge:
+        "Le module des brouillons n'a pas pu être chargé : vérifiez votre connexion, puis rechargez la page (votre saisie est enregistrée avant).",
     },
     /** Les refus des Edge Functions (spec § 13), quelle que soit l'opération. */
     erreurs: {
@@ -804,7 +806,7 @@ const fr = {
           ? `La date d'émission doit être comprise entre le ${min} et le ${max} : la numérotation reste chronologique.`
           : `La date d'émission ne peut pas dépasser le ${max}.`,
       chargement:
-        "Le module du compte n'a pas pu être chargé : vérifiez votre connexion. La facture n'est pas émise.",
+        "Le module d'émission n'a pas pu être chargé : la facture n'est pas émise. Vérifiez votre connexion, puis rechargez la page (votre saisie est enregistrée avant).",
       indisponible:
         "Le compte n'est pas chargé dans cette page : rechargez-la, puis émettez de nouveau. La facture n'est pas émise.",
       dejaEmise:
@@ -833,7 +835,6 @@ const fr = {
       clients: 'Clients',
       catalogue: 'Catalogue',
       entreprise: 'Entreprise',
-      bientot: 'bientôt',
       chargement:
         "Le module des factures n'a pas pu être chargé : vérifiez votre connexion, puis rechargez la page (votre saisie est enregistrée avant).",
     },
@@ -956,6 +957,32 @@ const fr = {
           "Le contenu de cette facture n'a pas pu être relu : réessayez dans un instant.",
         relue: (message: string) => `La fiche n'a pas pu être relue. ${message}`,
       },
+    },
+    /** Le tableau de bord du compte (spec § 8) : ses chiffres par devise, ses retards, ses échéances. */
+    tableau: {
+      titre: 'Tableau de bord',
+      intro:
+        "Chiffres tenus par le serveur, une devise à la fois : rien n'est converti ni additionné d'une devise à l'autre.",
+      periode: 'Période',
+      mois: 'Ce mois-ci',
+      annee: 'Cette année',
+      intervalle: (debut: string, fin: string) => `du ${debut} au ${fin}`,
+      devise: (code: string) => `Montants en ${code}`,
+      factureHt: 'Facturé HT',
+      factureHtAide: 'avoirs déduits',
+      encaisse: 'Encaissé',
+      resteAEncaisser: 'Reste à encaisser',
+      enRetard: 'En retard',
+      nombre: (n: number) => `${n} facture${n > 1 ? 's' : ''}`,
+      aDate: 'Reste à encaisser et retards : à ce jour, quelle que soit la période.',
+      retards: 'Factures en retard',
+      aucunRetard: 'Aucune facture en retard.',
+      relancer: 'Relancer',
+      echeances: (jours: number) => `Échéances des ${jours} prochains jours`,
+      aucuneEcheance: (jours: number) => `Aucune échéance dans les ${jours} prochains jours.`,
+      aujourdhui: "échéance aujourd'hui",
+      chargement: 'Chargement…',
+      retour: 'Tableau de bord',
     },
   },
 };
@@ -1668,6 +1695,8 @@ const en: Strings = {
       repli:
         'The next draft could not be opened: a blank invoice opens instead. Your other drafts are untouched.',
       reprendre: 'Resume',
+      moduleNonCharge:
+        'The drafts module could not be loaded: check your connection, then reload the page (what you typed is saved first).',
     },
     erreurs: {
       nonConfirme:
@@ -1733,7 +1762,7 @@ const en: Strings = {
           ? `The issue date must be between ${min} and ${max}: numbering stays chronological.`
           : `The issue date cannot be later than ${max}.`,
       chargement:
-        'The account module could not be loaded: check your connection. The invoice is not issued.',
+        'The issuing module could not be loaded: the invoice is not issued. Check your connection, then reload the page (what you typed is saved first).',
       indisponible:
         'The account is not loaded in this page: reload it, then issue again. The invoice is not issued.',
       dejaEmise:
@@ -1761,7 +1790,6 @@ const en: Strings = {
       clients: 'Clients',
       catalogue: 'Catalogue',
       entreprise: 'Company',
-      bientot: 'coming soon',
       chargement:
         'The invoices module could not be loaded: check your connection, then reload the page (what you typed is saved first).',
     },
@@ -1826,7 +1854,7 @@ const en: Strings = {
         vide: 'No invoice issued yet: the ones you issue will show up here.',
         videFiltres: 'No invoice matches these filters.',
         reessayer: 'Try again',
-        nombre: (n: number) => `${n} invoice${n > 1 ? 's' : ''}`,
+        nombre: (n: number) => `${n} invoice${n === 1 ? '' : 's'}`,
         emise: (date: string) => `issued ${date}`,
         echeance: (date: string) => `due ${date}`,
         retard: (jours: number) => `${jours} day${jours > 1 ? 's' : ''} overdue`,
@@ -1882,6 +1910,31 @@ const en: Strings = {
           'The content of this invoice could not be read again: try again in a moment.',
         relue: (message: string) => `The record could not be read again. ${message}`,
       },
+    },
+    tableau: {
+      titre: 'Dashboard',
+      intro:
+        'Figures kept by the server, one currency at a time: nothing is converted or added up across currencies.',
+      periode: 'Period',
+      mois: 'This month',
+      annee: 'This year',
+      intervalle: (debut: string, fin: string) => `${debut} to ${fin}`,
+      devise: (code: string) => `Amounts in ${code}`,
+      factureHt: 'Invoiced excl. VAT',
+      factureHtAide: 'net of credit notes',
+      encaisse: 'Received',
+      resteAEncaisser: 'Left to collect',
+      enRetard: 'Overdue',
+      nombre: (n: number) => `${n} invoice${n === 1 ? '' : 's'}`,
+      aDate: 'Left to collect and overdue: as of today, whatever the period.',
+      retards: 'Overdue invoices',
+      aucunRetard: 'No overdue invoice.',
+      relancer: 'Send a reminder',
+      echeances: (jours: number) => `Due in the next ${jours} days`,
+      aucuneEcheance: (jours: number) => `Nothing due in the next ${jours} days.`,
+      aujourdhui: 'due today',
+      chargement: 'Loading…',
+      retour: 'Dashboard',
     },
   },
 };
