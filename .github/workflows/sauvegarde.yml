@@ -11,6 +11,9 @@ name: Sauvegarde
 #
 # GitHub ne lance un workflow planifié que depuis la branche par défaut, et le suspend après 60 jours
 # sans activité dans un dépôt public (un courriel prévient avant) : docs/compte.md dit comment le voir.
+#
+# Rien ne tourne tant que la variable du dépôt SAUVEGARDE_ACTIVE ne vaut pas `true` (docs/compte.md,
+# 1.12) : sans ses secrets, chaque passage du dimanche échouerait, et préviendrait pour rien.
 on:
   schedule:
     - cron: '23 2 * * 0'
@@ -31,8 +34,8 @@ defaults:
 
 jobs:
   sauvegarde:
-    # Jamais dans une copie du dépôt : elle n'a ni les secrets ni le projet.
-    if: github.repository == 'Geekles007/facturx'
+    # Jamais dans une copie du dépôt : elle n'a ni les secrets ni le projet. Ni avant la mise en place.
+    if: github.repository == 'Geekles007/facturx' && vars.SAUVEGARDE_ACTIVE == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:

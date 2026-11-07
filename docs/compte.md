@@ -31,7 +31,7 @@ Conventions de ce guide : `<ref>` est l'identifiant du projet Supabase (20 lettr
 | Workflow | Secrets |
 |---|---|
 | `compte-deploy.yml` | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `SUPABASE_PROJECT_REF` ; `SUPABASE_SERVICE_ROLE_KEY` facultatif (sinon lue par le CLI) |
-| `sauvegarde.yml` | `SAUVEGARDE_DB_URL`, `SUPABASE_S3_ENDPOINT`, `SUPABASE_S3_REGION`, `SUPABASE_S3_ACCESS_KEY_ID`, `SUPABASE_S3_SECRET_ACCESS_KEY`, `SCALEWAY_S3_BUCKET`, `SCALEWAY_S3_ACCESS_KEY_ID`, `SCALEWAY_S3_SECRET_ACCESS_KEY`, `AGE_RECIPIENT` |
+| `sauvegarde.yml` | `SAUVEGARDE_DB_URL`, `SUPABASE_S3_ENDPOINT`, `SUPABASE_S3_REGION`, `SUPABASE_S3_ACCESS_KEY_ID`, `SUPABASE_S3_SECRET_ACCESS_KEY`, `SCALEWAY_S3_BUCKET`, `SCALEWAY_S3_ACCESS_KEY_ID`, `SCALEWAY_S3_SECRET_ACCESS_KEY`, `AGE_RECIPIENT` ; et la **variable** `SAUVEGARDE_ACTIVE` = `true`, qui met le workflow en service (1.12) |
 
 **Le site** (Coolify, variables de construction) : `FACTURX_SUPABASE_URL` (`https://<ref>.supabase.co`) et `FACTURX_SUPABASE_KEY` (la clé **publique** ; une clé de service arrête la construction).
 
@@ -334,7 +334,10 @@ En plus des sauvegardes quotidiennes du plan Pro (*Database → Backups*, sur le
    gh secret set SCALEWAY_S3_ACCESS_KEY_ID
    gh secret set SCALEWAY_S3_SECRET_ACCESS_KEY
    gh secret set AGE_RECIPIENT
+   gh variable set SAUVEGARDE_ACTIVE --body true
    ```
+
+   La variable `SAUVEGARDE_ACTIVE` (*Settings → Secrets and variables → Actions → Variables*) met le workflow en service : sans elle, ni le passage du dimanche ni un lancement à la main ne font rien (le job est sauté), pour ne pas échouer chaque semaine tant que les secrets manquent. La poser une fois les neuf secrets en place.
 
 6. **Le premier passage, à la main** : *Actions → Sauvegarde → Run workflow* (ou `gh workflow run sauvegarde.yml --ref main`). Ce qu'on doit voir dans le journal : `sauvegarde : base (pg_dump (PostgreSQL) 17.…)` ; un avertissement de `pg_dump` sur des « contraintes de clés étrangères circulaires » de `factures` (un avoir cite sa facture : attendu, la restauration suspend ces contrôles) ; `sauvegarde : bucket factures`, `bucket fichiers` ; `sauvegarde : facturx/facturx-<date>.tar.age (<n> octets) déposée et vérifiée` ; `rétention de 84 jours, 0 archive(s) antérieure(s) … effacée(s)`. Chez Scaleway, l'objet est dans `facturx/`.
 7. **La restauration d'essai**, une fois au moins avant l'ouverture (spec § 11) : section 4, dans la pile locale. On doit y retrouver la facture émise en 1.10 et son PDF.
