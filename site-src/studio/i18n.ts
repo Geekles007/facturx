@@ -68,7 +68,7 @@ const fr = {
       "Sans compte, rien de ce que vous saisissez ne quitte ce navigateur : le Studio n'envoie vos factures, clients et réglages à aucun serveur, ils restent ici. Un seul signal part, sans contenu, quand un PDF Factur-X est produit — pour savoir si l'outil sert, sans cookie, sans identifiant, sans rien de votre facture.",
     /** Le pied de l'éditeur avec un compte : où sont les données, et qui peut les lire. */
     footPrivacyCompte:
-      "Avec un compte, vos factures, clients et réglages sont conservés sur un serveur en Europe (Supabase, à Paris). L'hébergeur les chiffre au repos, mais le service les lit : il le faut pour émettre, numéroter et relancer. Le brouillon ouvert est aussi recopié dans ce navigateur. Comme sans compte, un signal sans contenu part vers ce site quand un PDF Factur-X est produit.",
+      "Avec un compte, vos factures, clients et réglages sont conservés sur un serveur en Europe, à Paris, chez Supabase, une société américaine. L'hébergeur les chiffre au repos, mais le service les lit : il le faut pour émettre, numéroter et relancer. Le brouillon ouvert est aussi recopié dans ce navigateur. Comme sans compte, un signal sans contenu part vers ce site quand un PDF Factur-X est produit.",
     footLegal:
       'Le Studio ne constitue pas un conseil juridique et ne remplace pas la plateforme agréée qui transmettra vos factures.',
     footLinks: {
@@ -1394,7 +1394,7 @@ const en: Strings = {
     footPrivacy:
       'Without an account, nothing you type leaves this browser: the Studio sends your invoices, customers and settings to no server, they stay here. A single signal is sent, with no content, when a Factur-X PDF is produced — to know whether the tool is used, with no cookie, no identifier, nothing from your invoice.',
     footPrivacyCompte:
-      'With an account, your invoices, customers and settings are kept on a server in Europe (Supabase, in Paris). The host encrypts them at rest, but the service reads them: it has to, to issue, number and send reminders. The open draft is also copied into this browser. As without an account, a signal with no content is sent to this site when a Factur-X PDF is produced.',
+      'With an account, your invoices, customers and settings are kept on a server in Europe, in Paris, by Supabase, an American company. The host encrypts them at rest, but the service reads them: it has to, to issue, number and send reminders. The open draft is also copied into this browser. As without an account, a signal with no content is sent to this site when a Factur-X PDF is produced.',
     footLegal:
       'The Studio is not legal advice and does not replace the approved platform that will transmit your invoices.',
     footLinks: {
