@@ -736,6 +736,27 @@ describe('importerSurServeur (faux client)', () => {
     });
   });
 
+  test('422 DATE : refusée, datée après aujourd’hui ; la raison le dit, avec sa date, et qu’elle reste ici', async () => {
+    invoke.mockResolvedValue(
+      refusDeFonction(422, {
+        code: 'ANOMALIES',
+        message: 'illisible',
+        details: [
+          {
+            code: 'DATE',
+            path: 'invoice.issueDate',
+            message: 'Date d’émission (BT-2) 2062-03-01 postérieure à aujourd’hui.',
+            details: { date: '2062-03-01', max: '2026-11-07' },
+          },
+        ],
+      }),
+    );
+    const future = facture('F-2062-0001', '2062-03-01');
+    const issue = await importerSurServeur(future, pdf);
+    expect(issue).toEqual({ kind: 'refusee', raison: phrases.raisons.dateFuture('01/03/2062') });
+    expect(phrases.raisons.dateFuture('01/03/2062')).toContain('01/03/2062');
+  });
+
   test('413 : refusée, trop lourde ; un corps de plus de 10 Mio ne part pas', async () => {
     invoke.mockResolvedValue(refusDeFonction(413, { code: 'ANOMALIES', message: 'gros' }));
     expect(await importerSurServeur(s, pdf)).toEqual({

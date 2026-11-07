@@ -8,6 +8,7 @@ import { type Invoice, type InvoiceTypeCode, type IsoDate, toCiiXml } from 'fact
 import { embedFacturX, extractInvoice } from 'facturx-sdk/pdf';
 import { PDFDocument } from 'pdf-lib';
 import type postgres from 'postgres';
+import { aujourdhuiParis } from '../_shared/dates.ts';
 import { toPortableJson } from '../_vendor/shared/portable.ts';
 import {
   admin,
@@ -16,6 +17,7 @@ import {
   appelerTexte,
   base,
   creerCompte,
+  decaler,
   factureDeTest,
   urlFonction,
 } from './aide.ts';
@@ -56,17 +58,21 @@ async function pdfDuXml(xml: string): Promise<Uint8Array> {
  */
 const FORM = { id: 'FORM-NON-LU', buyer: { name: 'Autre client' }, totals: { ttc: 1 } };
 
-/** Importe `pdf` dans le compte, avec le formulaire et l'apparence du Studio. */
+/**
+ * Importe `pdf` dans le compte, avec le formulaire et l'apparence du Studio. `enTetes` s'ajoute aux
+ * en-têtes (`x-facturx-aujourdhui`, l'horloge des tests).
+ */
 async function importer(
   compte: Compte,
   pdf: Uint8Array,
-  options: { form?: unknown; appearance?: unknown } = {},
+  options: { form?: unknown; appearance?: unknown; enTetes?: Record<string, string> } = {},
 ): Promise<{ status: number; corps: Corps }> {
-  const reponse = await appeler('importer', compte.jwt, {
-    form: options.form ?? FORM,
-    appearance: options.appearance ?? apparenceDeTest(),
-    pdf,
-  });
+  const reponse = await appeler(
+    'importer',
+    compte.jwt,
+    { form: options.form ?? FORM, appearance: options.appearance ?? apparenceDeTest(), pdf },
+    options.enTetes,
+  );
   return { status: reponse.status, corps: await reponse.json() };
 }
 
@@ -462,6 +468,37 @@ Deno.test('facture lue sans de quoi la ranger (numéro, type, devise, dates, tex
   }
   assertEquals(await nombreDeFactures(compte.entrepriseId), 0);
   assertEquals(await pdfDeposes(compte.entrepriseId), []);
+});
+
+Deno.test('facture datée après aujourd’hui (Paris) : 422, anomalie DATE sur la date, rien d’importé', async () => {
+  const compte = await creerCompte();
+  // Une faute de frappe locale (2062 pour 2026) : importée, elle ferait refuser toute émission
+  // (`emettre` n'admet pas de date antérieure à la dernière facture du compte).
+  const demain = decaler(aujourdhuiParis(new Date()), 1);
+  const { status, corps } = await importerFacture(compte, factureLocale('F-FUTUR-1', demain));
+  assertEquals(status, 422);
+  assertEquals(corps.code, 'ANOMALIES');
+  assertEquals(corps.details.length, 1);
+  assertEquals(corps.details[0].code, 'DATE');
+  assertEquals(corps.details[0].path, 'invoice.issueDate');
+  assertEquals(corps.details[0].details, { date: demain, max: aujourdhuiParis(new Date()) });
+  assert(corps.details[0].message.includes(demain), corps.details[0].message);
+  assertEquals(await nombreDeFactures(compte.entrepriseId), 0);
+  assertEquals(await pdfDeposes(compte.entrepriseId), []);
+});
+
+Deno.test('date d’émission bornée par le jour de Paris, horloge des tests comprise : le jour même passe, le lendemain non', async () => {
+  const compte = await creerCompte();
+  const enTetes = { 'x-facturx-aujourdhui': '2026-12-31' };
+  const pdfDuLendemain = await pdfDe(factureLocale('F-2027-0001', '2027-01-01'));
+  const lendemain = await importer(compte, pdfDuLendemain, { enTetes });
+  assertEquals(lendemain.status, 422);
+  assertEquals(lendemain.corps.details[0].code, 'DATE');
+  assertEquals(lendemain.corps.details[0].details, { date: '2027-01-01', max: '2026-12-31' });
+  const pdfDuJour = await pdfDe(factureLocale('F-2026-0099', '2026-12-31'));
+  const jourMeme = await importer(compte, pdfDuJour, { enTetes });
+  assertEquals(jourMeme.status, 201);
+  assertEquals(await nombreDeFactures(compte.entrepriseId), 1);
 });
 
 Deno.test('form avec des caractères hors du plan de base (paire de substituts valide) : accepté tel quel', async () => {

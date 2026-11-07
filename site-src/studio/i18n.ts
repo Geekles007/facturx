@@ -1176,6 +1176,8 @@ const fr = {
         facturx: (detail: string | undefined) =>
           `le serveur n'y lit pas de facture Factur-X${detail ? ` (${detail})` : ''}`,
         tropLourde: 'elle dépasse 10 Mo, le plus que le serveur accepte',
+        dateFuture: (date: string) =>
+          `sa date d'émission${date ? `, le ${date},` : ''} est postérieure à aujourd'hui ; le compte la refuse, car elle bloquerait toute nouvelle émission, et elle reste dans ce navigateur`,
         refus: 'refusé par le serveur',
         session: "votre session a expiré (reconnectez-vous, puis reprenez l'import)",
         reseau: "le serveur ne répond pas (reprenez l'import plus tard)",
@@ -2456,6 +2458,8 @@ const en: Strings = {
         facturx: (detail: string | undefined) =>
           `the server finds no Factur-X invoice in it${detail ? ` (${detail})` : ''}`,
         tropLourde: 'it exceeds 10 MB, the most the server accepts',
+        dateFuture: (date: string) =>
+          `its issue date${date ? `, ${date},` : ''} is after today; the account refuses it, as it would block any new issue, and it stays in this browser`,
         refus: 'refused by the server',
         session: 'your session has expired (sign in again, then resume the import)',
         reseau: 'the server is not responding (resume the import later)',

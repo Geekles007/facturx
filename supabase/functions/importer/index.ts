@@ -23,7 +23,11 @@
  * Aucune validation EN 16931 : une facture émise en local est importée telle quelle (le SDK la lit sans
  * la valider) ; seule une facture Factur-X illisible, ou que la base ne saurait enregistrer (date de
  * l'an 0, caractère nul, type ou devise mal formés), est refusée (422). Ces refus, comme ceux du corps,
- * précèdent le verrou et le dépôt. Pas de borne de date : l'import reprend un historique.
+ * précèdent le verrou et le dépôt. L'import reprend un historique : aucune date passée n'est refusée.
+ * Une date d'émission postérieure à aujourd'hui (Paris, comme `emettre`, horloge des tests comprise)
+ * l'est (422, anomalie `DATE` sur `invoice.issueDate`) : `emettre` n'admet aucune date antérieure à
+ * la dernière facture du compte, et une faute de frappe locale (2062 pour 2026) bloquerait toutes les
+ * émissions suivantes, sans recours.
  *
  * Plafond (Ruling 34) : 500 imports par heure et par entreprise, comptés sous le verrou ; au-delà,
  * 429 `LIMITE` (`details.reessayerApres`). Une facture importée est figée, et son PDF ne part qu'avec
@@ -35,7 +39,7 @@
  */
 import { FacturXParseError, type Invoice, isValidIsoDate } from 'facturx-sdk';
 import { extractInvoice, FacturXPdfError } from 'facturx-sdk/pdf';
-import { contexte, exigerCompteActif } from '../_shared/contexte.ts';
+import { aujourdhui, contexte, exigerCompteActif } from '../_shared/contexte.ts';
 import {
   estObjet,
   exigerAdmissible,
@@ -100,9 +104,14 @@ const dateLisible = (date: string): boolean => isValidIsoDate(date) && dateAdmis
  * formés ; date vide ou de l'an 0 ; caractère nul ou demi-substitut isolé, que le XML porte en `&#0;`
  * ou `&#xD800;`). Ces valeurs-là sont donc contrôlées ici, et elles seules : de quoi ranger la
  * facture, sans juger de son contenu. Le lecteur garantit déjà la présence et la forme du reste
- * (acheteur, montants entiers en centimes).
+ * (acheteur, montants entiers en centimes). Une date d'émission lisible mais postérieure à
+ * `jour` (aujourd'hui à Paris) donne une `Issue` de code `DATE`, avec la date et le jour admis au
+ * plus (`details`) : voir l'en-tête.
  */
-async function lireFacture(pdf: Uint8Array): Promise<{ invoice: Invoice; json: string }> {
+async function lireFacture(
+  pdf: Uint8Array,
+  jour: string,
+): Promise<{ invoice: Invoice; json: string }> {
   const message = `Le PDF n’est pas une facture Factur-X lisible : ${SANS_IMPORT}.`;
   const refus = (liste: Anomalie[]) => anomalies(liste, message);
   let lue: Awaited<ReturnType<typeof extractInvoice>>;
@@ -139,6 +148,14 @@ async function lireFacture(pdf: Uint8Array): Promise<{ invoice: Invoice; json: s
   }
   // Un `IssueDateTime` absent donne une date vide.
   if (!dateLisible(invoice.issueDate)) probleme('issueDate', 'Date d’émission (BT-2) invalide.');
+  else if (invoice.issueDate > jour) {
+    problemes.push({
+      code: 'DATE',
+      path: 'invoice.issueDate',
+      message: `Date d’émission (BT-2) ${invoice.issueDate} postérieure à aujourd’hui (${jour}) : elle bloquerait toute émission suivante.`,
+      details: { date: invoice.issueDate, max: jour },
+    });
+  }
   const echeance = invoice.paymentTerms?.dueDate;
   if (echeance !== undefined && !dateLisible(echeance)) {
     probleme('paymentTerms.dueDate', 'Date d’échéance (BT-9) invalide.');
@@ -170,7 +187,7 @@ Deno.serve(
     const e = ctx.entrepriseId;
 
     // 2. Lire la facture dans le PDF, avant de prendre le verrou : la lecture est la partie longue.
-    const { invoice: facture, json: factureJson } = await lireFacture(pdf);
+    const { invoice: facture, json: factureJson } = await lireFacture(pdf, aujourdhui(req));
 
     // 3. La transaction, sur la connexion directe.
     const importee = await sql.begin(async (tx) => {

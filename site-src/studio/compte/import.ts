@@ -16,8 +16,8 @@
  * « déjà dans le compte » si la facture du compte est la même (date, total TTC, devise), sinon
  * « numéro pris par une autre facture ». Les factures passent avant les avoirs, dans l'ordre des
  * dates, pour qu'un avoir trouve la facture qu'il cite (le serveur ne l'y rattache que dans la même
- * devise, Ruling 49). Un refus (PDF illisible, trop lourd, valeurs inadmissibles) ne retient pas les
- * autres. Ce qui empêche de continuer — le plafond de 500 imports par heure (429, `reessayerApres`,
+ * devise, Ruling 49). Un refus (PDF illisible, trop lourd, valeurs inadmissibles, date d'émission
+ * postérieure à aujourd'hui) ne retient pas les autres ; la facture refusée reste dans ce navigateur. Ce qui empêche de continuer — le plafond de 500 imports par heure (429, `reessayerApres`,
  * Ruling 34), la session, le compte, le réseau — arrête la passe : ce qui reste attend une reprise,
  * qui n'envoie que lui. Rien n'est envoyé deux fois dans une passe.
  *
@@ -30,7 +30,7 @@
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { isCreditNoteType } from 'facturx-sdk';
 import { toPortableJson } from '../../shared/portable.js';
-import { t } from '../i18n.js';
+import { formatDate, t } from '../i18n.js';
 import {
   type ClientRecord,
   defaultAppearance,
@@ -582,10 +582,15 @@ export function delaiDeReprise(quand: string, maintenant: number, essai: number)
 
 // ---------- l'appel à `importer` ----------
 
-/** Le refus d'`importer`, de statut `statut`, en issue. */
+/**
+ * Le refus d'`importer`, de statut `statut`, en issue. `date` : la date d'émission de la facture
+ * locale, que la raison d'un refus de date redit (le serveur refuse une facture datée après
+ * aujourd'hui : elle bloquerait les émissions suivantes).
+ */
 function issueDuRefus(
   statut: number,
   corps: { code: string; message: string; details?: unknown },
+  date: string,
 ): IssueDImport {
   const phrases = t.compte.importation;
   if (statut === 413) return { kind: 'refusee', raison: phrases.raisons.tropLourde };
@@ -593,6 +598,9 @@ function issueDuRefus(
   const r = reaction(statut, corps);
   if (r.kind === 'connexion') return { kind: 'arret', raison: phrases.arrets.session };
   if (r.kind === 'controle' || r.kind === 'devise') {
+    if (r.issues.some((i) => i.code === 'DATE' && i.path === 'invoice.issueDate')) {
+      return { kind: 'refusee', raison: phrases.raisons.dateFuture(formatDate(date)) };
+    }
     return { kind: 'refusee', raison: phrases.raisons.facturx(r.issues[0]?.message) };
   }
   if (r.kind !== 'message') return { kind: 'refusee', raison: t.compte.erreurs.inconnue };
@@ -653,11 +661,11 @@ export async function importerSurServeur(s: SavedInvoice, pdf: Uint8Array): Prom
   // `INTERNE` vient de la fonction, qui a tout annulé ; une autre panne ne dit rien de l'import.
   if (http.status >= 500 && code !== 'INTERNE') return sansReponse;
   sessionRefusee(http.status);
-  return issueDuRefus(http.status, {
-    code,
-    message: typeof lu.message === 'string' ? lu.message : '',
-    details: lu.details,
-  });
+  return issueDuRefus(
+    http.status,
+    { code, message: typeof lu.message === 'string' ? lu.message : '', details: lu.details },
+    dateDe(s),
+  );
 }
 
 // ---------- ce navigateur ----------
