@@ -4,20 +4,32 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { strFromU8, unzipSync } from 'fflate';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fromPortableJson } from '../../shared/portable.js';
-import { defaultAppearance, defaultCompany } from '../library.js';
+import {
+  type ClientRecord,
+  defaultAppearance,
+  defaultCompany,
+  FORMAT_SAUVEGARDE,
+  lireSauvegarde,
+  type Numbering,
+  type ProductRecord,
+  restaurerSauvegarde,
+  type SavedInvoice,
+} from '../library.js';
 import { blankParty } from '../model.js';
 import { sampleForm } from '../sample.js';
 import { indexedDbPersistence, utiliser } from '../storage.js';
-import { exporterArchive, nomsDesPdf } from './export.js';
+import { ErreurExport, exporterArchive, nomsDesPdf, nouvelleArchive } from './export.js';
 import { supabasePersistence } from './persistence.js';
 import { aujourdhuiParis } from './suivi.js';
-import { adminDeTest, compteDeTest, insererFacture } from './test-aide.js';
+import { adminDeTest, compteDeTest, conservationEnMemoire, insererFacture } from './test-aide.js';
 
 /**
- * L'export du compte (spec § 12) : une archive zip, `donnees.json` (JSON portable) et un PDF par
- * facture sous `factures/<numéro>.pdf`. Sans pile, les noms des PDF ; contre la pile, l'archive
- * relue : tout le compte, les paiements annulés compris, un PDF absent ou illisible dit manquant,
- * deux numéros au même nom de fichier sans rien écraser.
+ * L'export du compte (spec § 10 et § 12, Ruling 56) : une archive zip, `donnees.json` — une
+ * sauvegarde du Studio (`facturx-studio-backup`), que « Restaurer une sauvegarde » reprend telle
+ * quelle, PDF compris, avec ce que le compte a de plus — et un PDF par facture sous
+ * `factures/<numéro>.pdf`. Sans pile, les noms des PDF et les limites du zip ; contre la pile,
+ * l'archive relue et restaurée : tout le compte, les paiements annulés compris, un PDF absent ou
+ * illisible dit manquant, deux numéros au même nom de fichier sans rien écraser.
  */
 
 /** Le client que `exporterArchive` emploie par `client()` : celui de l'essai en cours. */
@@ -51,6 +63,32 @@ describe('les noms des PDF dans l’archive', () => {
   });
 });
 
+describe('les limites du zip (sans Zip64)', () => {
+  const octets = (n: number) => new Uint8Array(n);
+
+  test('au-delà du nombre d’entrées : une erreur claire, avant d’écrire', () => {
+    const zip = nouvelleArchive({ entrees: 2, octets: 1_000_000 });
+    zip.ajouter('a', octets(10), false);
+    zip.ajouter('b', octets(10), false);
+    expect(() => zip.ajouter('c', octets(10), false)).toThrow(ErreurExport);
+  });
+
+  test('au-delà de la taille : une erreur claire, avant d’écrire', () => {
+    const zip = nouvelleArchive({ entrees: 100, octets: 1_000 });
+    zip.ajouter('a', octets(400), false);
+    expect(() => zip.ajouter('b', octets(700), false)).toThrow(ErreurExport);
+  });
+
+  test('dans les limites : l’archive se relit', async () => {
+    const zip = nouvelleArchive();
+    zip.ajouter('a.txt', new TextEncoder().encode('bonjour'), true);
+    zip.ajouter('b.bin', octets(3), false);
+    const relue = unzipSync(new Uint8Array(await zip.fermer().arrayBuffer()));
+    expect(strFromU8(relue['a.txt'] ?? new Uint8Array())).toBe('bonjour');
+    expect(relue['b.bin']).toEqual(octets(3));
+  });
+});
+
 // ---------- contre la pile ----------
 
 /** Un logo : la signature PNG suffit au dépôt. */
@@ -62,24 +100,33 @@ type Ligne = Record<string, unknown>;
 interface Donnees {
   format: string;
   version: number;
-  exporteLe: string;
-  entreprise: { id: string; profil: { seller: { name: string } }; apparence_defaut: Ligne };
-  numerotation: Ligne;
-  clients: Ligne[];
-  produits: Ligne[];
-  brouillons: Ligne[];
-  factures: (Ligne & { id: string; numero: string; pdf: string | null })[];
-  paiements: Ligne[];
-  relances: Ligne[];
-  fichiers: Record<string, Uint8Array>;
-  pdfManquants: { factureId: string; numero: string; raison: string }[];
+  data: {
+    kv: { company: { seller: { name: string } }; numbering: Numbering } & Record<string, unknown>;
+    files: Record<string, Uint8Array>;
+    invoices: SavedInvoice[];
+    clients: ClientRecord[];
+    products: ProductRecord[];
+  };
+  compte: {
+    exporteLe: string;
+    email: string;
+    membres: Ligne[];
+    entreprise: Ligne & { id: string };
+    numerotation: Ligne;
+    brouillons: Ligne[];
+    factures: (Ligne & { id: string; numero: string; pdf: string | null })[];
+    paiements: Ligne[];
+    relances: Ligne[];
+    pdfManquants: { factureId: string; numero: string; raison: string }[];
+  };
 }
 
 async function lireArchive(archive: Blob) {
   const zip = unzipSync(new Uint8Array(await archive.arrayBuffer()));
   const json = zip['donnees.json'];
   if (!json) throw new Error('donnees.json absent');
-  return { zip, donnees: fromPortableJson<Donnees>(strFromU8(json)) };
+  const texte = strFromU8(json);
+  return { zip, texte, donnees: fromPortableJson<Donnees>(texte) };
 }
 
 /** Un compte neuf, connecté au Studio (`storage` et `client()`). */
@@ -98,12 +145,13 @@ const deposerPdf = (chemin: string, texte: string) =>
   });
 
 describe.skipIf(!process.env.SUPABASE_URL)('exporter l’archive du compte, contre la pile', () => {
-  test('l’archive se décompresse : donnees.json complet, chaque PDF commence par %PDF', async () => {
+  test('une sauvegarde du Studio, complète, que « Restaurer une sauvegarde » reprend avec les PDF', async () => {
     const { sb, entrepriseId, p } = await compteConnecte();
     const company = defaultCompany();
     company.seller.name = 'Atelier Export';
     await p.set('company', company);
     await p.set('appearance-default', { ...defaultAppearance(), accent: '#123456' });
+    await p.set('numbering', { pattern: 'F-{AAAA}-{NNNN}', next: 7, yearly: true, year: 2026 });
     await p.put('clients', {
       uid: 'c-1',
       party: { ...blankParty(), name: 'Client Export' },
@@ -127,7 +175,7 @@ describe.skipIf(!process.env.SUPABASE_URL)('exporter l’archive du compte, cont
       form: { id: 'F-2026-0001', note: 'formulaire' },
       pdf: true,
     });
-    await insererFacture(entrepriseId, {
+    const avoir = await insererFacture(entrepriseId, {
       prefixe: 'EXP',
       numero: 'A-2026-0001',
       typeCode: '381',
@@ -169,7 +217,7 @@ describe.skipIf(!process.env.SUPABASE_URL)('exporter l’archive du compte, cont
     });
     if (relance.error) throw relance.error;
 
-    const { zip, donnees } = await lireArchive(await exporterArchive());
+    const { zip, texte, donnees } = await lireArchive(await exporterArchive());
 
     expect(Object.keys(zip).sort()).toEqual([
       'donnees.json',
@@ -179,39 +227,71 @@ describe.skipIf(!process.env.SUPABASE_URL)('exporter l’archive du compte, cont
     for (const [nom, octets] of Object.entries(zip)) {
       if (nom.endsWith('.pdf')) expect(strFromU8(octets.subarray(0, 5))).toBe('%PDF-');
     }
-    expect(donnees).toMatchObject({ format: 'facturx-compte', version: 1 });
-    expect(Date.parse(donnees.exporteLe)).not.toBeNaN();
-    expect(donnees.entreprise.id).toBe(entrepriseId);
-    expect(donnees.entreprise.profil.seller.name).toBe('Atelier Export');
-    expect(donnees.entreprise.apparence_defaut).toMatchObject({ accent: '#123456' });
-    expect(donnees.numerotation).toMatchObject({ gabarit: 'F-{AAAA}-{NNNN}', prochain: 1 });
-    expect(donnees.clients.map((c) => [c.id, c.nom])).toEqual([['c-1', 'Client Export']]);
-    expect(donnees.produits.map((c) => [c.id, c.nom])).toEqual([['p-1', 'Conseil']]);
-    expect(donnees.brouillons).toHaveLength(1);
-    expect(donnees.brouillons[0]).toHaveProperty('form');
-    // Les factures, formulaire et apparence compris, chacune avec le chemin de son PDF.
-    const parNumero = new Map(donnees.factures.map((f) => [f.numero, f]));
+
+    // Une sauvegarde du Studio : le format que « Restaurer une sauvegarde » contrôle.
+    expect(donnees).toMatchObject({ format: FORMAT_SAUVEGARDE, version: 1 });
+    expect(donnees.data.kv.company.seller.name).toBe('Atelier Export');
+    expect(donnees.data.kv['appearance-default']).toMatchObject({ accent: '#123456' });
+    // La numérotation à jour : revenu au Studio sans compte, on ne réutilise aucun numéro émis.
+    expect(donnees.data.kv.numbering).toMatchObject({ pattern: 'F-{AAAA}-{NNNN}', next: 7 });
+    expect(donnees.data.invoices.map((f) => f.summary.id).sort()).toEqual([
+      'A-2026-0001',
+      'F-2026-0001',
+    ]);
+    expect(donnees.data.clients.map((c) => c.party.name)).toEqual(['Client Export']);
+    expect(donnees.data.products.map((c) => c.name)).toEqual(['Conseil']);
+    // Les PDF sous la clé où le Studio sans compte les cherche (`pdf-<uid>`), et le logo.
+    expect(Object.keys(donnees.data.files).sort()).toEqual(
+      ['logo-1', `pdf-${avoir}`, `pdf-${facture}`].sort(),
+    );
+    expect(donnees.data.files[`pdf-${facture}`]).toEqual(zip['factures/F-2026-0001.pdf']);
+
+    // Ce que la sauvegarde ne porte pas : les lignes du compte.
+    const { compte } = donnees;
+    expect(Date.parse(compte.exporteLe)).not.toBeNaN();
+    expect(compte.email).toMatch(/^essai-.*@facturx\.test$/);
+    expect(compte.membres).toHaveLength(1);
+    expect(compte.membres[0]).toMatchObject({
+      entreprise_id: entrepriseId,
+      cgu_version: '2026-11',
+    });
+    expect(compte.membres[0]?.cgu_acceptees_le).toBeTruthy();
+    expect(compte.entreprise.id).toBe(entrepriseId);
+    expect(compte.numerotation).toMatchObject({ gabarit: 'F-{AAAA}-{NNNN}', prochain: 7 });
+    expect(compte.brouillons).toHaveLength(1);
+    const parNumero = new Map(compte.factures.map((f) => [f.numero, f]));
     expect(parNumero.get('F-2026-0001')).toMatchObject({
       id: facture,
       pdf: 'factures/F-2026-0001.pdf',
       form: { id: 'F-2026-0001', note: 'formulaire' },
       origine: 'emise',
     });
-    expect(parNumero.get('F-2026-0001')).toHaveProperty('appearance');
     expect(parNumero.get('A-2026-0001')).toMatchObject({
       facture_origine_id: facture,
       pdf: 'factures/A-2026-0001.pdf',
     });
-    // Les paiements, annulés compris, et les relances.
-    expect(donnees.paiements.map((l) => [l.montant, l.annule_le === null]).sort()).toEqual([
+    expect(compte.paiements.map((l) => [l.montant, l.annule_le === null]).sort()).toEqual([
       [2000, false],
       [3000, true],
     ]);
-    expect(donnees.relances.map((l) => [l.niveau, l.destinataire])).toEqual([
+    expect(compte.relances.map((l) => [l.niveau, l.destinataire])).toEqual([
       [1, 'compta@client.test'],
     ]);
-    expect(donnees.fichiers).toEqual({ 'logo-1': LOGO });
-    expect(donnees.pdfManquants).toEqual([]);
+    expect(compte.pdfManquants).toEqual([]);
+
+    // La restauration du Studio sans compte, par ses propres fonctions, dans une conservation
+    // locale en mémoire : factures, PDF, clients, catalogue, entreprise, numérotation.
+    const local = conservationEnMemoire({ mode: 'local' });
+    await restaurerSauvegarde(lireSauvegarde(texte), local.p);
+    expect([...local.listes.invoices.keys()].sort()).toEqual([avoir, facture].sort());
+    expect([...local.listes.clients.keys()]).toEqual(['c-1']);
+    expect([...local.listes.products.keys()]).toEqual(['p-1']);
+    expect((local.kv.get('company') as { seller: { name: string } }).seller.name).toBe(
+      'Atelier Export',
+    );
+    expect((local.kv.get('numbering') as Numbering).next).toBe(7);
+    expect(local.fichiers.get(`pdf-${facture}`)).toEqual(zip['factures/F-2026-0001.pdf']);
+    expect(local.fichiers.get('logo-1')).toEqual(LOGO);
   }, 30_000);
 
   test('un PDF absent ou illisible ne fait pas échouer l’export : il est dit manquant', async () => {
@@ -225,15 +305,17 @@ describe.skipIf(!process.env.SUPABASE_URL)('exporter l’archive du compte, cont
     const { zip, donnees } = await lireArchive(await exporterArchive());
 
     expect(Object.keys(zip).sort()).toEqual(['donnees.json', 'factures/F-1.pdf']);
-    expect(donnees.pdfManquants).toEqual([
+    expect(donnees.compte.pdfManquants).toEqual([
       { factureId: absent, numero: 'F-2', raison: 'absent' },
       { factureId: illisible, numero: 'F-3', raison: 'illisible' },
     ]);
-    expect(donnees.factures.map((f) => [f.numero, f.pdf])).toEqual([
+    expect(donnees.compte.factures.map((f) => [f.numero, f.pdf])).toEqual([
       ['F-1', 'factures/F-1.pdf'],
       ['F-2', null],
       ['F-3', null],
     ]);
+    // La sauvegarde n'a que le PDF lisible.
+    expect(Object.keys(donnees.data.files).filter((c) => c.startsWith('pdf-'))).toHaveLength(1);
   }, 30_000);
 
   test('deux numéros au même nom de fichier : deux PDF, rien d’écrasé', async () => {
@@ -254,7 +336,7 @@ describe.skipIf(!process.env.SUPABASE_URL)('exporter l’archive du compte, cont
     expect(Object.keys(zip).sort()).toEqual(['donnees.json', 'factures/F-2026-1.pdf', nomB].sort());
     expect(strFromU8(zip['factures/F-2026-1.pdf'] ?? new Uint8Array())).toContain('facture a');
     expect(strFromU8(zip[nomB] ?? new Uint8Array())).toContain('facture b');
-    expect(donnees.factures.map((f) => [f.numero, f.pdf])).toEqual([
+    expect(donnees.compte.factures.map((f) => [f.numero, f.pdf])).toEqual([
       ['F/2026/1', 'factures/F-2026-1.pdf'],
       ['F-2026-1', nomB],
     ]);

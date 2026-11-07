@@ -4,17 +4,24 @@
  * polices), les clients, le catalogue, les factures émises avec leur PDF, la numérotation ; et le
  * brouillon en cours devient un brouillon du compte. Les données locales ne sont jamais effacées.
  *
+ * L'import ne fait qu'ajouter (Ruling 57) : ce que l'utilisateur a mis dans le compte l'emporte
+ * toujours. Un client ou un article déjà dans le compte (même identifiant) est laissé tel quel ;
+ * l'entreprise, l'apparence par défaut, le gabarit et la remise à zéro de la numérotation ne sont
+ * repris du navigateur que si ceux du compte sont encore à leur état initial ; le rang, lui, monte au
+ * plus haut connu, jamais plus bas. Le bilan dit ce qui a été gardé.
+ *
  * Les factures passent une à une par l'Edge Function `importer`, qui les lit dans leur PDF
  * Factur-X. Elle est idempotente par numéro (un numéro déjà là : 409 `DOUBLON`, avant même le
- * plafond) : un import repris, ou refait, ne crée rien en double. Les factures passent avant les
- * avoirs, dans l'ordre des dates, pour qu'un avoir trouve la facture qu'il cite (le serveur ne l'y
- * rattache que dans la même devise, Ruling 49). Un refus (PDF illisible, trop lourd, valeurs
- * inadmissibles) ne retient pas les autres. Ce qui empêche de continuer — le plafond de 500 imports
- * par heure (429, `reessayerApres`, Ruling 34), la session, le compte, le réseau — arrête la passe :
- * ce qui reste attend une reprise, qui n'envoie que lui. Rien n'est envoyé deux fois dans une passe.
+ * plafond) : un import repris, ou refait, ne crée rien en double. Un numéro déjà pris est dit
+ * « déjà dans le compte » si la facture du compte est la même (date, total TTC, devise), sinon
+ * « numéro pris par une autre facture ». Les factures passent avant les avoirs, dans l'ordre des
+ * dates, pour qu'un avoir trouve la facture qu'il cite (le serveur ne l'y rattache que dans la même
+ * devise, Ruling 49). Un refus (PDF illisible, trop lourd, valeurs inadmissibles) ne retient pas les
+ * autres. Ce qui empêche de continuer — le plafond de 500 imports par heure (429, `reessayerApres`,
+ * Ruling 34), la session, le compte, le réseau — arrête la passe : ce qui reste attend une reprise,
+ * qui n'envoie que lui. Rien n'est envoyé deux fois dans une passe.
  *
- * La numérotation n'est levée qu'après les factures, au plus haut rang connu, jamais plus bas que
- * celle du serveur (le déclencheur refuse un recul) ; seuls le gabarit, la remise à zéro annuelle et
+ * La numérotation n'est levée qu'après les factures ; seuls le gabarit, la remise à zéro annuelle et
  * le rang partent (la conservation du compte n'envoie jamais l'année).
  *
  * Chargé par `import()` avec le reste du compte.
@@ -31,6 +38,7 @@ import {
   defaultNumbering,
   fill,
   hydrateForm,
+  type InvoiceSummary,
   type Numbering,
   type ProductRecord,
   rankOf,
@@ -43,12 +51,21 @@ import { startDraft } from '../workflows.js';
 import { client } from './client.js';
 import { PLAFOND_CORPS } from './emission.js';
 import { finDAttente, reaction } from './erreurs.js';
-import { brouillonSaisi, entrepriseRenseignee, lireMarqueImport, retenirImport } from './index.js';
-import { estPersistenceCompte, estUnPdf } from './persistence.js';
+import { canonique, estPersistenceCompte, estUnPdf } from './persistence.js';
+import {
+  brouillonSaisi,
+  entrepriseRenseignee,
+  lireMarqueImport,
+  retenirImport,
+} from './proposition.js';
 import { sessionRefusee } from './suivi.js';
 
 /** Le plus long qu'on attend la réponse d'`importer` (lecture du PDF, dépôt, enregistrement). */
 const DELAI_IMPORT_MS = 60_000;
+
+/** Après une limite de débit : une marge après l'heure dite, et un plancher qui double à chaque essai. */
+const MARGE_REPRISE_MS = 5_000;
+const PLAFOND_REPRISE_MS = 15 * 60_000;
 
 /** Ce que dit `importer` d'une facture. Les raisons sont des phrases de l'interface. */
 export type IssueDImport =
@@ -62,13 +79,24 @@ export type IssueDImport =
 
 export type Importer = (s: SavedInvoice, pdf: Uint8Array) => Promise<IssueDImport>;
 
+/** Ce que le compte avait déjà, et que l'import a laissé tel quel. */
+export type Conserve = 'entreprise' | 'apparence' | 'numerotation';
+
 export interface RapportImport {
+  /** Les clients et articles ajoutés au compte. */
   clients: number;
   produits: number;
+  /** Ceux qui y étaient déjà (même identifiant) : laissés tels quels. */
+  clientsDejaLa: number;
+  produitsDejaLa: number;
+  /** Les réglages du compte gardés à la place de ceux du navigateur. */
+  conserves: Conserve[];
   /** Les factures importées. */
   factures: number;
-  /** Les numéros déjà dans le compte. */
+  /** Les numéros déjà dans le compte, pour la même facture (date, total TTC, devise). */
   doublons: string[];
+  /** Les numéros pris par une autre facture du compte : ces factures ne sont pas dans le compte. */
+  numerosPris: string[];
   refusees: { numero: string; raison: string }[];
   /** Les factures que la passe n'a pas envoyées : la reprise les enverra, elles seules. */
   enAttente: { uid: string; numero: string }[];
@@ -78,6 +106,12 @@ export interface RapportImport {
   echecs: { element: string; raison: string }[];
   /** La numérotation du compte après l'import. */
   numerotation?: Numbering;
+  /**
+   * La numérotation est annuelle et les rangs du navigateur sont d'une année plus récente que la
+   * sienne : son rang ne vaut pas pour eux, et la prochaine émission de cette année-là prendra le
+   * premier numéro libre après les factures importées (`emettre`, Ruling 55).
+   */
+  numerotationEnAvance?: boolean;
 }
 
 export interface OptionsImport {
@@ -151,32 +185,106 @@ function ordonner(factures: readonly SavedInvoice[]): SavedInvoice[] {
     );
 }
 
+/** Deux résumés de la même facture : même date d'émission, même total TTC, même devise. */
+const memeFacture = (a: InvoiceSummary, b: InvoiceSummary | undefined): boolean =>
+  b !== undefined &&
+  a.issueDate === b.issueDate &&
+  a.total === b.total &&
+  a.currency === b.currency;
+
+// ---------- le compte, avant la passe ----------
+
+/** Ce que le compte a déjà : de quoi ne rien écraser et reconnaître un doublon. */
+interface Compte {
+  entreprise: unknown;
+  apparence: unknown;
+  numerotation: Numbering | undefined;
+  clients: Set<string>;
+  produits: Set<string>;
+  /** Les factures du compte par numéro (résumé) ; celles de la passe s'y ajoutent. */
+  factures: Map<string, InvoiceSummary>;
+}
+
+async function lireLeCompte(cible: Persistence): Promise<Compte> {
+  const [entreprise, apparence, numerotation, clients, produits, factures] = await Promise.all([
+    cible.get('company'),
+    cible.get('appearance-default'),
+    cible.get<Numbering>('numbering'),
+    cible.list<ClientRecord>('clients'),
+    cible.list<ProductRecord>('products'),
+    cible.list<SavedInvoice>('invoices'),
+  ]);
+  return {
+    entreprise,
+    apparence,
+    numerotation,
+    clients: new Set(clients.map((c) => c.uid)),
+    produits: new Set(produits.map((p) => p.uid)),
+    factures: new Map(factures.map((f) => [f.summary.id, f.summary])),
+  };
+}
+
+/**
+ * La numérotation du compte est-elle encore à son état initial ? Le gabarit et la remise à zéro que
+ * l'inscription pose (ceux de `defaultNumbering`, migration 000100), et aucune facture dans le
+ * compte, émise ou importée, avant cette passe. Alors seulement ceux du navigateur les remplacent.
+ */
+function numerotationInitiale(compte: Compte): boolean {
+  const initiale = defaultNumbering();
+  const n = compte.numerotation;
+  return (
+    n !== undefined &&
+    n.pattern === initiale.pattern &&
+    n.yearly === initiale.yearly &&
+    compte.factures.size === 0
+  );
+}
+
+/** Deux valeurs au même contenu (clés triées : Postgres réordonne celles d'un `jsonb`). */
+const memes = (a: unknown, b: unknown): boolean => canonique(a) === canonique(b);
+
 // ---------- la numérotation ----------
 
 /**
- * La numérotation du compte après l'import : le gabarit et la remise à zéro du Studio, et le plus
- * haut rang connu — celui du serveur, celui de la numérotation locale, celui qui suit chaque facture
- * locale (un rang baissé à la main ne fait pas réutiliser un numéro). En remise à zéro annuelle,
- * seuls comptent les rangs de l'année du serveur (`annee`, qu'un compte ne change pas : seule une
- * émission la fait avancer). Jamais plus bas que le serveur.
+ * La numérotation du compte après l'import. Le gabarit et la remise à zéro : ceux du navigateur si
+ * `reglagesLocaux` (le compte est à son état initial), sinon ceux du compte. Le rang : le plus haut
+ * connu — celui du serveur, celui de la numérotation locale s'il est de la même suite (même
+ * gabarit), celui qui suit chaque facture locale de ce gabarit (un rang baissé à la main ne fait pas
+ * réutiliser un numéro) ; un rang d'une autre suite ne lève pas celle du compte, qui aurait un trou.
+ * En remise à zéro annuelle, seuls comptent les rangs de l'année du serveur (`annee`, qu'un compte
+ * ne change pas : seule une émission la fait avancer) ; des rangs d'une année plus récente la
+ * mettent « en avance » (`enAvance`). Jamais plus bas que le serveur.
  */
 export function numerotationReprise(
   serveur: Numbering,
   locale: Numbering | undefined,
   factures: readonly SavedInvoice[],
-): Numbering {
-  const pattern = locale?.pattern ?? serveur.pattern;
-  const yearly = locale?.yearly ?? serveur.yearly;
-  const compte = (annee: number) => !yearly || annee === serveur.year;
+  reglagesLocaux = true,
+): { numerotation: Numbering; enAvance: boolean } {
+  const pattern = (reglagesLocaux ? locale?.pattern : undefined) ?? serveur.pattern;
+  const yearly = (reglagesLocaux ? locale?.yearly : undefined) ?? serveur.yearly;
   let next = serveur.next;
-  if (locale && compte(locale.year)) next = Math.max(next, locale.next);
+  let enAvance = false;
+  const compter = (rang: number, annee: number) => {
+    if (!yearly || annee === serveur.year) next = Math.max(next, rang);
+    else if (annee > serveur.year) enAvance = true;
+  };
+  // Un rang local de 1 n'a rien attribué : il ne dit rien de son année.
+  if (locale && locale.pattern === pattern && locale.next > 1) compter(locale.next, locale.year);
   for (const s of factures) {
     const rang = rankOf(pattern, numeroDe(s));
-    if (rang !== undefined && compte(Number(dateDe(s).slice(0, 4)))) {
-      next = Math.max(next, rang + 1);
-    }
+    if (rang !== undefined) compter(rang + 1, Number(dateDe(s).slice(0, 4)));
   }
-  return { pattern, yearly, next, year: serveur.year };
+  return { numerotation: { pattern, yearly, next, year: serveur.year }, enAvance };
+}
+
+/** Ce que le bilan dit de la numérotation : son prochain rang, ou le premier numéro libre. */
+export function messageNumerotation(rapport: RapportImport): string | undefined {
+  const bilan = t.compte.importation.bilan;
+  if (!rapport.numerotation) return undefined;
+  return rapport.numerotationEnAvance
+    ? bilan.numerotationEnAvance
+    : bilan.numerotation(rapport.numerotation.next);
 }
 
 // ---------- l'import ----------
@@ -184,49 +292,88 @@ export function numerotationReprise(
 const nouveauRapport = (): RapportImport => ({
   clients: 0,
   produits: 0,
+  clientsDejaLa: 0,
+  produitsDejaLa: 0,
+  conserves: [],
   factures: 0,
   doublons: [],
+  numerosPris: [],
   refusees: [],
   enAttente: [],
   echecs: [],
 });
 
-/** La raison d'une écriture refusée, dans le bilan. */
-const raisonDe = (erreur: unknown): string =>
-  erreur instanceof ErreurConservation && erreur.code === 'FICHIER'
-    ? t.compte.conservation.fichier
-    : t.compte.importation.raisons.refus;
+/** La raison d'une écriture qui n'a pas abouti, dans le bilan. */
+function raisonDe(erreur: unknown): string {
+  const raisons = t.compte.importation.raisons;
+  if (!(erreur instanceof ErreurConservation)) return raisons.refus;
+  switch (erreur.code) {
+    case 'FICHIER':
+      return t.compte.conservation.fichier;
+    case 'SESSION':
+      sessionRefusee(401);
+      return raisons.session;
+    case 'RESEAU':
+      return raisons.reseau;
+    default:
+      return raisons.refus;
+  }
+}
+
+/** L'arrêt d'une passe qui ne peut pas continuer : sans session, ou sans réponse du serveur. */
+function arretDe(erreur: unknown): NonNullable<RapportImport['arret']> {
+  const arrets = t.compte.importation.arrets;
+  const session = erreur instanceof ErreurConservation && erreur.code === 'SESSION';
+  if (session) sessionRefusee(401);
+  return { raison: session ? arrets.session : arrets.reseau, etape: 'bibliotheque' };
+}
 
 /**
- * L'entreprise, les fichiers, l'apparence par défaut, les clients et le catalogue. Une écriture
- * refusée est dite et les autres continuent ; sans session ni réseau, l'import s'arrête là. Faux
- * s'il s'est arrêté.
+ * L'entreprise, les fichiers, l'apparence par défaut, les clients et le catalogue, sans rien écraser
+ * de ce que le compte a déjà. Une écriture refusée est dite et les autres continuent ; sans session
+ * ni réseau, l'import s'arrête là. Faux s'il s'est arrêté.
  */
 async function importerBibliotheque(
   d: Sauvegarde,
+  compte: Compte,
   cible: Persistence,
   rapport: RapportImport,
 ): Promise<boolean> {
   const elements = t.compte.importation.elements;
   const ecritures: { element: string; faire: () => Promise<unknown>; compter?: () => void }[] = [];
-  // Une entreprise vide (celle par défaut) ne remplace pas celle du compte.
-  if (entrepriseRenseignee(d.kv.company)) {
-    const company = d.kv.company;
-    ecritures.push({ element: elements.entreprise, faire: () => cible.set('company', company) });
+  // L'entreprise du navigateur, si elle est renseignée, et seulement si celle du compte ne l'est pas.
+  const company = d.kv.company;
+  if (entrepriseRenseignee(company)) {
+    if (!entrepriseRenseignee(compte.entreprise)) {
+      ecritures.push({ element: elements.entreprise, faire: () => cible.set('company', company) });
+    } else if (!memes(company, compte.entreprise)) {
+      rapport.conserves.push('entreprise');
+    }
   }
-  // Les fichiers avant l'apparence qui les nomme ; les PDF passent par `importer`.
+  // Les fichiers avant l'apparence qui les nomme ; les PDF passent par `importer`. Leur clé est tirée
+  // au hasard à leur dépôt (`logo-<uid>`, `font-<uid>`) : la même clé dans le compte, c'est le même
+  // fichier, déjà importé.
   for (const [cle, octets] of Object.entries(d.files)) {
     if (cle.startsWith('pdf-') || !(octets instanceof Uint8Array)) continue;
     ecritures.push({ element: elements.fichier(cle), faire: () => cible.setFile(cle, octets) });
   }
   const apparence = d.kv['appearance-default'];
   if (apparence !== undefined && apparence !== null) {
-    ecritures.push({
-      element: elements.apparence,
-      faire: () => cible.set('appearance-default', apparence),
-    });
+    if (compte.apparence === undefined || compte.apparence === null) {
+      ecritures.push({
+        element: elements.apparence,
+        faire: () => cible.set('appearance-default', apparence),
+      });
+    } else if (!memes(apparence, compte.apparence)) {
+      rapport.conserves.push('apparence');
+    }
   }
+  // Clients et articles : ceux que le compte n'a pas (un supprimé depuis revient, c'est voulu).
   for (const c of d.clients) {
+    if (compte.clients.has(c.uid)) {
+      rapport.clientsDejaLa++;
+      continue;
+    }
     ecritures.push({
       element: elements.client(c.party?.name || c.uid),
       faire: () => cible.put('clients', c),
@@ -234,6 +381,10 @@ async function importerBibliotheque(
     });
   }
   for (const p of d.produits) {
+    if (compte.produits.has(p.uid)) {
+      rapport.produitsDejaLa++;
+      continue;
+    }
     ecritures.push({
       element: elements.produit(p.name || p.uid),
       faire: () => cible.put('products', p),
@@ -247,12 +398,7 @@ async function importerBibliotheque(
     } catch (erreur) {
       const code = erreur instanceof ErreurConservation ? erreur.code : undefined;
       if (code === 'SESSION' || code === 'RESEAU') {
-        if (code === 'SESSION') sessionRefusee(401);
-        const arrets = t.compte.importation.arrets;
-        rapport.arret = {
-          raison: code === 'SESSION' ? arrets.session : arrets.reseau,
-          etape: 'bibliotheque',
-        };
+        rapport.arret = arretDe(erreur);
         return false;
       }
       rapport.echecs.push({ element, raison: raisonDe(erreur) });
@@ -262,13 +408,15 @@ async function importerBibliotheque(
 }
 
 /**
- * Lève la numérotation du compte au plus haut rang connu, après les factures. Une émission a pu la
- * lever entre la lecture et l'écriture (le déclencheur refuse alors le recul) : on relit, une fois.
+ * Lève la numérotation du compte au plus haut rang connu, après les factures ; le gabarit et la
+ * remise à zéro du navigateur seulement si `reglagesLocaux`. Une émission a pu la lever entre la
+ * lecture et l'écriture (le déclencheur refuse alors le recul) : on relit, une fois.
  */
 async function reprendreNumerotation(
   d: Sauvegarde,
   cible: Persistence,
   rapport: RapportImport,
+  reglagesLocaux: boolean,
 ): Promise<void> {
   const locale = estNumerotation(d.kv.numbering) ? d.kv.numbering : undefined;
   if (!locale && d.factures.length === 0) return;
@@ -276,13 +424,23 @@ async function reprendreNumerotation(
     try {
       const serveur = await cible.get<Numbering>('numbering');
       if (!serveur) return;
-      const reprise = numerotationReprise(serveur, locale, d.factures);
+      const { numerotation, enAvance } = numerotationReprise(
+        serveur,
+        locale,
+        d.factures,
+        reglagesLocaux,
+      );
       const change =
-        reprise.pattern !== serveur.pattern ||
-        reprise.yearly !== serveur.yearly ||
-        reprise.next !== serveur.next;
-      if (change) await cible.set('numbering', reprise);
-      rapport.numerotation = reprise;
+        numerotation.pattern !== serveur.pattern ||
+        numerotation.yearly !== serveur.yearly ||
+        numerotation.next !== serveur.next;
+      if (change) await cible.set('numbering', numerotation);
+      rapport.numerotation = numerotation;
+      rapport.numerotationEnAvance = enAvance;
+      const differents =
+        locale !== undefined &&
+        (locale.pattern !== numerotation.pattern || locale.yearly !== numerotation.yearly);
+      if (!reglagesLocaux && differents) rapport.conserves.push('numerotation');
       return;
     } catch (erreur) {
       const recul = erreur instanceof ErreurConservation && erreur.detail === 'NUMEROTATION_RECUL';
@@ -298,11 +456,12 @@ async function reprendreNumerotation(
 }
 
 /**
- * Importe la sauvegarde locale `dump` dans `cible` (la conservation du compte) : l'entreprise,
- * l'apparence par défaut et ses fichiers, les clients et le catalogue ; puis chaque facture, avec son
- * PDF `pdf-<uid>`, par `importer` ; puis la numérotation. Avec `reprise`, seulement ces factures, et
- * la numérotation. Ne touche jamais à `dump` ni aux données locales. Ne lève pas : le rapport dit
- * ce qui est passé, ce qui est refusé et pourquoi, ce qui attend.
+ * Importe la sauvegarde locale `dump` dans `cible` (la conservation du compte), sans rien écraser de
+ * ce qu'il a : l'entreprise, l'apparence par défaut et ses fichiers, les clients et le catalogue ;
+ * puis chaque facture, avec son PDF `pdf-<uid>`, par `importer` ; puis la numérotation. Avec
+ * `reprise`, seulement ces factures, et la numérotation. Ne touche jamais à `dump` ni aux données
+ * locales. Ne lève pas : le rapport dit ce qui est passé, ce qui a été gardé, ce qui est refusé et
+ * pourquoi, ce qui attend.
  */
 export async function importerLocal(
   dump: Awaited<ReturnType<typeof indexedDbPersistence.dump>>,
@@ -320,7 +479,18 @@ export async function importerLocal(
   const enAttente = (depuis: number) =>
     factures.slice(depuis).map((s) => ({ uid: s.uid, numero: numeroDe(s) }));
 
-  if (!reprise && !(await importerBibliotheque(d, cible, rapport))) {
+  // Ce que le compte a déjà, lu avant d'écrire quoi que ce soit : sans cela, rien ne part.
+  let compte: Compte;
+  try {
+    compte = await lireLeCompte(cible);
+  } catch (erreur) {
+    rapport.arret = arretDe(erreur);
+    rapport.enAttente = enAttente(0);
+    return rapport;
+  }
+  const reglagesLocaux = numerotationInitiale(compte);
+
+  if (!reprise && !(await importerBibliotheque(d, compte, cible, rapport))) {
     rapport.enAttente = enAttente(0);
     return rapport;
   }
@@ -340,10 +510,17 @@ export async function importerLocal(
     const issue = await importer(s, pdf).catch(
       (): IssueDImport => ({ kind: 'arret', raison: phrases.arrets.reseau }),
     );
-    if (issue.kind === 'importee') rapport.factures++;
-    else if (issue.kind === 'doublon') rapport.doublons.push(numero);
-    else if (issue.kind === 'refusee') rapport.refusees.push({ numero, raison: issue.raison });
-    else {
+    if (issue.kind === 'importee') {
+      rapport.factures++;
+      if (s.summary && !compte.factures.has(numero)) compte.factures.set(numero, s.summary);
+    } else if (issue.kind === 'doublon') {
+      // La même facture, ou une autre sous le même numéro : celle-ci n'est alors pas dans le compte.
+      const sienne = compte.factures.get(numero);
+      if (s.summary && memeFacture(s.summary, sienne)) rapport.doublons.push(numero);
+      else rapport.numerosPris.push(numero);
+    } else if (issue.kind === 'refusee') {
+      rapport.refusees.push({ numero, raison: issue.raison });
+    } else {
       rapport.arret = {
         raison: issue.raison,
         etape: 'factures',
@@ -355,7 +532,7 @@ export async function importerLocal(
   }
 
   // Après les factures, même arrêtées : les numéros locaux sont pris, qu'ils soient importés ou non.
-  await reprendreNumerotation(d, cible, rapport);
+  await reprendreNumerotation(d, cible, rapport, reglagesLocaux);
   return rapport;
 }
 
@@ -364,16 +541,37 @@ export function cumuler(avant: RapportImport, apres: RapportImport): RapportImpo
   const cumul: RapportImport = {
     clients: avant.clients + apres.clients,
     produits: avant.produits + apres.produits,
+    clientsDejaLa: avant.clientsDejaLa + apres.clientsDejaLa,
+    produitsDejaLa: avant.produitsDejaLa + apres.produitsDejaLa,
+    conserves: [...new Set([...avant.conserves, ...apres.conserves])],
     factures: avant.factures + apres.factures,
     doublons: [...avant.doublons, ...apres.doublons],
+    numerosPris: [...avant.numerosPris, ...apres.numerosPris],
     refusees: [...avant.refusees, ...apres.refusees],
     enAttente: apres.enAttente,
     echecs: [...avant.echecs, ...apres.echecs],
   };
   if (apres.arret) cumul.arret = apres.arret;
-  const numerotation = apres.numerotation ?? avant.numerotation;
-  if (numerotation) cumul.numerotation = numerotation;
+  const derniere = apres.numerotation ? apres : avant;
+  if (derniere.numerotation) {
+    cumul.numerotation = derniere.numerotation;
+    cumul.numerotationEnAvance = derniere.numerotationEnAvance ?? false;
+  }
   return cumul;
+}
+
+/**
+ * Le délai avant de reprendre après une limite de débit : l'heure que le serveur a dite, plus une
+ * marge ; et jamais moins qu'un plancher qui double à chaque reprise qui retombe sur la limite
+ * (`essai`, à partir de 0), jusqu'à 15 minutes. Si l'horloge de ce navigateur est en avance sur
+ * celle du serveur, l'heure dite paraît passée : le plancher évite de renvoyer un PDF toutes les
+ * cinq secondes.
+ */
+export function delaiDeReprise(quand: string, maintenant: number, essai: number): number {
+  const plancher = Math.min(MARGE_REPRISE_MS * 2 ** essai, PLAFOND_REPRISE_MS);
+  const dite = Date.parse(quand);
+  const attente = Number.isNaN(dite) ? 0 : dite - maintenant + MARGE_REPRISE_MS;
+  return Math.max(attente, plancher);
 }
 
 // ---------- l'appel à `importer` ----------
@@ -492,7 +690,7 @@ async function rafraichir(rapport: RapportImport): Promise<void> {
 /**
  * Le brouillon local en cours devient un brouillon du compte, par le chemin d'un nouveau document
  * (`startDraft`) : le brouillon ouvert part d'abord au serveur et reste dans la liste, rien n'est
- * écrasé. Un brouillon déjà repris (même empreinte) ne l'est pas de nouveau.
+ * écrasé. Un brouillon déjà repris (même empreinte), ou où rien n'est saisi, ne l'est pas.
  */
 async function reprendreBrouillon(
   kv: Record<string, unknown>,
@@ -513,16 +711,16 @@ async function reprendreBrouillon(
 /**
  * Importe ce que ce navigateur garde du Studio sans compte dans le compte connecté (la conservation
  * derrière `storage`), puis montre ce que le compte a désormais, ouvre le brouillon repris et retient
- * l'issue pour la proposition de la première connexion (`fait`, ou `partiel` si des factures
- * attendent). Avec `reprise`, seulement ces factures. Lève si le compte ou IndexedDB ne répond pas
- * avant de commencer.
+ * l'issue pour la proposition de la première connexion : `fait`, ou `partiel` avec les factures qui
+ * attendent (s'il s'est arrêté pendant elles). Avec `reprise`, seulement ces factures. Lève si le
+ * compte ou IndexedDB ne répond pas avant de commencer.
  */
 export async function importerCeNavigateur(
   options: OptionsImport = {},
 ): Promise<RapportNavigateur> {
   const p = storage;
   if (!estPersistenceCompte(p)) throw new Error(t.compte.importation.erreur);
-  // Ce qui attendait le délai d'enregistrement part d'abord : l'import écrit par-dessus.
+  // Ce qui attendait le délai d'enregistrement part d'abord : l'import lit le compte ensuite.
   await enregistrerMaintenant();
   const dump = await indexedDbPersistence.dump();
   const rapport: RapportNavigateur = await importerLocal(dump, p, importerSurServeur, options);
@@ -533,6 +731,8 @@ export async function importerCeNavigateur(
     if (repris.issue) rapport.brouillon = repris.issue;
     empreinte = repris.empreinte;
   }
-  await retenirImport(rapport.arret ? 'partiel' : 'fait', empreinte);
+  const enAttente =
+    rapport.arret?.etape === 'factures' ? rapport.enAttente.map((f) => f.uid) : undefined;
+  await retenirImport(rapport.arret ? 'partiel' : 'fait', { brouillon: empreinte, enAttente });
   return rapport;
 }

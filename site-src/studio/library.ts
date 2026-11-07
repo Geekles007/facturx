@@ -9,6 +9,7 @@
 
 import type { RenderDisplay, RenderStyle, RenderTemplate } from 'facturx-sdk/pdf';
 import { formatNumber, type Numbering, nextRank } from '../shared/numerotation.js';
+import { fromPortableJson } from '../shared/portable.js';
 import type { LIBELLES_RENOMMABLES } from '../shared/rendu.js';
 import {
   addDays,
@@ -26,6 +27,7 @@ import {
   partyForm,
   uid,
 } from './model.js';
+import type { Persistence } from './persistence.js';
 
 // ---------- apparence ----------
 
@@ -249,6 +251,43 @@ export function newInvoiceForm(
 
 // Le JSON portable (octets en base64) vit dans `shared/`, comme la numérotation.
 export { fromBase64, fromPortableJson, toBase64, toPortableJson } from '../shared/portable.js';
+
+/**
+ * Le format d'une sauvegarde du Studio : `{ format, version: 1, data }`, en JSON portable. L'export
+ * d'un compte en est une aussi (`compte/export.ts`), qui se restaure de même dans le Studio sans
+ * compte, PDF compris.
+ */
+export const FORMAT_SAUVEGARDE = 'facturx-studio-backup';
+
+/** Le contenu d'une sauvegarde : ce que `Persistence.dump()` rend, les PDF sous `pdf-<uid>`. */
+export interface DonneesSauvegarde {
+  kv?: Record<string, unknown>;
+  files?: Record<string, Uint8Array>;
+  invoices?: SavedInvoice[];
+  clients?: ClientRecord[];
+  products?: ProductRecord[];
+}
+
+/** Le contenu de la sauvegarde `texte` ; lève si ce n'en est pas une. */
+export function lireSauvegarde(texte: string): DonneesSauvegarde {
+  const sauvegarde = fromPortableJson<{ format?: unknown; data?: unknown }>(texte);
+  if (sauvegarde?.format !== FORMAT_SAUVEGARDE || typeof sauvegarde.data !== 'object') {
+    throw new Error('pas une sauvegarde du Studio');
+  }
+  return (sauvegarde.data ?? {}) as DonneesSauvegarde;
+}
+
+/** Écrit la sauvegarde dans `cible`, clé par clé : ce qui y est déjà sous la même clé est remplacé. */
+export async function restaurerSauvegarde(
+  data: DonneesSauvegarde,
+  cible: Pick<Persistence, 'set' | 'setFile' | 'put'>,
+): Promise<void> {
+  for (const [key, value] of Object.entries(data.kv ?? {})) await cible.set(key, value);
+  for (const [key, value] of Object.entries(data.files ?? {})) await cible.setFile(key, value);
+  for (const item of data.invoices ?? []) await cible.put('invoices', item);
+  for (const item of data.clients ?? []) await cible.put('clients', item);
+  for (const item of data.products ?? []) await cible.put('products', item);
+}
 
 // ---------- reprise ----------
 

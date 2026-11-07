@@ -14,32 +14,41 @@ import {
   defaultCompany,
   defaultNumbering,
   type Numbering,
+  newInvoiceForm,
   type ProductRecord,
   type SavedInvoice,
 } from '../library.js';
-import { blankParty, buildInvoice, type InvoiceForm } from '../model.js';
-import { ErreurConservation, type Persistence } from '../persistence.js';
+import { blankForm, blankParty, buildInvoice, type InvoiceForm } from '../model.js';
+import { ErreurConservation } from '../persistence.js';
 import { sampleForm } from '../sample.js';
 import { indexedDbPersistence, utiliser } from '../storage.js';
 import { enregistrerMaintenant, startPersistence, store } from '../store.js';
 import { finDAttente } from './erreurs.js';
 import {
+  delaiDeReprise,
   type IssueDImport,
   importerCeNavigateur,
   importerLocal,
   importerSurServeur,
+  messageNumerotation,
   numerotationReprise,
 } from './import.js';
-import { importAProposer, inventaireLocal, lireMarqueImport, retenirImport } from './index.js';
-import { supabasePersistence } from './persistence.js';
-import { adminDeTest, compteDeTest, refusDeFonction } from './test-aide.js';
+import { type PersistenceCompte, supabasePersistence } from './persistence.js';
+import {
+  importAProposer,
+  inventaireLocal,
+  lireMarqueImport,
+  retenirImport,
+} from './proposition.js';
+import { adminDeTest, compteDeTest, conservationEnMemoire, refusDeFonction } from './test-aide.js';
 
 /**
  * Importer les données locales (spec § 10) : sans pile, `importerLocal` sur une conservation en
- * mémoire avec un `importer` simulé (ordre, doublons, refus, limite de débit et reprise,
- * numérotation), la lecture des réponses d'`importer`, et la proposition faite à la première
- * connexion ; contre la pile, avec `importer` servie (`FACTURX_EMETTRE=1`), une sauvegarde de trois
- * factures dont un avoir, et l'import de ce navigateur jusqu'au brouillon.
+ * mémoire avec un `importer` simulé (ordre, doublons et numéros pris, refus, limite de débit et
+ * reprise, numérotation, rien d'écrasé dans le compte), la lecture des réponses d'`importer`, et la
+ * proposition faite à la première connexion ; contre la pile, avec `importer` servie
+ * (`FACTURX_EMETTRE=1`), une sauvegarde de trois factures dont un avoir, un import refait qui
+ * n'écrase rien, et l'import de ce navigateur jusqu'au brouillon.
  */
 
 /** Le client de l'essai en cours : `importerSurServeur` l'emploie par `client()`. */
@@ -87,6 +96,7 @@ const pdfDeTest = (numero: string) => new TextEncoder().encode(`%PDF-1.7\n% ${nu
 /** Un logo : la signature PNG suffit au dépôt. */
 const LOGO = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 
+/** Une facture émise sans compte, son résumé tiré de la facture elle-même (comme le Studio). */
 function facture(
   numero: string,
   date: string,
@@ -100,6 +110,7 @@ function facture(
   if (options.cite) {
     form.references.precedingInvoices = [{ uid: 'r-1', id: options.cite, issueDate: date }];
   }
+  const { invoice } = buildInvoice(form);
   return {
     uid: options.uid ?? `u-${numero}`,
     status: 'issued',
@@ -111,8 +122,8 @@ function facture(
       issueDate: date,
       buyerName: form.buyer.name,
       currency: form.currency,
-      total: 12000,
-      due: 12000,
+      total: invoice.totals.taxInclusiveAmount,
+      due: invoice.totals.amountDueForPayment,
     },
     issuedAt: `${date}T10:00:00.000Z`,
   };
@@ -180,58 +191,9 @@ const TROIS = [
   facture('F-2026-0003', '2026-03-03'),
 ];
 
-// ---------- une conservation en mémoire ----------
-
-/**
- * Ce que le serveur du compte garde, en mémoire, et le journal des écritures. Comme le déclencheur
- * de la base, la numérotation refuse de reculer.
- */
-function enMemoire(numerotation: Numbering = { ...defaultNumbering(), year: 2026 }) {
-  const kv = new Map<string, unknown>([['numbering', numerotation]]);
-  const listes = {
-    invoices: new Map<string, unknown>(),
-    clients: new Map<string, unknown>(),
-    products: new Map<string, unknown>(),
-  };
-  const fichiers = new Map<string, Uint8Array>();
-  const journal: string[] = [];
-  const p: Persistence = {
-    available: async () => true,
-    get: async <T>(cle: string) => structuredClone(kv.get(cle)) as T | undefined,
-    async set(cle, valeur) {
-      if (cle === 'numbering') {
-        const avant = kv.get('numbering') as Numbering;
-        if ((valeur as Numbering).next < avant.next) {
-          throw new ErreurConservation('REFUS', 'NUMEROTATION_RECUL');
-        }
-      }
-      journal.push(`set ${cle}`);
-      kv.set(cle, structuredClone(valeur));
-      return cle;
-    },
-    list: async <T>(magasin: 'invoices' | 'clients' | 'products') =>
-      [...listes[magasin].values()] as T[],
-    async put(magasin, valeur) {
-      if (magasin === 'invoices') throw new ErreurConservation('EMISSION_SERVEUR');
-      journal.push(`put ${magasin} ${valeur.uid}`);
-      listes[magasin].set(valeur.uid, structuredClone(valeur));
-      return valeur.uid;
-    },
-    async remove(magasin, cle) {
-      journal.push(`remove ${magasin} ${cle}`);
-      return undefined;
-    },
-    getFile: async (cle) => fichiers.get(cle),
-    async setFile(cle, octets) {
-      if (cle.startsWith('pdf-')) throw new ErreurConservation('EMISSION_SERVEUR');
-      journal.push(`setFile ${cle}`);
-      fichiers.set(cle, octets);
-      return cle;
-    },
-    dump: async () => ({}),
-  };
-  return { p, kv, listes, fichiers, journal };
-}
+/** La conservation du compte, en mémoire, et sa numérotation (initiale de 2026 par défaut). */
+const enMemoire = (numerotation?: Numbering) =>
+  conservationEnMemoire(numerotation ? { numerotation } : {});
 
 /**
  * Un `importer` simulé, idempotent par numéro comme le vrai : un numéro déjà importé est un doublon.
@@ -267,6 +229,9 @@ describe('importerLocal (conservation en mémoire, importer simulé)', () => {
     const rapport = await importerLocal(dump, cible.p, importer);
 
     expect(rapport).toMatchObject({ clients: 2, produits: 1, factures: 3, doublons: [] });
+    // Un compte neuf : tout est repris, rien n'était déjà là.
+    expect(rapport).toMatchObject({ clientsDejaLa: 0, produitsDejaLa: 0, conserves: [] });
+    expect(rapport.numerosPris).toEqual([]);
     expect(rapport.refusees).toEqual([]);
     expect(rapport.enAttente).toEqual([]);
     expect(rapport.arret).toBeUndefined();
@@ -294,12 +259,47 @@ describe('importerLocal (conservation en mémoire, importer simulé)', () => {
 
   test('un doublon est listé dans `doublons`, les autres passent', async () => {
     const cible = enMemoire();
+    // La même facture, déjà dans le compte (un import précédent).
+    cible.listes.invoices.set('srv-2', { ...TROIS[1], uid: 'srv-2' });
     const { importer } = fauxImporter(cible.journal, {
       'F-2026-0002': [{ kind: 'doublon' }],
     });
     const rapport = await importerLocal(sauvegarde(TROIS), cible.p, importer);
-    expect(rapport).toMatchObject({ factures: 2, doublons: ['F-2026-0002'] });
+    expect(rapport).toMatchObject({ factures: 2, doublons: ['F-2026-0002'], numerosPris: [] });
     expect(rapport.refusees).toEqual([]);
+  });
+
+  test('numéro pris par une autre facture du compte : listé à part, pas « déjà dans le compte »', async () => {
+    const cible = enMemoire();
+    const [, deux, trois] = TROIS as [SavedInvoice, SavedInvoice, SavedInvoice];
+    cible.listes.invoices.set('srv-2', { ...deux, uid: 'srv-2' });
+    // Même numéro, autre facture : un autre montant, une autre date, une autre devise.
+    cible.listes.invoices.set('srv-3', {
+      ...trois,
+      uid: 'srv-3',
+      summary: { ...trois.summary, total: trois.summary.total + 1 },
+    });
+    const { importer } = fauxImporter(cible.journal, {
+      'F-2026-0002': [{ kind: 'doublon' }],
+      'F-2026-0003': [{ kind: 'doublon' }],
+    });
+    const rapport = await importerLocal(sauvegarde(TROIS), cible.p, importer);
+    expect(rapport).toMatchObject({
+      factures: 1,
+      doublons: ['F-2026-0002'],
+      numerosPris: ['F-2026-0003'],
+    });
+    // Une date ou une devise différente aussi.
+    for (const summary of [
+      { ...trois.summary, issueDate: '2026-03-04' },
+      { ...trois.summary, currency: 'USD' },
+    ]) {
+      const autre = enMemoire();
+      autre.listes.invoices.set('srv-3', { ...trois, uid: 'srv-3', summary });
+      const issues = { 'F-2026-0003': [{ kind: 'doublon' } as IssueDImport] };
+      const r = await importerLocal(sauvegarde(TROIS), autre.p, fauxImporter([], issues).importer);
+      expect(r.numerosPris).toEqual(['F-2026-0003']);
+    }
   });
 
   test('numérotation locale à 12, serveur à 40 : on garde 40, sans jamais reculer', async () => {
@@ -317,21 +317,21 @@ describe('importerLocal (conservation en mémoire, importer simulé)', () => {
     expect(rapport.echecs).toEqual([]);
   });
 
-  test('la numérotation passe au plus haut rang connu, après les factures', async () => {
-    const cible = enMemoire({ pattern: 'X-{NNN}', next: 1, yearly: false, year: 2026 });
+  test('compte neuf : le gabarit et la remise à zéro du Studio, au plus haut rang, après les factures', async () => {
+    const cible = enMemoire();
     const { importer } = fauxImporter(cible.journal);
     await importerLocal(
       sauvegarde(TROIS, {
-        numbering: { pattern: 'F-{AAAA}-{NNNN}', next: 12, yearly: true, year: 2026 },
+        numbering: { pattern: 'FAC{AA}-{NNN}', next: 12, yearly: false, year: 2026 },
       }),
       cible.p,
       importer,
     );
     // Le gabarit et la remise à zéro du Studio sont repris ; l'année reste celle du serveur.
     expect(cible.kv.get('numbering')).toEqual({
-      pattern: 'F-{AAAA}-{NNNN}',
+      pattern: 'FAC{AA}-{NNN}',
       next: 12,
-      yearly: true,
+      yearly: false,
       year: 2026,
     });
     // Levée une fois toutes les factures passées, jamais avant.
@@ -342,29 +342,56 @@ describe('importerLocal (conservation en mémoire, importer simulé)', () => {
   test('numerotationReprise : rang local, rangs des factures, année, jamais plus bas', () => {
     const serveur: Numbering = { pattern: 'F-{AAAA}-{NNNN}', next: 3, yearly: true, year: 2026 };
     const locale: Numbering = { pattern: 'F-{AAAA}-{NNNN}', next: 12, yearly: true, year: 2026 };
-    expect(numerotationReprise(serveur, locale, []).next).toBe(12);
+    const rang = (...args: Parameters<typeof numerotationReprise>) =>
+      numerotationReprise(...args).numerotation.next;
+    expect(rang(serveur, locale, [])).toBe(12);
     // Une facture d'un rang plus haut que la numérotation locale (rang baissé à la main).
-    expect(numerotationReprise(serveur, locale, [facture('F-2026-0015', '2026-05-01')]).next).toBe(
-      16,
-    );
+    expect(rang(serveur, locale, [facture('F-2026-0015', '2026-05-01')])).toBe(16);
     // Un rang de l'an passé, en remise à zéro annuelle, ne compte pas pour l'année du serveur.
     const anneePassee: Numbering = { ...locale, next: 30, year: 2025 };
-    expect(
-      numerotationReprise(serveur, anneePassee, [facture('F-2025-0029', '2025-12-30')]).next,
-    ).toBe(3);
+    expect(rang(serveur, anneePassee, [facture('F-2025-0029', '2025-12-30')])).toBe(3);
     // Sans remise à zéro, tout rang compte.
-    expect(
-      numerotationReprise(serveur, { ...anneePassee, yearly: false }, [
-        facture('F-2025-0029', '2025-12-30'),
-      ]).next,
-    ).toBe(30);
+    const continue_ = { ...anneePassee, yearly: false };
+    expect(rang(serveur, continue_, [facture('F-2025-0029', '2025-12-30')])).toBe(30);
     // Jamais plus bas que le serveur ; l'année ne change pas.
     const haut = { ...serveur, next: 40 };
-    expect(numerotationReprise(haut, locale, [])).toEqual({ ...locale, next: 40, year: 2026 });
+    expect(numerotationReprise(haut, locale, []).numerotation).toEqual({
+      ...locale,
+      next: 40,
+      year: 2026,
+    });
     // Un numéro hors du gabarit ne dit rien du rang.
-    expect(numerotationReprise(serveur, locale, [facture('MANUEL-99', '2026-05-01')]).next).toBe(
-      12,
+    expect(rang(serveur, locale, [facture('MANUEL-99', '2026-05-01')])).toBe(12);
+  });
+
+  test('numerotationReprise : réglages du compte gardés, seuls les rangs de sa suite comptent', () => {
+    const serveur: Numbering = { pattern: 'X-{NNN}', next: 5, yearly: false, year: 2026 };
+    const locale: Numbering = { pattern: 'F-{AAAA}-{NNNN}', next: 40, yearly: true, year: 2026 };
+    // Une autre suite : ni son rang ni ses numéros ne lèvent celle du compte (pas de trou).
+    expect(
+      numerotationReprise(serveur, locale, [facture('F-2026-0039', '2026-05-01')], false),
+    ).toEqual({ numerotation: serveur, enAvance: false });
+    // La même suite : ses numéros comptent.
+    expect(
+      numerotationReprise(serveur, locale, [facture('X-012', '2026-05-01')], false).numerotation,
+    ).toEqual({ ...serveur, next: 13 });
+  });
+
+  test('numérotation annuelle du serveur en retard sur les rangs locaux : le premier numéro libre', async () => {
+    const cible = enMemoire({ pattern: 'F-{AAAA}-{NNNN}', next: 1, yearly: true, year: 2025 });
+    const rapport = await importerLocal(sauvegarde(TROIS), cible.p, fauxImporter([]).importer);
+    // Les rangs de 2026 ne valent pas pour 2025 : le rang ne bouge pas, et le bilan ne l'affirme pas.
+    expect(rapport.numerotation?.next).toBe(1);
+    expect(rapport.numerotationEnAvance).toBe(true);
+    expect(messageNumerotation(rapport)).toBe(phrases.bilan.numerotationEnAvance);
+    // Dans le cas ordinaire, le rang.
+    const ordinaire = await importerLocal(
+      sauvegarde(TROIS),
+      enMemoire().p,
+      fauxImporter([]).importer,
     );
+    expect(ordinaire.numerotationEnAvance).toBe(false);
+    expect(messageNumerotation(ordinaire)).toBe(phrases.bilan.numerotation(4));
   });
 
   test('les factures avant les avoirs, et dans l’ordre des dates', async () => {
@@ -418,6 +445,19 @@ describe('importerLocal (conservation en mémoire, importer simulé)', () => {
     expect([...importes].sort()).toEqual(quatre.map((f) => f.summary.id));
   });
 
+  test('delaiDeReprise : l’heure dite et une marge, un plancher qui croît, borné', () => {
+    const maintenant = Date.parse('2026-11-07T15:00:00.000Z');
+    const dans = (s: number) => new Date(maintenant + s * 1000).toISOString();
+    expect(delaiDeReprise(dans(60), maintenant, 0)).toBe(65_000);
+    // L'horloge de ce navigateur en avance sur le serveur : l'heure dite est déjà passée.
+    expect(delaiDeReprise(dans(-10), maintenant, 0)).toBe(5_000);
+    expect(delaiDeReprise(dans(-10), maintenant, 1)).toBe(10_000);
+    expect(delaiDeReprise(dans(-10), maintenant, 3)).toBe(40_000);
+    expect(delaiDeReprise(dans(-10), maintenant, 30)).toBe(15 * 60_000);
+    // Une heure illisible : le plancher.
+    expect(delaiDeReprise('pas une date', maintenant, 2)).toBe(20_000);
+  });
+
   test('un PDF absent ou illisible : refusée sans envoi, les autres passent', async () => {
     const cible = enMemoire();
     const { importer, appels } = fauxImporter(cible.journal);
@@ -464,6 +504,35 @@ describe('importerLocal (conservation en mémoire, importer simulé)', () => {
     expect(rapport.enAttente.map((f) => f.numero)).toEqual(TROIS.map((f) => f.summary.id));
   });
 
+  test('le compte illisible avant l’import : arrêt, rien d’écrit', async () => {
+    const cible = enMemoire();
+    cible.p.list = async () => {
+      throw new ErreurConservation('RESEAU');
+    };
+    const { importer } = fauxImporter(cible.journal);
+    const rapport = await importerLocal(sauvegarde(TROIS), cible.p, importer);
+    expect(importer).not.toHaveBeenCalled();
+    expect(cible.journal).toEqual([]);
+    expect(rapport.arret).toEqual({ raison: phrases.arrets.reseau, etape: 'bibliotheque' });
+  });
+
+  test('numérotation non reprise : la session ou le réseau, pas « refusé par le serveur »', async () => {
+    for (const [code, raison] of [
+      ['SESSION', phrases.raisons.session],
+      ['RESEAU', phrases.raisons.reseau],
+      ['REFUS', phrases.raisons.refus],
+    ] as const) {
+      const cible = enMemoire();
+      const set = cible.p.set.bind(cible.p);
+      cible.p.set = async (cle, valeur) => {
+        if (cle === 'numbering') throw new ErreurConservation(code);
+        return set(cle, valeur);
+      };
+      const rapport = await importerLocal(sauvegarde(TROIS), cible.p, fauxImporter([]).importer);
+      expect(rapport.echecs).toEqual([{ element: phrases.elements.numerotation, raison }]);
+    }
+  });
+
   test('un client refusé est dit, le reste continue', async () => {
     const cible = enMemoire();
     const put = cible.p.put.bind(cible.p);
@@ -485,6 +554,85 @@ describe('importerLocal (conservation en mémoire, importer simulé)', () => {
     const cible = enMemoire();
     await importerLocal(dump, cible.p, fauxImporter(cible.journal).importer);
     expect(cible.journal).not.toContain('set company');
+  });
+});
+
+describe('un import refait n’écrase rien de ce que le compte a déjà (Ruling 57)', () => {
+  test('un client modifié dans le compte reste tel quel ; un client absent (supprimé) revient', async () => {
+    const cible = enMemoire();
+    // c-1 modifié dans le compte après un premier import ; c-2 supprimé depuis.
+    cible.listes.clients.set('c-1', client('c-1', 'Client A, modifié dans le compte'));
+    cible.listes.products.set('p-1', produit('p-1', 'Conseil, modifié'));
+    const rapport = await importerLocal(sauvegarde(TROIS), cible.p, fauxImporter([]).importer);
+    expect(cible.listes.clients.get('c-1')).toEqual(
+      client('c-1', 'Client A, modifié dans le compte'),
+    );
+    expect(cible.listes.clients.get('c-2')).toEqual(client('c-2', 'Client B'));
+    expect(cible.listes.products.get('p-1')).toEqual(produit('p-1', 'Conseil, modifié'));
+    expect(cible.journal.filter((l) => l.startsWith('put'))).toEqual(['put clients c-2']);
+    expect(rapport).toMatchObject({ clients: 1, clientsDejaLa: 1, produits: 0, produitsDejaLa: 1 });
+  });
+
+  test('l’entreprise et l’apparence du compte, déjà renseignées, sont gardées, et le bilan le dit', async () => {
+    const cible = enMemoire();
+    const sienne = defaultCompany();
+    sienne.seller.siren = '732829320';
+    cible.kv.set('company', sienne);
+    cible.kv.set('appearance-default', { ...defaultAppearance(), accent: '#000000' });
+    const rapport = await importerLocal(sauvegarde(TROIS), cible.p, fauxImporter([]).importer);
+    expect(cible.kv.get('company')).toEqual(sienne);
+    expect(cible.kv.get('appearance-default')).toEqual({
+      ...defaultAppearance(),
+      accent: '#000000',
+    });
+    expect(cible.journal).not.toContain('set company');
+    expect(cible.journal).not.toContain('set appearance-default');
+    expect(rapport.conserves).toEqual(['entreprise', 'apparence']);
+  });
+
+  test('une entreprise du compte vide (état initial) est remplacée par celle du navigateur', async () => {
+    const cible = enMemoire();
+    cible.kv.set('company', defaultCompany());
+    const rapport = await importerLocal(sauvegarde(TROIS), cible.p, fauxImporter([]).importer);
+    expect((cible.kv.get('company') as { seller: { name: string } }).seller.name).toBe(
+      'Atelier Local',
+    );
+    expect(rapport.conserves).toEqual([]);
+  });
+
+  test('numérotation déjà employée : gabarit et remise à zéro du compte gardés, rang au plus haut', async () => {
+    // Le gabarit par défaut, mais une facture déjà dans le compte : ce n'est plus l'état initial.
+    const cible = enMemoire({ pattern: 'F-{AAAA}-{NNNN}', next: 2, yearly: true, year: 2026 });
+    const emise = facture('F-2026-0001', '2026-03-01', { uid: 'srv-1' });
+    cible.listes.invoices.set('srv-1', emise);
+    const rapport = await importerLocal(
+      sauvegarde([facture('F-2026-0007', '2026-03-07')], {
+        numbering: { pattern: 'F-{AAAA}-{NNNN}', next: 8, yearly: false, year: 2026 },
+      }),
+      cible.p,
+      fauxImporter([]).importer,
+    );
+    expect(cible.kv.get('numbering')).toEqual({
+      pattern: 'F-{AAAA}-{NNNN}',
+      next: 8,
+      yearly: true,
+      year: 2026,
+    });
+    // L'entreprise et l'apparence du compte n'étaient pas renseignées : celles du navigateur passent.
+    expect(rapport.conserves).toEqual(['numerotation']);
+  });
+
+  test('un gabarit changé dans le compte est gardé ; les numéros d’une autre suite ne le lèvent pas', async () => {
+    const cible = enMemoire({ pattern: 'X-{NNN}', next: 5, yearly: false, year: 2026 });
+    const rapport = await importerLocal(sauvegarde(TROIS), cible.p, fauxImporter([]).importer);
+    expect(cible.kv.get('numbering')).toEqual({
+      pattern: 'X-{NNN}',
+      next: 5,
+      yearly: false,
+      year: 2026,
+    });
+    expect(cible.journal).not.toContain('set numbering');
+    expect(rapport.conserves).toContain('numerotation');
   });
 });
 
@@ -624,12 +772,14 @@ describe('la proposition d’import à la première connexion', () => {
     store.set((s) => ({ ui: { ...s.ui, compte: compteUi('e-1'), storage: 'ok' } }));
   });
 
-  /** Ce qu'un Studio sans compte laisse dans IndexedDB. */
+  /** Ce qu'un Studio sans compte laisse dans IndexedDB, PDF compris. */
   async function remplirLocal(): Promise<void> {
     const dump = sauvegarde(TROIS);
     const kv = dump.kv as Record<string, unknown>;
     for (const cle of ['company', 'numbering', 'draft'])
       await indexedDbPersistence.set(cle, kv[cle]);
+    for (const [cle, octets] of Object.entries(dump.files as Record<string, Uint8Array>))
+      await indexedDbPersistence.setFile(cle, octets);
     for (const f of TROIS) await indexedDbPersistence.put('invoices', f);
     for (const c of dump.clients as ClientRecord[]) await indexedDbPersistence.put('clients', c);
     for (const p of dump.products as ProductRecord[]) await indexedDbPersistence.put('products', p);
@@ -640,7 +790,7 @@ describe('la proposition d’import à la première connexion', () => {
     expect(await importAProposer()).toBeUndefined();
   });
 
-  test('l’exemple seul, ou une entreprise vide, ne sont pas des données', async () => {
+  test('l’exemple seul, une entreprise vide ou un brouillon où rien n’est saisi ne sont pas des données', async () => {
     await indexedDbPersistence.set('draft', {
       form: sampleForm(),
       appearance: defaultAppearance(),
@@ -649,6 +799,33 @@ describe('la proposition d’import à la première connexion', () => {
     await indexedDbPersistence.set('company', defaultCompany());
     await indexedDbPersistence.set('numbering', defaultNumbering());
     expect(await importAProposer()).toBeUndefined();
+    // Une facture vierge : seulement ce que le Studio pose de lui-même (vendeur, numéro, dates).
+    const vendeur = defaultCompany();
+    vendeur.seller.name = '';
+    for (const form of [blankForm('2026-03-10'), newInvoiceForm(vendeur, defaultNumbering())]) {
+      await indexedDbPersistence.set('draft', { form, appearance: defaultAppearance() });
+      expect(await inventaireLocal()).toMatchObject({ brouillon: false });
+      expect(await importAProposer()).toBeUndefined();
+    }
+    // Un acheteur saisi : c'est un brouillon en cours.
+    const saisi = blankForm('2026-03-10');
+    saisi.buyer.name = 'Client en cours';
+    await indexedDbPersistence.set('draft', { form: saisi, appearance: defaultAppearance() });
+    expect(await importAProposer()).toMatchObject({ brouillon: true });
+  });
+
+  test('une entreprise où seuls le SIREN ou l’IBAN sont saisis est une donnée', async () => {
+    const siren = defaultCompany();
+    siren.seller.siren = '732829320';
+    await indexedDbPersistence.set('company', siren);
+    expect(await importAProposer()).toMatchObject({ entreprise: true });
+    const iban = defaultCompany();
+    iban.paymentMeans = iban.paymentMeans.map((m) => ({
+      ...m,
+      iban: 'FR7630006000011234567890189',
+    }));
+    await indexedDbPersistence.set('company', iban);
+    expect(await importAProposer()).toMatchObject({ entreprise: true });
   });
 
   test('des données locales : proposé, avec ce qui a été trouvé', async () => {
@@ -673,14 +850,18 @@ describe('la proposition d’import à la première connexion', () => {
     expect(await indexedDbPersistence.list('invoices')).toHaveLength(3);
   });
 
-  test('fait : plus proposé ; inachevé : proposé de nouveau, comme une reprise', async () => {
+  test('fait : plus proposé ; inachevé : proposé de nouveau, avec les factures qui attendent', async () => {
     await remplirLocal();
-    await retenirImport('fait', 'empreinte-1');
+    await retenirImport('fait', { brouillon: 'empreinte-1' });
     expect(await importAProposer()).toBeUndefined();
-    await retenirImport('partiel');
-    expect(await importAProposer()).toMatchObject({ reprise: true });
+    await retenirImport('partiel', { enAttente: ['u-F-2026-0003'] });
+    expect(await importAProposer()).toMatchObject({ reprise: true, enAttente: ['u-F-2026-0003'] });
     // L'empreinte du brouillon déjà repris est gardée.
-    expect(await lireMarqueImport()).toMatchObject({ etat: 'partiel', brouillon: 'empreinte-1' });
+    expect(await lireMarqueImport()).toMatchObject({
+      etat: 'partiel',
+      brouillon: 'empreinte-1',
+      enAttente: ['u-F-2026-0003'],
+    });
   });
 
   test('ni pendant une suppression demandée, ni session expirée, ni serveur injoignable', async () => {
@@ -693,6 +874,48 @@ describe('la proposition d’import à la première connexion', () => {
     expect(await importAProposer()).toBeUndefined();
     store.set((s) => ({ ui: { ...s.ui, compte: compteUi('e-1'), storage: 'injoignable' } }));
     expect(await importAProposer()).toBeUndefined();
+  });
+
+  test('arrêté par la limite : la marque garde les factures en attente, et seules elles repartent', async () => {
+    await remplirLocal();
+    // La conservation du compte, en mémoire.
+    const memoire = enMemoire();
+    const p = {
+      ...memoire.p,
+      entrepriseId: 'e-1',
+      brouillonCourant: () => undefined,
+    } as unknown as PersistenceCompte;
+    utiliser(p);
+    const reessayerApres = new Date(Date.now() + 30 * 60_000).toISOString();
+    const invoke = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { id: 'f-1', numero: 'F-2026-0001' }, error: null })
+      .mockResolvedValueOnce(
+        refusDeFonction(429, { code: 'LIMITE', message: 'trop', details: { reessayerApres } }),
+      )
+      .mockResolvedValue({ data: { id: 'f-x', numero: 'x' }, error: null });
+    session.sb = { functions: { invoke } };
+
+    const premiere = await importerCeNavigateur();
+    expect(premiere.enAttente.map((f) => f.uid)).toEqual(['u-F-2026-0002', 'u-F-2026-0003']);
+    expect(await lireMarqueImport()).toMatchObject({
+      etat: 'partiel',
+      enAttente: ['u-F-2026-0002', 'u-F-2026-0003'],
+    });
+    const proposee = await importAProposer();
+    expect(proposee).toMatchObject({
+      reprise: true,
+      enAttente: ['u-F-2026-0002', 'u-F-2026-0003'],
+    });
+
+    // La reprise proposée : ces deux factures seules, puis la marque est faite.
+    memoire.journal.length = 0;
+    const reprise = await importerCeNavigateur({ reprise: proposee?.enAttente });
+    expect(reprise).toMatchObject({ factures: 2, enAttente: [] });
+    expect(invoke).toHaveBeenCalledTimes(4);
+    expect(memoire.journal.filter((l) => l.startsWith('put') || l === 'set company')).toEqual([]);
+    expect(await lireMarqueImport()).toMatchObject({ etat: 'fait' });
+    expect((await lireMarqueImport())?.enAttente).toBeUndefined();
   });
 });
 
@@ -759,6 +982,7 @@ describe.skipIf(!process.env.SUPABASE_URL || process.env.FACTURX_EMETTRE !== '1'
 
       const rapport = await importerLocal(dump, p, importerSurServeur);
       expect(rapport).toMatchObject({ clients: 2, produits: 1, factures: 3, doublons: [] });
+      expect(rapport.conserves).toEqual([]);
       expect(rapport.refusees).toEqual([]);
       expect(rapport.echecs).toEqual([]);
       const lignes = await facturesDe(entrepriseId);
@@ -784,11 +1008,26 @@ describe.skipIf(!process.env.SUPABASE_URL || process.env.FACTURX_EMETTRE !== '1'
       expect((await p.list('clients')).length).toBe(2);
       expect(await p.getFile('logo-1')).toEqual(LOGO);
 
-      // Un second import : rien de nouveau, trois doublons.
+      // Un second import : rien de nouveau, trois doublons (les mêmes factures, vérifiées).
       const second = await importerLocal(dump, p, importerSurServeur);
-      expect(second).toMatchObject({ factures: 0 });
+      expect(second).toMatchObject({ factures: 0, numerosPris: [] });
       expect([...second.doublons].sort()).toEqual(['A-2026-0001', 'F-2026-0001', 'F-2026-0002']);
       expect(await facturesDe(entrepriseId)).toHaveLength(3);
+
+      // Le compte change ensuite un client et son entreprise : un troisième import n'y touche pas.
+      const [c1] = await p.list<ClientRecord>('clients');
+      if (!c1) throw new Error('client absent');
+      await p.put('clients', { ...c1, party: { ...c1.party, name: 'Renommé dans le compte' } });
+      const sienne = await p.get<ReturnType<typeof defaultCompany>>('company');
+      if (!sienne) throw new Error('entreprise absente');
+      await p.set('company', { ...sienne, seller: { ...sienne.seller, name: 'Renommée' } });
+      const troisieme = await importerLocal(dump, p, importerSurServeur);
+      expect(troisieme).toMatchObject({ clients: 0, clientsDejaLa: 2, factures: 0 });
+      // L'apparence et la numérotation du compte sont celles du navigateur : rien à dire d'elles.
+      expect(troisieme.conserves).toEqual(['entreprise']);
+      const apres = await p.list<ClientRecord>('clients');
+      expect(apres.find((c) => c.uid === c1.uid)?.party.name).toBe('Renommé dans le compte');
+      expect((await p.get<{ seller: { name: string } }>('company'))?.seller.name).toBe('Renommée');
     }, 60_000);
 
     test('ce navigateur : le brouillon local devient un brouillon du compte, sans écraser l’existant', async () => {

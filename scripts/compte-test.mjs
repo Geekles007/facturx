@@ -17,9 +17,9 @@
  *      émises (suivi.test.ts), les relances réelles, avec le simulateur d'envoi (relances.test.ts),
  *      et l'import réel des données locales (import.test.ts), avec `FACTURX_EMETTRE=1`, par Vitest,
  *      pendant que les fonctions sont servies ; un fichier après l'autre, car le plafond
- *      d'emission-gel.test.ts suppose une émission qui ne partage pas
- *      le serveur avec d'autres rendus de PDF. Ailleurs (l'étape « Tests du Studio contre la pile »
- *      de la CI), elles sont sautées : les fonctions n'y sont pas servies.
+ *      d'emission-gel.test.ts suppose une émission qui ne partage pas le serveur avec d'autres
+ *      rendus de PDF. Ailleurs (l'étape « Tests du Studio contre la pile » de la CI), elles sont
+ *      sautées : les fonctions n'y sont pas servies.
  *
  * Le code de sortie est celui de `deno test`, puis celui de Vitest. Un dossier de tests absent ou
  * vide est sauté, et sans aucun test le script sort proprement sans toucher à la pile.

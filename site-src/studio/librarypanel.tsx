@@ -10,11 +10,13 @@ import { getFile } from './files.js';
 import { formatDate, formatMoney, t } from './i18n.js';
 import {
   type ClientRecord,
+  FORMAT_SAUVEGARDE,
   formatNumber,
-  fromPortableJson,
+  lireSauvegarde,
   nextRank,
   type ProductRecord,
   productToLine,
+  restaurerSauvegarde,
   type SavedInvoice,
   toPortableJson,
 } from './library.js';
@@ -406,30 +408,15 @@ function BackupTab() {
       invoices: store.get().history,
     };
     download(
-      toPortableJson({ format: 'facturx-studio-backup', version: 1, data }),
+      toPortableJson({ format: FORMAT_SAUVEGARDE, version: 1, data }),
       `studio-sauvegarde-${isoToday()}.json`,
       'application/json',
     );
   };
   const restore = async (file: File) => {
     try {
-      const backup = fromPortableJson<{ format: string; data: Record<string, unknown> }>(
-        await file.text(),
-      );
-      if (backup.format !== 'facturx-studio-backup') throw new Error();
-      const data = backup.data as {
-        kv?: Record<string, unknown>;
-        files?: Record<string, Uint8Array>;
-        invoices?: SavedInvoice[];
-        clients?: ClientRecord[];
-        products?: ProductRecord[];
-      };
-      for (const [key, value] of Object.entries(data.kv ?? {})) await storage.set(key, value);
-      for (const [key, value] of Object.entries(data.files ?? {}))
-        await storage.setFile(key, value);
-      for (const item of data.invoices ?? []) await storage.put('invoices', item);
-      for (const item of data.clients ?? []) await storage.put('clients', item);
-      for (const item of data.products ?? []) await storage.put('products', item);
+      // Une sauvegarde du Studio, ou l'export d'un compte (`donnees.json`), PDF compris.
+      await restaurerSauvegarde(lireSauvegarde(await file.text()), storage);
       toast(t.library.restored);
       setTimeout(() => location.reload(), 600);
     } catch {

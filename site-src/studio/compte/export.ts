@@ -1,25 +1,33 @@
 /**
  * Exporter les données du compte (spec § 10 et § 12) : une archive zip que l'utilisateur garde où il
  * veut. C'est aussi l'export imposé avant une demande de suppression du compte : il est complet et
- * fidèle.
+ * fidèle, et il se restaure dans le Studio sans compte (Ruling 56).
  *
- *   donnees.json           en JSON portable (`toPortableJson`, les octets en `{ $bytes }`) :
- *                          l'entreprise, la numérotation, les clients, le catalogue, les brouillons,
- *                          les factures sans leur PDF (formulaire, apparence, facture lue, montants,
- *                          origine…), les paiements (annulés compris), les relances, les fichiers de
- *                          l'utilisateur (logo, polices) et les PDF manquants ;
- *   factures/<numéro>.pdf  le PDF de chaque facture, tel que le serveur le garde.
+ *   donnees.json           une sauvegarde du Studio (`{ format: 'facturx-studio-backup', version: 1,
+ *                          data }`, JSON portable) : « Restaurer une sauvegarde » la reprend telle
+ *                          quelle — entreprise, numérotation à jour (revenu au Studio sans compte, on
+ *                          ne réutilise aucun numéro émis), apparence, brouillon, clients, catalogue,
+ *                          factures et leurs PDF (`pdf-<id>`), logo et polices. Et, sous `compte`, ce
+ *                          que la sauvegarde ne porte pas : les lignes de la base (factures avec le
+ *                          chemin de leur PDF dans l'archive, paiements annulés compris, relances,
+ *                          brouillons, entreprise, numérotation), la ligne `membres` de l'utilisateur
+ *                          (version et date d'acceptation des CGU), l'adresse du compte, les PDF
+ *                          manquants et la date de l'export ;
+ *   factures/<numéro>.pdf  le PDF de chaque facture, tel que le serveur le garde, pour qu'on le lise
+ *                          sans rien restaurer.
  *
- * Les lignes sont celles de la base, toutes colonnes (spec § 6), lues page par page. Deux numéros
- * qui donnent le même nom de fichier (`fileStem`) ne s'écrasent pas : le suivant prend un suffixe
- * tiré de l'identifiant de sa facture. Un PDF absent du Storage, ou qui n'est pas un PDF, ne fait pas
- * échouer l'export : il est listé dans `pdfManquants`. Toute autre erreur (session, réseau, après un
- * second essai) le fait échouer : une archive à qui manqueraient des PDF sans le dire ne vaudrait rien.
+ * Deux numéros qui donnent le même nom de fichier (`fileStem`) ne s'écrasent pas : le suivant prend
+ * un suffixe tiré de l'identifiant de sa facture. Un PDF absent du Storage, ou qui n'est pas un PDF,
+ * ne fait pas échouer l'export : il est listé dans `compte.pdfManquants`. Toute autre erreur
+ * (session, réseau après un second essai) le fait échouer : une archive à qui manqueraient des PDF
+ * sans le dire ne vaudrait rien.
  *
- * L'archive se construit au fil de l'eau (`Zip` de fflate) : les PDF sont lus quatre à la fois et
- * rangés tels quels (ils sont déjà compressés), et les morceaux du zip rejoignent un `Blob` par
- * paquets de 8 Mio, que le navigateur peut garder hors de la mémoire du script. Seul `donnees.json`
- * est tenu en entier, et compressé.
+ * Les PDF sont lus quatre à la fois et rangés tels quels (ils sont déjà compressés) ; les morceaux du
+ * zip rejoignent un `Blob` par paquets de 8 Mio, que le navigateur peut garder hors de la mémoire du
+ * script. Mais `donnees.json`, qui porte aussi les PDF (en base64, pour la restauration), est tenu en
+ * entier : la mémoire, et la longueur d'une chaîne JavaScript (environ 512 Mio), bornent l'export à
+ * quelques centaines de Mio de PDF ; au-delà, l'export le dit au lieu d'échouer en silence. fflate
+ * n'écrit pas de Zip64 : 65 535 entrées et 4 Gio au plus, vérifiés avant chaque entrée.
  *
  * fflate n'entre que dans ce fragment, chargé par `import()` à la demande d'un export.
  */
@@ -27,6 +35,7 @@
 import { strToU8, Zip, ZipDeflate, ZipPassThrough } from 'fflate';
 import { toPortableJson } from '../../shared/portable.js';
 import { t } from '../i18n.js';
+import { type DonneesSauvegarde, FORMAT_SAUVEGARDE } from '../library.js';
 import { isoToday } from '../model.js';
 import { ErreurConservation } from '../persistence.js';
 import { download, fileStem } from '../pipeline.js';
@@ -36,15 +45,17 @@ import { client } from './client.js';
 import { estPersistenceCompte, estUnPdf, type PersistenceCompte, toutLire } from './persistence.js';
 import { sessionRefusee } from './suivi.js';
 
-/** Le format de `donnees.json`, et sa version. */
-export const FORMAT_EXPORT = 'facturx-compte';
-export const VERSION_EXPORT = 1;
-
 /** Les PDF lus en même temps. */
 const LOT_PDF = 4;
 
 /** Les morceaux du zip rejoignent l'archive par paquets de cette taille. */
 const PAQUET = 8 * 1024 * 1024;
+
+/**
+ * Ce qu'un zip sans Zip64 peut contenir : le répertoire central compte ses entrées sur 16 bits, et
+ * les tailles et positions tiennent sur 32 bits. Au-delà, fflate écrirait une archive illisible.
+ */
+const LIMITES_ZIP = { entrees: 0xffff, octets: 0xffffffff };
 
 type Ligne = Record<string, unknown>;
 
@@ -53,6 +64,14 @@ export interface PdfManquant {
   factureId: string;
   numero: string;
   raison: 'absent' | 'illisible';
+}
+
+/** Un compte trop grand pour une archive zip simple (ou pour une chaîne JavaScript). */
+export class ErreurExport extends Error {
+  override name = 'ErreurExport';
+  constructor() {
+    super(t.compte.export.tropGrand);
+  }
 }
 
 /**
@@ -79,14 +98,19 @@ export function nomsDesPdf(
 }
 
 /**
- * L'archive en construction : chaque entrée est poussée d'un coup, et ce que le zip produit
- * rejoint un `Blob` par paquets.
+ * Une archive en construction : chaque entrée est poussée d'un coup, et ce que le zip produit
+ * rejoint un `Blob` par paquets. Une entrée qui ferait dépasser `limites` (par défaut, celles d'un
+ * zip sans Zip64) lève `ErreurExport` avant d'être écrite.
  */
-function archive() {
+export function nouvelleArchive(limites: { entrees: number; octets: number } = LIMITES_ZIP) {
   let blob = new Blob([], { type: 'application/zip' });
   let paquet: Uint8Array[] = [];
   let taille = 0;
   let erreur: Error | null = null;
+  let entrees = 0;
+  /** Les octets déjà produits, et ce que le répertoire central de la fin prendra. */
+  let ecrits = 0;
+  let centrale = 22;
   const verser = () => {
     blob = new Blob([blob, ...(paquet as BlobPart[])], { type: 'application/zip' });
     paquet = [];
@@ -99,6 +123,7 @@ function archive() {
     }
     paquet.push(morceau);
     taille += morceau.length;
+    ecrits += morceau.length;
     if (taille >= PAQUET || dernier) verser();
   });
   const verifier = () => {
@@ -107,6 +132,19 @@ function archive() {
   return {
     /** Une entrée : compressée (le JSON), ou rangée telle quelle (un PDF). */
     ajouter(nom: string, octets: Uint8Array, compresser: boolean): void {
+      // Au plus : les octets (la compression ne les grossit que de quelques pour mille), l'en-tête
+      // local et le descripteur de l'entrée, puis son entrée du répertoire central.
+      const enTete = 30 + 16 + nom.length;
+      const repertoire = 46 + nom.length;
+      const auPlus = octets.length + Math.ceil(octets.length / 200) + enTete;
+      if (
+        entrees + 1 > limites.entrees ||
+        ecrits + auPlus + centrale + repertoire > limites.octets
+      ) {
+        throw new ErreurExport();
+      }
+      entrees++;
+      centrale += repertoire;
       const entree = compresser ? new ZipDeflate(nom, { level: 6 }) : new ZipPassThrough(nom);
       zip.add(entree);
       entree.push(octets, true);
@@ -166,24 +204,36 @@ export async function construireArchive(): Promise<{
     if (!l) throw new ErreurConservation('REFUS', 'DROITS');
     return l;
   };
+  const utilisateur = (await sb.auth.getSession()).data.session?.user;
 
-  const [entreprise, numerotation, clients, produits, brouillons, factures, paiements, relances] =
+  const [sauvegarde, entreprise, numerotation, brouillons, factures, paiements, relances] =
     await Promise.all([
+      p.dump() as Promise<DonneesSauvegarde>,
       ligne('entreprises', 'id'),
       ligne('numerotation', 'entreprise_id'),
-      lignes('clients'),
-      lignes('produits'),
       lignes('brouillons', 'modifie_le'),
       lignes('factures', 'emise_le'),
       lignes('paiements', 'cree_le'),
       lignes('relances', 'envoyee_le'),
     ]);
-  const fichiers = await p.fichiers();
+  // La ligne `membres` de l'utilisateur : la trace de son acceptation des CGU.
+  const membres = utilisateur
+    ? await toutLire<Ligne>((debut, fin) =>
+        sb
+          .from('membres')
+          .select('*')
+          .eq('entreprise_id', E)
+          .eq('user_id', utilisateur.id)
+          .range(debut, fin),
+      )
+    : [];
 
-  const zip = archive();
+  const zip = nouvelleArchive();
   const noms = nomsDesPdf(factures.map((f) => ({ id: String(f.id), numero: String(f.numero) })));
   const pdfManquants: PdfManquant[] = [];
   const exportees: Ligne[] = [];
+  /** Les PDF, sous la clé où le Studio sans compte les range : `pdf-<uid>`. */
+  const pdfs: Record<string, Uint8Array> = {};
   let pdf = 0;
   for (let debut = 0; debut < factures.length; debut += LOT_PDF) {
     const lot = factures.slice(debut, debut + LOT_PDF);
@@ -194,6 +244,7 @@ export async function construireArchive(): Promise<{
       const nom = noms.get(id);
       if (lu instanceof Uint8Array && nom) {
         zip.ajouter(nom, lu, false);
+        pdfs[`pdf-${id}`] = lu;
         exportees.push({ ...f, pdf: nom });
         pdf++;
       } else {
@@ -205,21 +256,31 @@ export async function construireArchive(): Promise<{
   }
 
   const donnees = {
-    format: FORMAT_EXPORT,
-    version: VERSION_EXPORT,
-    exporteLe: new Date().toISOString(),
-    entreprise,
-    numerotation,
-    clients,
-    produits,
-    brouillons,
-    factures: exportees,
-    paiements,
-    relances,
-    fichiers,
-    pdfManquants,
+    format: FORMAT_SAUVEGARDE,
+    version: 1,
+    data: { ...sauvegarde, files: { ...sauvegarde.files, ...pdfs } },
+    compte: {
+      exporteLe: new Date().toISOString(),
+      email: utilisateur?.email ?? null,
+      membres,
+      entreprise,
+      numerotation,
+      brouillons,
+      factures: exportees,
+      paiements,
+      relances,
+      pdfManquants,
+    },
   };
-  zip.ajouter('donnees.json', strToU8(toPortableJson(donnees)), true);
+  let texte: string;
+  try {
+    texte = toPortableJson(donnees);
+  } catch (erreur) {
+    // Une chaîne plus longue que ce que le moteur JavaScript admet.
+    if (erreur instanceof RangeError) throw new ErreurExport();
+    throw erreur;
+  }
+  zip.ajouter('donnees.json', strToU8(texte), true);
   return { archive: zip.fermer(), pdf, pdfManquants };
 }
 
@@ -231,6 +292,7 @@ export async function exporterArchive(): Promise<Blob> {
 /** Ce que l'interface dit d'un export qui n'aboutit pas. */
 function messageDExport(erreur: unknown): string {
   const phrases = t.compte.export;
+  if (erreur instanceof ErreurExport) return phrases.tropGrand;
   if (erreur instanceof ErreurConservation) {
     if (erreur.code === 'SESSION') {
       sessionRefusee(401);

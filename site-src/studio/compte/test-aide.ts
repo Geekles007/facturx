@@ -12,7 +12,8 @@
  */
 
 import { createClient, FunctionsHttpError, type SupabaseClient } from '@supabase/supabase-js';
-import { defaultAppearance } from '../library.js';
+import { defaultAppearance, defaultNumbering, type Numbering } from '../library.js';
+import { ErreurConservation, type Persistence } from '../persistence.js';
 import type { DonneesRelance } from './relances.js';
 import { aujourdhuiParis, type LigneSuivi } from './suivi.js';
 
@@ -175,6 +176,64 @@ export async function insererFacture(
     if (depot.error) throw new Error(`PDF de test : ${depot.error.message}`);
   }
   return id;
+}
+
+// ---------- une conservation en mémoire, sans pile ----------
+
+/**
+ * Une conservation en mémoire, et le journal de ses écritures (import, restauration d'un export).
+ * `compte` (par défaut) : comme celle du compte, elle refuse d'écrire une facture ou un PDF (seul le
+ * serveur émet et importe) et, comme le déclencheur de la base, de faire reculer la numérotation ;
+ * elle part d'une numérotation initiale de 2026. `local` : comme IndexedDB, elle prend tout.
+ */
+export function conservationEnMemoire(
+  options: { mode?: 'compte' | 'local'; numerotation?: Numbering } = {},
+) {
+  const compte = (options.mode ?? 'compte') === 'compte';
+  const kv = new Map<string, unknown>();
+  if (compte) kv.set('numbering', options.numerotation ?? { ...defaultNumbering(), year: 2026 });
+  const listes = {
+    invoices: new Map<string, unknown>(),
+    clients: new Map<string, unknown>(),
+    products: new Map<string, unknown>(),
+  };
+  const fichiers = new Map<string, Uint8Array>();
+  const journal: string[] = [];
+  const p: Persistence = {
+    available: async () => true,
+    get: async <T>(cle: string) => structuredClone(kv.get(cle)) as T | undefined,
+    async set(cle, valeur) {
+      const avant = kv.get('numbering') as Numbering | undefined;
+      if (compte && cle === 'numbering' && avant && (valeur as Numbering).next < avant.next) {
+        throw new ErreurConservation('REFUS', 'NUMEROTATION_RECUL');
+      }
+      journal.push(`set ${cle}`);
+      kv.set(cle, structuredClone(valeur));
+      return cle;
+    },
+    list: async <T>(magasin: 'invoices' | 'clients' | 'products') =>
+      [...listes[magasin].values()] as T[],
+    async put(magasin, valeur) {
+      if (compte && magasin === 'invoices') throw new ErreurConservation('EMISSION_SERVEUR');
+      journal.push(`put ${magasin} ${valeur.uid}`);
+      listes[magasin].set(valeur.uid, structuredClone(valeur));
+      return valeur.uid;
+    },
+    async remove(magasin, cle) {
+      journal.push(`remove ${magasin} ${cle}`);
+      if (magasin !== 'kv' && magasin !== 'files') listes[magasin].delete(cle);
+      return undefined;
+    },
+    getFile: async (cle) => fichiers.get(cle),
+    async setFile(cle, octets) {
+      if (compte && cle.startsWith('pdf-')) throw new ErreurConservation('EMISSION_SERVEUR');
+      journal.push(`setFile ${cle}`);
+      fichiers.set(cle, octets);
+      return cle;
+    },
+    dump: async () => ({}),
+  };
+  return { p, kv, listes, fichiers, journal };
 }
 
 // ---------- la relance, sans pile ----------

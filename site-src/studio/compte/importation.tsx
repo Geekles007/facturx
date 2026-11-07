@@ -3,11 +3,15 @@
  * navigateur garde des données du Studio utilisé sans compte, il les propose, avec ce qu'il a
  * trouvé — jamais d'office : « Pas maintenant », ou fermer, est retenu pour ce compte, et la
  * proposition ne revient qu'à la demande, depuis « Mon compte » (`ui.importation = 'demandee'`).
+ * Un import resté en chemin pendant les factures est reproposé comme une reprise : seules les
+ * factures qui attendaient repartent.
  *
  * Pendant l'import, le dialogue ne se ferme pas et dit où il en est ; à la fin, le bilan : factures
- * importées, déjà dans le compte, refusées (avec la raison), en attente, et ce qui n'a pas été repris.
- * Après la limite de débit, l'import reprend de lui-même à l'heure dite si le dialogue reste ouvert ;
- * après un autre arrêt, « Reprendre l'import ». Une reprise n'envoie que ce qui attendait.
+ * importées, déjà dans le compte ou numéros pris par une autre facture, refusées (avec la raison),
+ * en attente, ce qui était déjà dans le compte et ce qui en a été gardé, ce qui n'a pas été repris.
+ * Après la limite de débit, l'import reprend de lui-même à l'heure dite si le dialogue reste ouvert,
+ * jamais plus tôt qu'un plancher qui double à chaque reprise retombée sur la limite ; après un autre
+ * arrêt, « Reprendre l'import ». Une reprise n'envoie que ce qui attendait.
  *
  * Monté une fois, par la navigation du compte ; chargé par `import()` avec elle.
  */
@@ -16,17 +20,20 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../i18n.js';
 import { store, ui, useStudio } from '../store.js';
 import { Button, Dialog } from '../ui.js';
-import { cumuler, importerCeNavigateur, type RapportNavigateur } from './import.js';
+import {
+  cumuler,
+  delaiDeReprise,
+  importerCeNavigateur,
+  messageNumerotation,
+  type RapportNavigateur,
+} from './import.js';
 import {
   aDesDonnees,
   type Inventaire,
   importAProposer,
   inventaireLocal,
   retenirImport,
-} from './index.js';
-
-/** Une marge après l'heure dite par le serveur, avant de reprendre. */
-const MARGE_REPRISE_MS = 5_000;
+} from './proposition.js';
 
 type Etat =
   | { kind: 'lecture' }
@@ -35,6 +42,14 @@ type Etat =
   | { kind: 'import'; progression?: [number, number] }
   | { kind: 'bilan'; rapport: RapportNavigateur }
   | { kind: 'erreur' };
+
+/** Une passe : la reprise de ces factures seules (sinon tout), à cumuler à un bilan précédent. */
+interface Passe {
+  reprise?: string[] | undefined;
+  avant?: RapportNavigateur | undefined;
+  /** Relancée d'elle-même après la limite de débit. */
+  auto?: boolean;
+}
 
 /** « votre entreprise, 2 clients et 3 factures émises ». */
 function inventaireEnMots(i: Inventaire): string {
@@ -56,6 +71,8 @@ export function DialogueImport() {
   const verifiee = useRef(false);
   // Un double clic n'importe qu'une fois.
   const enVol = useRef(false);
+  // Les reprises automatiques retombées sur la limite d'affilée : le plancher double à chacune.
+  const essaisLimite = useRef(0);
 
   // La première connexion : une fois par chargement, dès que le compte est lu.
   useEffect(() => {
@@ -88,15 +105,17 @@ export function DialogueImport() {
     };
   }, [demande]);
 
-  const lancer = async (avant?: RapportNavigateur) => {
+  const lancer = async ({ reprise, avant, auto }: Passe) => {
     if (enVol.current) return;
     enVol.current = true;
     setEtat({ kind: 'import' });
     try {
       const rapport = await importerCeNavigateur({
-        reprise: avant?.enAttente.map((f) => f.uid),
+        reprise,
         progression: (n, total) => setEtat({ kind: 'import', progression: [n, total] }),
       });
+      const limite = rapport.arret?.reessayerApres !== undefined;
+      essaisLimite.current = limite && auto ? essaisLimite.current + 1 : 0;
       setEtat({
         kind: 'bilan',
         rapport: avant
@@ -117,16 +136,20 @@ export function DialogueImport() {
    * Reprendre après un arrêt : pendant les factures, celles qui attendent seules ; avant elles
    * (session, réseau dès l'entreprise), tout, de nouveau.
    */
-  const reprendre = (avant: RapportNavigateur) =>
-    void lancer(avant.arret?.etape === 'factures' ? avant : undefined);
+  const reprendre = (avant: RapportNavigateur, auto = false) =>
+    void lancer(
+      avant.arret?.etape === 'factures'
+        ? { avant, reprise: avant.enAttente.map((f) => f.uid), auto }
+        : { auto },
+    );
 
   // Arrêté par la limite de débit : on reprend à l'heure dite, tant que le dialogue reste ouvert.
   const bilan = etat.kind === 'bilan' ? etat.rapport : undefined;
   useEffect(() => {
     const quand = bilan?.arret?.reessayerApres;
     if (!bilan || !quand) return;
-    const attente = Math.max(0, Date.parse(quand) - Date.now()) + MARGE_REPRISE_MS;
-    const minuterie = setTimeout(() => reprendre(bilan), attente);
+    const attente = delaiDeReprise(quand, Date.now(), essaisLimite.current);
+    const minuterie = setTimeout(() => reprendre(bilan, true), attente);
     return () => clearTimeout(minuterie);
   }, [bilan]);
 
@@ -137,6 +160,7 @@ export function DialogueImport() {
     if (demande === 'proposee' && etat.kind === 'offre') void retenirImport('refuse');
     // Fermé, le dialogue oublie tout, et la reprise prévue avec lui.
     setEtat({ kind: 'lecture' });
+    essaisLimite.current = 0;
     ui({ importation: undefined });
   };
 
@@ -145,7 +169,11 @@ export function DialogueImport() {
       <div class="compte-form">
         {etat.kind === 'lecture' && <p class="lib-empty">{phrases.lecture}</p>}
         {etat.kind === 'offre' && (
-          <Offre inventaire={etat.inventaire} importer={() => void lancer()} fermer={fermer} />
+          <Offre
+            inventaire={etat.inventaire}
+            importer={() => void lancer({ reprise: etat.inventaire?.enAttente })}
+            fermer={fermer}
+          />
         )}
         {etat.kind === 'import' && (
           <>
@@ -199,18 +227,25 @@ function Offre({
       </>
     );
   }
+  const enAttente = inventaire.enAttente?.length ?? 0;
   return (
     <>
       <p class="import-trouve">{phrases.trouve(inventaireEnMots(inventaire))}</p>
-      {inventaire.reprise && <p>{phrases.reprise}</p>}
-      <p>{phrases.explication}</p>
+      {enAttente > 0 ? (
+        <p>{phrases.repriseFactures(enAttente)}</p>
+      ) : (
+        <>
+          {inventaire.reprise && <p>{phrases.reprise}</p>}
+          <p>{phrases.explication}</p>
+        </>
+      )}
       <p class="field-hint">{phrases.plusTard}</p>
       <div class="row-actions">
         <Button variant="ghost" onClick={fermer}>
           {phrases.pasMaintenant}
         </Button>
         <Button variant="primary" icon="upload" onClick={importer}>
-          {phrases.importer}
+          {enAttente > 0 ? phrases.reprendre : phrases.importer}
         </Button>
       </div>
     </>
@@ -229,6 +264,7 @@ function Bilan({
   const phrases = t.compte.importation;
   const bilan = phrases.bilan;
   const { arret } = rapport;
+  const numerotation = messageNumerotation(rapport);
   return (
     <>
       <p class={arret ? 'import-arrete' : 'import-termine'} role="status">
@@ -238,9 +274,22 @@ function Bilan({
       {(rapport.clients > 0 || rapport.produits > 0) && (
         <p>{bilan.bibliotheque(rapport.clients, rapport.produits)}</p>
       )}
+      {(rapport.clientsDejaLa > 0 || rapport.produitsDejaLa > 0) && (
+        <p>{bilan.dejaLa(rapport.clientsDejaLa, rapport.produitsDejaLa)}</p>
+      )}
+      {rapport.conserves.length > 0 && (
+        <p>
+          {bilan.conserves(phrases.liste(rapport.conserves.map((c) => bilan.conservesNoms[c])))}
+        </p>
+      )}
       {rapport.doublons.length > 0 && <p>{bilan.doublons(rapport.doublons)}</p>}
-      {rapport.numerotation && <p>{bilan.numerotation(rapport.numerotation.next)}</p>}
+      {numerotation && <p>{numerotation}</p>}
       {rapport.brouillon && <p>{phrases.brouillon[rapport.brouillon]}</p>}
+      {rapport.numerosPris.length > 0 && (
+        <div class="banner warn" role="alert">
+          <span>{bilan.numerosPris(rapport.numerosPris)}</span>
+        </div>
+      )}
       {rapport.refusees.length > 0 && (
         <Liste
           titre={bilan.refusees}

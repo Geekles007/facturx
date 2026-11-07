@@ -171,7 +171,7 @@ function depuisPortable<T>(valeur: unknown): T {
 }
 
 /** Texte canonique (clés triées) : Postgres réordonne les clés d'un `jsonb`. */
-function canonique(valeur: unknown): string {
+export function canonique(valeur: unknown): string {
   return JSON.stringify(valeur, (_, v) =>
     v && typeof v === 'object' && !Array.isArray(v)
       ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))

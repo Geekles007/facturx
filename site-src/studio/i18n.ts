@@ -750,7 +750,7 @@ const fr = {
         'Ce brouillon a changé ailleurs depuis son ouverture (un autre onglet ou un autre appareil) : rechargez la version enregistrée, ou gardez la vôtre, puis recommencez.',
       date: "La date d'émission sort des dates admises.",
       doublon: (numero: string) =>
-        `Le numéro ${numero || 'attribué'} existe déjà : relevez le prochain numéro de votre numérotation, puis recommencez.`,
+        `Le numéro ${numero || 'attribué'} et les milliers qui le suivent dans votre numérotation sont déjà pris : changez le gabarit de la numérotation, puis recommencez.`,
       pdfDejaDepose: 'Le PDF de cette facture est déjà déposé.',
       limite: (heure: string | undefined) =>
         heure
@@ -1088,8 +1088,10 @@ const fr = {
           : (parties[0] ?? ''),
       reprise:
         "Un import précédent n'est pas allé au bout : reprenez-le. Ce qui est déjà dans le compte n'y est pas importé deux fois.",
+      repriseFactures: (n: number) =>
+        `Un import précédent n'est pas allé au bout : ${n} facture${n > 1 ? 's attendent' : ' attend'} encore. La reprise n'envoie qu'elle${n > 1 ? 's' : ''}.`,
       explication:
-        "Importer les copie dans votre compte : votre entreprise et votre apparence par défaut remplacent celles du compte, vos clients et votre catalogue s'y ajoutent, chaque facture est relue dans son PDF Factur-X et garde son numéro, la numérotation reprend au plus haut rang connu, et le brouillon en cours devient un brouillon du compte. Rien n'est effacé de ce navigateur.",
+        "L'import ajoute à votre compte ce qu'il n'a pas encore et ne remplace rien de ce qu'il a : les clients et les articles qui n'y sont pas ; chaque facture, relue dans son PDF Factur-X, avec son numéro ; le brouillon en cours, comme un brouillon de plus. Votre entreprise, votre apparence par défaut et les réglages de la numérotation (gabarit, remise à zéro) ne sont repris que si ceux du compte n'ont jamais été renseignés ; la numérotation ne recule jamais. Rien n'est effacé de ce navigateur.",
       plusTard: 'Vous pourrez aussi le faire plus tard, depuis « Mon compte ».',
       importer: 'Importer dans mon compte',
       pasMaintenant: 'Pas maintenant',
@@ -1107,10 +1109,23 @@ const fr = {
           `${clients} client${clients > 1 ? 's' : ''} et ${produits} article${produits > 1 ? 's' : ''} du catalogue repris.`,
         doublons: (numeros: string[]) =>
           `Déjà dans le compte, laissées telles quelles : ${numeros.join(', ')}.`,
+        dejaLa: (clients: number, produits: number) =>
+          `Déjà dans le compte, laissés tels quels : ${clients} client${clients > 1 ? 's' : ''} et ${produits} article${produits > 1 ? 's' : ''}.`,
+        conserves: (elements: string) =>
+          `Gardés tels qu'ils sont dans le compte, à la place de ceux de ce navigateur : ${elements}.`,
+        conservesNoms: {
+          entreprise: "l'entreprise",
+          apparence: "l'apparence par défaut",
+          numerotation: 'le gabarit et la remise à zéro de la numérotation',
+        },
+        numerosPris: (numeros: string[]) =>
+          `Numéro déjà pris par une autre facture du compte : ${numeros.join(', ')}. Ces factures ne sont ni dans le compte ni dans son export : gardez une sauvegarde de ce navigateur.`,
         refusees: 'Non importées :',
         echecs: 'Non repris :',
         enAttente: (n: number) => `${n} facture${n > 1 ? 's' : ''} en attente :`,
         numerotation: (rang: number) => `Numérotation reprise : prochain rang ${rang}.`,
+        numerotationEnAvance:
+          "Numérotation : les factures importées sont d'une année plus récente que celle de la numérotation du compte ; la prochaine émission de cette année-là prendra le premier numéro libre après elles.",
       },
       reprendra:
         'Il reprendra de lui-même à cette heure-là si vous laissez ce dialogue ouvert ; sinon, reprenez-le plus tard depuis « Mon compte ».',
@@ -1138,6 +1153,8 @@ const fr = {
           `le serveur n'y lit pas de facture Factur-X${detail ? ` (${detail})` : ''}`,
         tropLourde: 'elle dépasse 10 Mo, le plus que le serveur accepte',
         refus: 'refusé par le serveur',
+        session: "votre session a expiré (reconnectez-vous, puis reprenez l'import)",
+        reseau: "le serveur ne répond pas (reprenez l'import plus tard)",
       },
       /** Pourquoi l'import s'arrête : ce qui reste attend une reprise. */
       arrets: {
@@ -1167,6 +1184,8 @@ const fr = {
         "Le serveur ne répond pas : réessayez dans un instant. Aucune archive n'a été produite.",
       echec:
         "L'export n'a pas abouti : réessayez dans un instant. Aucune archive n'a été produite.",
+      tropGrand:
+        "Le compte dépasse ce qu'une archive zip simple peut contenir (65 535 fichiers, 4 Go, ou quelques centaines de Mo de PDF) : aucune archive n'a été produite. Écrivez-nous pour obtenir vos données.",
     },
   },
 };
@@ -1895,7 +1914,7 @@ const en: Strings = {
         'This draft was changed elsewhere since it was opened (another tab or another device): reload the saved version, or keep yours, then start again.',
       date: 'The issue date is outside the allowed dates.',
       doublon: (numero: string) =>
-        `Number ${numero || 'assigned'} already exists: raise the next number of your sequence, then start again.`,
+        `Number ${numero || 'assigned'} and the thousands that follow it in your sequence are already taken: change the numbering pattern, then start again.`,
       pdfDejaDepose: 'The PDF of this invoice has already been uploaded.',
       limite: (heure: string | undefined) =>
         heure
@@ -2217,8 +2236,10 @@ const en: Strings = {
           : (parties[0] ?? ''),
       reprise:
         'A previous import did not finish: resume it. Nothing already in the account is imported twice.',
+      repriseFactures: (n: number) =>
+        `A previous import did not finish: ${n} invoice${n === 1 ? ' is' : 's are'} still waiting. Resuming sends only ${n === 1 ? 'it' : 'them'}.`,
       explication:
-        "Importing copies them into your account: your company and default appearance replace the account's, your clients and catalogue are added, each invoice is read again from its Factur-X PDF and keeps its number, numbering resumes at the highest known rank, and the draft in progress becomes an account draft. Nothing is erased from this browser.",
+        "Importing adds to your account what it does not have yet, and replaces nothing it has: the clients and items that are not in it; each invoice, read again from its Factur-X PDF, with its number; the draft in progress, as one more draft. Your company, default appearance and numbering settings (pattern, yearly reset) are carried over only if the account's were never filled in; numbering never goes back. Nothing is erased from this browser.",
       plusTard: 'You can also do it later, from “My account”.',
       importer: 'Import into my account',
       pasMaintenant: 'Not now',
@@ -2234,10 +2255,23 @@ const en: Strings = {
           `${clients} client${clients === 1 ? '' : 's'} and ${produits} catalogue item${produits === 1 ? '' : 's'} carried over.`,
         doublons: (numeros: string[]) =>
           `Already in the account, left as they are: ${numeros.join(', ')}.`,
+        dejaLa: (clients: number, produits: number) =>
+          `Already in the account, left as they are: ${clients} client${clients === 1 ? '' : 's'} and ${produits} item${produits === 1 ? '' : 's'}.`,
+        conserves: (elements: string) =>
+          `Kept as they are in the account, instead of this browser's: ${elements}.`,
+        conservesNoms: {
+          entreprise: 'the company',
+          apparence: 'the default appearance',
+          numerotation: 'the numbering pattern and yearly reset',
+        },
+        numerosPris: (numeros: string[]) =>
+          `Number already taken by another invoice of the account: ${numeros.join(', ')}. These invoices are neither in the account nor in its export: keep a backup of this browser.`,
         refusees: 'Not imported:',
         echecs: 'Not carried over:',
         enAttente: (n: number) => `${n} invoice${n === 1 ? '' : 's'} waiting:`,
         numerotation: (rang: number) => `Numbering carried over: next rank ${rang}.`,
+        numerotationEnAvance:
+          "Numbering: the imported invoices are from a more recent year than the account's numbering; the next invoice issued in that year will take the first free number after them.",
       },
       reprendra:
         'It will resume by itself at that time if you leave this dialog open; otherwise, resume it later from “My account”.',
@@ -2263,6 +2297,8 @@ const en: Strings = {
           `the server finds no Factur-X invoice in it${detail ? ` (${detail})` : ''}`,
         tropLourde: 'it exceeds 10 MB, the most the server accepts',
         refus: 'refused by the server',
+        session: 'your session has expired (sign in again, then resume the import)',
+        reseau: 'the server is not responding (resume the import later)',
       },
       arrets: {
         limite: (moment: string | undefined) =>
@@ -2288,6 +2324,8 @@ const en: Strings = {
         'Your session has expired: sign in again, then export again. No archive was produced.',
       reseau: 'The server is not responding: try again in a moment. No archive was produced.',
       echec: 'The export did not complete: try again in a moment. No archive was produced.',
+      tropGrand:
+        'The account exceeds what a plain zip archive can hold (65,535 files, 4 GB, or a few hundred MB of PDFs): no archive was produced. Write to us to get your data.',
     },
   },
 };
