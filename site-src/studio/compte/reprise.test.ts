@@ -181,8 +181,10 @@ describe.skipIf(!process.env.SUPABASE_URL)('après un rechargement, sans rien ta
     const p = supabasePersistence(sb, entrepriseId);
     await demarrerCommeMain(p, entrepriseId);
     expect(store.get().form.buyer.name).toBe('Tapé, jamais parvenu');
-    await vi.waitFor(async () =>
-      expect((await lignes(entrepriseId))[0]?.form.buyer.name).toBe('Tapé, jamais parvenu'),
+    await vi.waitFor(
+      async () =>
+        expect((await lignes(entrepriseId))[0]?.form.buyer.name).toBe('Tapé, jamais parvenu'),
+      { timeout: 5000 },
     );
     expect(await startDraft(duplicateForm(store.get().form))).toBe(true);
   }, 20_000);
@@ -320,10 +322,12 @@ describe.skipIf(!process.env.SUPABASE_URL)('serveur injoignable, puis de retour'
     fenetre.dispatchEvent(new Event('online'));
     await vi.waitFor(() => expect(store.get().ui.storage).toBe('ok'), { timeout: 5000 });
     expect(store.get().company.seller.name).toBe('Vraie entreprise');
-    await vi.waitFor(async () =>
-      expect((await lignes(entrepriseId)).map((x) => x.form.buyer.name)).toContain(
-        'Saisie pendant',
-      ),
+    await vi.waitFor(
+      async () =>
+        expect((await lignes(entrepriseId)).map((x) => x.form.buyer.name)).toContain(
+          'Saisie pendant',
+        ),
+      { timeout: 5000 },
     );
     const { data } = await adminDeTest()
       .from('entreprises')
@@ -359,8 +363,9 @@ describe.skipIf(!process.env.SUPABASE_URL)('abandonner une saisie refusée', () 
     }));
     arreter = startPersistence({ delai: 0 });
     setForm('buyer.name', 'Propre');
-    await vi.waitFor(async () =>
-      expect((await lignes(entrepriseId))[0]?.form.buyer.name).toBe('Propre'),
+    await vi.waitFor(
+      async () => expect((await lignes(entrepriseId))[0]?.form.buyer.name).toBe('Propre'),
+      { timeout: 5000 },
     );
     setForm('buyer.name', 'Avec\u0000nul');
     await vi.waitFor(() => expect(store.get().ui.brouillonRefuse).toBeTruthy());
@@ -380,8 +385,10 @@ describe.skipIf(!process.env.SUPABASE_URL)('abandonner une saisie refusée', () 
 
     // Le réseau est revenu ; l'utilisateur corrige : la correction part, le bandeau s'en va.
     setForm('buyer.name', 'Corrigé après l’échec');
-    await vi.waitFor(async () =>
-      expect((await lignes(entrepriseId))[0]?.form.buyer.name).toBe('Corrigé après l’échec'),
+    await vi.waitFor(
+      async () =>
+        expect((await lignes(entrepriseId))[0]?.form.buyer.name).toBe('Corrigé après l’échec'),
+      { timeout: 5000 },
     );
     expect(store.get().ui.brouillonRefuse).toBeUndefined();
     const miroir = await indexedDbPersistence.get<Miroir>(`draft-compte-${entrepriseId}`);
@@ -741,14 +748,19 @@ describe.skipIf(!process.env.SUPABASE_URL)('sonde D : miroir illisible au démar
     expect(store.get().form.buyer.name).toBe('Version 1');
 
     // On tape sur la version du serveur : la saisie cachée est mise de côté, et le Studio le dit.
+    // L'enregistrement part une seconde après la frappe : les attentes vont au-delà du délai par
+    // défaut de `vi.waitFor` (une seconde), comme les autres tests de ce fichier.
     setForm('buyer.name', 'Tapé après le démarrage');
-    await vi.waitFor(() =>
-      expect(store.get().ui.toast?.text).toBe(t.compte.conservation.miseDeCote),
+    await vi.waitFor(
+      () => expect(store.get().ui.toast?.text).toBe(t.compte.conservation.miseDeCote),
+      { timeout: 5000 },
     );
-    await vi.waitFor(async () =>
-      expect((await lignes(entrepriseId)).map((l) => l.form.buyer.name)).toEqual([
-        'Tapé après le démarrage',
-      ]),
+    await vi.waitFor(
+      async () =>
+        expect((await lignes(entrepriseId)).map((l) => l.form.buyer.name)).toEqual([
+          'Tapé après le démarrage',
+        ]),
+      { timeout: 5000 },
     );
 
     // « La rouvrir » : un nouveau brouillon, sur le serveur, et plus rien de côté.
