@@ -1,0 +1,71 @@
+name: Sauvegarde
+
+# La sauvegarde chiffrée du compte (spec § 11), en plus des sauvegardes quotidiennes du plan Pro de
+# Supabase : chaque dimanche à 2 h 23 (UTC), les données de la base et les buckets `factures` et
+# `fichiers`, en une archive chiffrée par age, déposée chez Scaleway (fr-par) et gardée 12 semaines.
+# La logique est dans scripts/sauvegarde.sh (qu'on peut lancer en local) ; la mise en place, les
+# secrets et la restauration sont dans docs/compte.md.
+#
+# Le dépôt est public, les journaux de ses Actions aussi : le script n'écrit ni secret, ni nombre de
+# comptes ou de factures, ni nom de fichier.
+#
+# GitHub ne lance un workflow planifié que depuis la branche par défaut, et le suspend après 60 jours
+# sans activité dans un dépôt public (un courriel prévient avant) : docs/compte.md dit comment le voir.
+on:
+  schedule:
+    - cron: '23 2 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Deux sauvegardes ne se chevauchent pas ; aucune n'est annulée par la suivante.
+concurrency:
+  group: sauvegarde
+  cancel-in-progress: false
+
+# `bash -eo pipefail` : une commande qui échoue au début d'un tube arrête l'étape.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  sauvegarde:
+    # Jamais dans une copie du dépôt : elle n'a ni les secrets ni le projet.
+    if: github.repository == 'Geekles007/facturx'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # La version majeure de Postgres du projet (`show server_version;`) : pg_dump refuse un serveur
+      # plus récent que lui. À changer avec le projet.
+      PG_MAJEURE: '17'
+    steps:
+      - uses: actions/checkout@v7
+
+      # L'image fournit déjà l'AWS CLI (le client S3 des deux hébergeurs) et jq. Le client Postgres de
+      # l'image est d'une version plus ancienne : celui du serveur vient du dépôt apt de PostgreSQL.
+      - name: Outils (pg_dump de la version du serveur, age)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-common age >/dev/null
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y --no-install-recommends "postgresql-client-$PG_MAJEURE" >/dev/null
+          "/usr/lib/postgresql/$PG_MAJEURE/bin/pg_dump" --version
+          age --version
+          aws --version
+
+      - name: Sauvegarde chiffrée, déposée chez Scaleway
+        env:
+          SAUVEGARDE_DB_URL: ${{ secrets.SAUVEGARDE_DB_URL }}
+          SUPABASE_S3_ENDPOINT: ${{ secrets.SUPABASE_S3_ENDPOINT }}
+          SUPABASE_S3_REGION: ${{ secrets.SUPABASE_S3_REGION }}
+          SUPABASE_S3_ACCESS_KEY_ID: ${{ secrets.SUPABASE_S3_ACCESS_KEY_ID }}
+          SUPABASE_S3_SECRET_ACCESS_KEY: ${{ secrets.SUPABASE_S3_SECRET_ACCESS_KEY }}
+          SCALEWAY_S3_BUCKET: ${{ secrets.SCALEWAY_S3_BUCKET }}
+          SCALEWAY_S3_ACCESS_KEY_ID: ${{ secrets.SCALEWAY_S3_ACCESS_KEY_ID }}
+          SCALEWAY_S3_SECRET_ACCESS_KEY: ${{ secrets.SCALEWAY_S3_SECRET_ACCESS_KEY }}
+          AGE_RECIPIENT: ${{ secrets.AGE_RECIPIENT }}
+        run: |
+          export PG_DUMP="/usr/lib/postgresql/$PG_MAJEURE/bin/pg_dump"
+          export PSQL="/usr/lib/postgresql/$PG_MAJEURE/bin/psql"
+          bash scripts/sauvegarde.sh
