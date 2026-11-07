@@ -43,6 +43,9 @@ const DUREE_MESSAGE_LIEN_MS = 15_000;
 /** Au-delà, la déconnexion n'attend plus les écritures : ce qui n'est pas parti est dit. */
 const ATTENTE_ENVOIS_MS = 10_000;
 
+/** Le message d'une saisie mise de côté reste le temps de lire, et de choisir de la rouvrir. */
+const DUREE_MISE_DE_COTE_MS = 30_000;
+
 /** Ce que `membres` donne de l'entreprise du compte, avec la date de suppression demandée. */
 interface LigneMembre {
   entreprise_id: string;
@@ -125,7 +128,11 @@ export async function demarrer(): Promise<CompteUi | undefined> {
     const compte = await Promise.race([lire(etat), delai]);
     if (compte) {
       // Entreprise, brouillons, clients, catalogue, fichiers : tout va désormais au serveur.
-      utiliser(supabasePersistence(client(), compte.entrepriseId));
+      utiliser(
+        supabasePersistence(client(), compte.entrepriseId, {
+          surSaisieMiseDeCote: direSaisieMiseDeCote,
+        }),
+      );
       ui({ compte });
     }
     return compte;
@@ -135,6 +142,19 @@ export async function demarrer(): Promise<CompteUi | undefined> {
     clearTimeout(minuterie);
     if (retour) expliquerRetour(retour, etat);
   }
+}
+
+/**
+ * Une saisie que le serveur n'avait pas reçue a été mise de côté (le miroir du brouillon était
+ * illisible au démarrage), ou l'était déjà : le Studio le dit, et propose de la rouvrir
+ * comme un nouveau brouillon (`compte/brouillons.tsx`, chargé à ce moment-là).
+ */
+export function direSaisieMiseDeCote(): void {
+  const phrases = t.compte.conservation;
+  toast(phrases.miseDeCote, 'info', DUREE_MISE_DE_COTE_MS, {
+    label: phrases.rouvrirMiseDeCote,
+    run: () => import('./brouillons.js').then((m) => m.reprendreLaSaisieMiseDeCote()),
+  });
 }
 
 // ---------- authentification ----------
@@ -285,8 +305,9 @@ function elementDe(cle: string): string {
  * Envoie ce qui attendait, au plus `ATTENTE_ENVOIS_MS`, puis dit ce qui n'a pas atteint le serveur :
  * les écritures du magasin restées en échec, et la saisie du brouillon que le miroir de ce
  * navigateur garde sans que le serveur l'ait reçue (y compris quand la conservation ne tourne pas :
- * serveur injoignable au démarrage, écran d'un compte en suppression). Un miroir illisible n'est
- * pas compté : IndexedDB ne répond pas, et rien n'y sera effacé non plus.
+ * serveur injoignable au démarrage, écran d'un compte en suppression), et les saisies mises de côté
+ * (`verifierMiroir`). Un miroir illisible n'est pas compté : IndexedDB ne répond pas, et rien n'y sera
+ * effacé non plus.
  */
 async function ceQuiNEstPasParti(entrepriseId: string): Promise<string[]> {
   let minuterie: ReturnType<typeof setTimeout> | undefined;
@@ -301,18 +322,24 @@ async function ceQuiNEstPasParti(entrepriseId: string): Promise<string[]> {
   ]);
   clearTimeout(minuterie);
   const cles = ecrituresNonPassees();
-  const miroir = await local
-    .get<Miroir>(clesDuNavigateur(entrepriseId).miroir)
-    .catch(() => undefined);
+  const ici = clesDuNavigateur(entrepriseId);
+  const [miroir, abri] = await Promise.all([
+    local.get<Miroir>(ici.miroir).catch(() => undefined),
+    local.get<unknown>(ici.abri).catch(() => undefined),
+  ]);
   if (miroir && !miroir.envoye) cles.unshift('draft');
   const elements = [...new Set(cles.map(elementDe))];
+  if (Array.isArray(abri) && abri.length > 0) {
+    elements.push(t.compte.deconnexion.elements.miseDeCote);
+  }
   if (!fini) elements.push(t.compte.deconnexion.elements.enCours);
   return elements;
 }
 
 /**
  * Efface de ce navigateur ce que le compte y gardait (relevé aux tâches 15 et 16) : le miroir du
- * brouillon, son identifiant, la vue affichée et les valeurs locales (`kv-compte-*`). Les données du
+ * brouillon, son identifiant, la vue affichée, les valeurs locales (`kv-compte-*`) et les saisies
+ * mises de côté. Les données du
  * Studio sans compte, celles d'un autre compte, et la marque d'import (`import-local-*`, Ruling 61)
  * restent : la marque décrit les données de ce navigateur — elles y restent tant que l'utilisateur
  * ne demande pas à les effacer (spec § 10) — et l'effacer ferait reproposer l'import, oublierait un

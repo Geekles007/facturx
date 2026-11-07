@@ -139,19 +139,50 @@ export interface PersistenceCompte extends Persistence, ConservationDuCompte {
    * la base refuse de faire reculer `prochain`.
    */
   numerotationDuServeur(): Numbering | undefined;
+  /**
+   * La dernière saisie mise de côté (le miroir était illisible au démarrage, et gardait
+   * une saisie que le serveur n'avait pas reçue), rien s'il n'y en a pas, ou si ce navigateur ne
+   * répond pas.
+   */
+  saisieMiseDeCote(): Promise<SaisieMiseDeCote | undefined>;
+  /** Oublie la saisie mise de côté `id`, une fois qu'elle a retrouvé un brouillon du serveur. */
+  oublierSaisieMiseDeCote(id: string): Promise<void>;
+}
+
+/** Une saisie mise de côté au lieu d'être écrasée, sous `abri` (voir `clesDuNavigateur`). */
+export interface SaisieMiseDeCote {
+  id: string;
+  /** Quand elle a été mise de côté (ISO). */
+  le: string;
+  saisie: Brouillon;
+}
+
+/** Ce que la conservation dit à l'interface. */
+export interface OptionsPersistenceCompte {
+  /**
+   * Une saisie que le serveur n'a pas reçue a été mise de côté (`verifierMiroir`), ou l'était déjà au
+   * démarrage : l'interface le dit, et propose de la rouvrir (`saisieMiseDeCote`).
+   */
+  surSaisieMiseDeCote?: (() => void) | undefined;
 }
 
 /**
  * Ce que la conservation du compte garde dans ce navigateur pour l'entreprise `E`, sous des clés de
- * `kv` : l'identifiant du brouillon ouvert, son miroir, la vue affichée, et les valeurs qui n'ont pas
- * de place sur le serveur. La déconnexion les efface.
+ * `kv` : l'identifiant du brouillon ouvert, son miroir, la vue affichée, les valeurs qui n'ont pas
+ * de place sur le serveur, et les saisies mises de côté (`verifierMiroir`). La déconnexion les efface, après
+ * avoir dit ce qui n'a pas atteint le serveur.
  */
 export const clesDuNavigateur = (E: string) => ({
   courant: `brouillon-courant-${E}`,
   miroir: `draft-compte-${E}`,
   vue: `vue-compte-${E}`,
   locale: `kv-compte-${E}`,
+  abri: `draft-compte-abri-${E}`,
 });
+
+/** Les lectures du miroir avant de le dire illisible ; `storage.ts` rouvre la base entre deux. */
+const ESSAIS_MIROIR = 3;
+const PAUSE_MIROIR_MS = 100;
 
 /**
  * Le formulaire d'une facture émise, sous le numéro que le serveur lui a attribué : le brouillon
@@ -414,7 +445,11 @@ const documentDu = (m: Miroir): Document => ({
   envoye: m.envoye,
 });
 
-export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): PersistenceCompte {
+export function supabasePersistence(
+  sb: SupabaseClient,
+  entrepriseId: string,
+  options: OptionsPersistenceCompte = {},
+): PersistenceCompte {
   const E = entrepriseId;
   const {
     courant: cleCourant,
@@ -422,6 +457,7 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
     vue: cleVue,
     /** Les clés de `kv` sans place sur le serveur : un objet, dans ce navigateur. */
     locale: cleLocale,
+    abri: cleAbri,
   } = clesDuNavigateur(E);
 
   /** Le document ouvert dans l'éditeur (ou sous la vue affichée). */
@@ -464,6 +500,95 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
       () => undefined,
     );
 
+  /**
+   * Le miroir n'a pas pu être lu : IndexedDB n'a pas répondu, au démarrage ou à la
+   * reprise, et ce qu'il garde n'a pas été ouvert. Tant que c'est vrai, il est relu avant chaque
+   * écriture ou effacement (`verifierMiroir`) : une saisie que le serveur n'a pas reçue n'est jamais
+   * remplacée sans avoir été vue.
+   */
+  let miroirIllisible = false;
+  /** La relecture en cours : les écritures qui arrivent pendant ce temps l'attendent. */
+  let verification: Promise<boolean> | undefined;
+  /** La saisie mise de côté a été dite : une fois par Studio ouvert. */
+  let abriAnnonce = false;
+
+  /**
+   * Lit le miroir : `lu`, avec ce qu'il garde (rien s'il est absent), ou non lu, quand IndexedDB n'a
+   * pas répondu après `ESSAIS_MIROIR` essais. Un miroir illisible n'est pas un miroir absent.
+   */
+  async function lireMiroir(): Promise<{ lu: true; miroir: Miroir | undefined } | { lu: false }> {
+    for (let essai = 1; ; essai++) {
+      try {
+        return { lu: true, miroir: await local.get<Miroir>(cleMiroir) };
+      } catch {
+        if (essai >= ESSAIS_MIROIR) return { lu: false };
+        await new Promise((fin) => setTimeout(fin, PAUSE_MIROIR_MS));
+      }
+    }
+  }
+
+  /** Les saisies mises de côté ; une valeur qui n'en a pas la forme compte pour aucune. */
+  async function lireAbri(): Promise<SaisieMiseDeCote[]> {
+    const valeur = await local.get<unknown>(cleAbri);
+    return Array.isArray(valeur)
+      ? valeur.filter(
+          (e): e is SaisieMiseDeCote =>
+            typeof e === 'object' && e !== null && typeof (e as SaisieMiseDeCote).id === 'string',
+        )
+      : [];
+  }
+
+  /**
+   * Après une lecture réussie du miroir : une saisie mise de côté par un Studio précédent est
+   * redite, une fois. Ne lève pas.
+   */
+  async function annoncerAbri(): Promise<void> {
+    if (abriAnnonce || !options.surSaisieMiseDeCote) return;
+    const abri = await lireAbri().catch(() => []);
+    if (abri.length === 0 || abriAnnonce) return;
+    abriAnnonce = true;
+    options.surSaisieMiseDeCote();
+  }
+
+  /**
+   * Relit le miroir illisible avant d'y écrire ou de l'effacer pour le document `d`. Ce qu'il garde
+   * est mis de côté, sous `abri`, si c'est une saisie que le serveur n'a pas reçue et que ni la
+   * dernière saisie de `d` ni ce que le serveur en a ne contiennent : elle était cachée à l'éditeur,
+   * qui montre autre chose. Vrai si l'on peut écrire : le miroir a été relu, et rien de ce qu'il
+   * garde ne se perd. Faux si la lecture échoue encore, ou la mise de côté : on n'écrit pas, le
+   * miroir garde ce qu'il a, et la prochaine écriture relit de nouveau.
+   */
+  function verifierMiroir(d: Document): Promise<boolean> {
+    verification ??= (async () => {
+      const lecture = await lireMiroir();
+      if (!lecture.lu) return false;
+      const trouve = lecture.miroir;
+      if (trouve && !trouve.envoye) {
+        const saisie = saisieDu(trouve);
+        const texte = canonique(corps(saisie));
+        const ailleurs =
+          texte === d.surLeServeur ||
+          (d.derniere !== undefined && texte === canonique(corps(d.derniere)));
+        if (!ailleurs) {
+          const abri = await lireAbri();
+          await local.set(cleAbri, [
+            ...abri,
+            { id: crypto.randomUUID(), le: new Date().toISOString(), saisie },
+          ]);
+          abriAnnonce = true;
+          options.surSaisieMiseDeCote?.();
+        }
+      }
+      miroirIllisible = false;
+      return true;
+    })()
+      .catch(() => false)
+      .finally(() => {
+        verification = undefined;
+      });
+    return verification;
+  }
+
   /** Le miroir du document ouvert, tel qu'il est maintenant. */
   function ecrireMiroir(): Promise<void> {
     const d = doc;
@@ -477,7 +602,16 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
       idPrevu: d.idPrevu,
       envoye: d.envoye,
     };
-    return auMieux(local.set(cleMiroir, miroir));
+    if (!miroirIllisible) return auMieux(local.set(cleMiroir, miroir));
+    return verifierMiroir(d).then((libre) =>
+      libre ? auMieux(local.set(cleMiroir, miroir)) : undefined,
+    );
+  }
+
+  /** Retire le miroir de `d` ; illisible, il est relu d'abord (`verifierMiroir`). */
+  async function retirerMiroir(d: Document): Promise<void> {
+    if (miroirIllisible && !(await verifierMiroir(d))) return;
+    await auMieux(local.remove('kv', cleMiroir));
   }
 
   /** `brouillon-courant` suit le document ouvert. */
@@ -719,31 +853,44 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
     brouillon: Brouillon | undefined;
     appliquer: () => void;
   }> {
-    const [id, miroir, vue] = await Promise.all([
+    const [id, lecture, vue] = await Promise.all([
       local.get<string>(cleCourant).catch(() => undefined),
-      local.get<Miroir>(cleMiroir).catch(() => undefined),
+      lireMiroir(),
       local.get<Brouillon>(cleVue).catch(() => undefined),
     ]);
+    const miroir = lecture.lu ? lecture.miroir : undefined;
+    if (lecture.lu) void annoncerAbri();
+    // Ce qui est lu s'ouvre : un miroir lu y est pris en compte, et n'a plus à être relu avant
+    // d'écrire ; illisible, il le sera (`verifierMiroir`), car sa saisie n'est pas à l'écran.
+    const ouvrirLu = (ouverture: () => void) => () => {
+      miroirIllisible = !lecture.lu;
+      ouverture();
+    };
     if (miroir && !miroir.envoye) {
       const d = documentDu(miroir);
       await verifier(d);
       const montre = montrer(vue, miroir);
-      return { brouillon: montre ?? d.derniere, appliquer: () => ouvrir(d, montre === undefined) };
+      return {
+        brouillon: montre ?? d.derniere,
+        appliquer: ouvrirLu(() => ouvrir(d, montre === undefined)),
+      };
     }
     if (vue) {
       // Le brouillon courant reste celui de la liste ; sa version se lira à sa réouverture.
       const d = id ? { idPrevu: crypto.randomUUID(), id, envoye: true } : documentNeuf();
       return {
         brouillon: vue,
-        appliquer: () => {
+        appliquer: ouvrirLu(() => {
           doc = d;
-        },
+        }),
       };
     }
     const l = (id ? await lireLigne(id) : undefined) ?? (await lirePlusRecent());
-    if (!l) return { brouillon: undefined, appliquer: () => ouvrir(documentNeuf(), false) };
+    if (!l) {
+      return { brouillon: undefined, appliquer: ouvrirLu(() => ouvrir(documentNeuf(), false)) };
+    }
     const d = documentDeLigne(l);
-    return { brouillon: d.derniere, appliquer: () => ouvrir(d, true) };
+    return { brouillon: d.derniere, appliquer: ouvrirLu(() => ouvrir(d, true)) };
   }
 
   /**
@@ -1145,11 +1292,15 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
     saisieEnAttente: () => (doc.envoye || doc.supprime ? undefined : doc.derniere),
 
     async brouillonLocal(): Promise<Brouillon | undefined> {
-      const [id, miroir, gardee] = await Promise.all([
+      const [id, lecture, gardee] = await Promise.all([
         local.get<string>(cleCourant).catch(() => undefined),
-        local.get<Miroir>(cleMiroir).catch(() => undefined),
+        lireMiroir(),
         local.get<Brouillon>(cleVue).catch(() => undefined),
       ]);
+      // Illisible, le miroir sera relu avant d'être remplacé (`verifierMiroir`).
+      miroirIllisible = !lecture.lu;
+      if (lecture.lu) void annoncerAbri();
+      const miroir = lecture.lu ? lecture.miroir : undefined;
       const vue = montrer(gardee, miroir);
       // Le document ouvert : celui du miroir quand sa saisie s'affiche ou attend le serveur ; sous
       // une vue, le brouillon courant — jamais celui d'un miroir déjà envoyé, qui peut être un
@@ -1232,7 +1383,7 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
           // comprises, ne part plus nulle part, jusqu'au prochain document.
           doc.supprime = true;
           await auMieux(local.remove('kv', cleCourant));
-          await auMieux(local.remove('kv', cleMiroir));
+          await retirerMiroir(doc);
         }
       }),
 
@@ -1248,7 +1399,7 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
         // attendues : l'appelant change l'éditeur dans le même temps.
         doc = documentNeuf();
         void suivreCourant(doc);
-        void auMieux(local.remove('kv', cleMiroir));
+        void retirerMiroir(d);
         return undefined;
       }),
 
@@ -1302,11 +1453,21 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
       // Tout de suite : une écriture qui suivrait ne part plus (`enregistrer`, `envoyer`).
       d.supprime = true;
       await auMieux(local.remove('kv', cleCourant));
-      await auMieux(local.remove('kv', cleMiroir));
+      await retirerMiroir(d);
       return true;
     },
 
     dansLaFile: (operation) => enFile(operation),
+
+    async saisieMiseDeCote() {
+      const abri = await lireAbri().catch(() => []);
+      return abri[abri.length - 1];
+    },
+
+    async oublierSaisieMiseDeCote(id) {
+      const reste = (await lireAbri()).filter((e) => e.id !== id);
+      await (reste.length > 0 ? local.set(cleAbri, reste) : local.remove('kv', cleAbri));
+    },
 
     async factureDuBrouillon(id) {
       const r = await sb

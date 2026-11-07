@@ -1,6 +1,7 @@
 // Le miroir du brouillon vit dans IndexedDB : le faux doit exister avant l'évaluation de storage.ts.
 import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { t } from '../i18n.js';
 import {
   defaultAppearance,
   defaultCompany,
@@ -28,6 +29,7 @@ import {
   rechargerBrouillon,
   recreerBrouillon,
 } from './brouillons.js';
+import { direSaisieMiseDeCote } from './index.js';
 import { type Miroir, supabasePersistence } from './persistence.js';
 import { adminDeTest, compteDeTest, perimerJeton } from './test-aide.js';
 
@@ -716,3 +718,46 @@ describe.skipIf(!process.env.SUPABASE_URL)(
     }, 20_000);
   },
 );
+
+describe.skipIf(!process.env.SUPABASE_URL)('sonde D : miroir illisible au démarrage', () => {
+  test('la saisie qu’il cachait est mise de côté à la frappe, dite, puis rouverte en brouillon', async () => {
+    const { sb, entrepriseId } = await compteDeTest();
+    const avant = supabasePersistence(sb, entrepriseId);
+    await avant.set('draft', brouillon('Version 1'));
+    const retablir = perimerJeton(sb);
+    await expect(avant.set('draft', brouillon('Tapé, jamais parvenu'))).rejects.toThrow('SESSION');
+    retablir();
+
+    // Le Studio rouvert : IndexedDB ne rend pas le miroir, malgré les nouveaux essais.
+    const cle = `draft-compte-${entrepriseId}`;
+    const lire = indexedDbPersistence.get.bind(indexedDbPersistence);
+    let echecs = 3;
+    vi.spyOn(indexedDbPersistence, 'get').mockImplementation(async (c: string) => {
+      if (c === cle && echecs-- > 0) throw new Error('IndexedDB : lecture impossible');
+      return lire(c);
+    });
+    const p = supabasePersistence(sb, entrepriseId, { surSaisieMiseDeCote: direSaisieMiseDeCote });
+    await demarrerCommeMain(p, entrepriseId);
+    expect(store.get().form.buyer.name).toBe('Version 1');
+
+    // On tape sur la version du serveur : la saisie cachée est mise de côté, et le Studio le dit.
+    setForm('buyer.name', 'Tapé après le démarrage');
+    await vi.waitFor(() =>
+      expect(store.get().ui.toast?.text).toBe(t.compte.conservation.miseDeCote),
+    );
+    await vi.waitFor(async () =>
+      expect((await lignes(entrepriseId)).map((l) => l.form.buyer.name)).toEqual([
+        'Tapé après le démarrage',
+      ]),
+    );
+
+    // « La rouvrir » : un nouveau brouillon, sur le serveur, et plus rien de côté.
+    await store.get().ui.toast?.action?.run();
+    expect(store.get().form.buyer.name).toBe('Tapé, jamais parvenu');
+    expect((await lignes(entrepriseId)).map((l) => l.form.buyer.name).sort()).toEqual([
+      'Tapé après le démarrage',
+      'Tapé, jamais parvenu',
+    ]);
+    expect(await p.saisieMiseDeCote()).toBeUndefined();
+  }, 20_000);
+});

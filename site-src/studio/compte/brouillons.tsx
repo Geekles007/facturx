@@ -22,6 +22,7 @@ import { ErreurConservation } from '../persistence.js';
 import { storage } from '../storage.js';
 import {
   brouillonAffiche,
+  enregistrerMaintenant,
   oublierLeBrouillonRefuse,
   persistKeys,
   type StudioState,
@@ -39,6 +40,7 @@ import {
   startDraft,
 } from '../workflows.js';
 import { ouvrirLaFactureEmise, relireHistorique } from './emission.js';
+import { direSaisieMiseDeCote } from './index.js';
 import {
   type Brouillon,
   estPersistenceCompte,
@@ -92,6 +94,24 @@ async function nouveau(): Promise<boolean> {
   const { company, numbering } = store.get();
   const apparence = await storage.get<Appearance>(persistKeys.appearance).catch(() => undefined);
   return startDraft(newInvoiceForm(company, numbering), fill(defaultAppearance(), apparence));
+}
+
+/**
+ * Rouvre la dernière saisie mise de côté (un miroir illisible au démarrage la cachait)
+ * comme un nouveau brouillon : le brouillon ouvert part d'abord au serveur, comme pour une nouvelle
+ * facture, et ne se quitte pas s'il ne peut pas partir (le Studio dit pourquoi). Elle n'est oubliée
+ * qu'une fois sur le serveur ; sinon elle reste de côté, et le Studio la redira au prochain
+ * démarrage. S'il en reste une autre, il la dit aussitôt.
+ */
+export async function reprendreLaSaisieMiseDeCote(): Promise<void> {
+  const p = conservation();
+  const abri = await p.saisieMiseDeCote();
+  if (!abri) return;
+  const { form, appearance } = abri.saisie;
+  if (!(await startDraft(hydrateForm(form), fill(defaultAppearance(), appearance)))) return;
+  if (!(await enregistrerMaintenant())) return;
+  await p.oublierSaisieMiseDeCote(abri.id).catch(() => undefined);
+  if (await p.saisieMiseDeCote()) direSaisieMiseDeCote();
 }
 
 // ---------- conflit ----------

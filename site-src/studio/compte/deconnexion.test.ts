@@ -131,6 +131,25 @@ describe('se déconnecter efface de ce navigateur les données du compte', () =>
     expect(reload).toHaveBeenCalledOnce();
   });
 
+  test('une saisie mise de côté (miroir illisible au démarrage, sonde D) : dite, puis effacée avec l’accord', async () => {
+    await remplir(true);
+    const abri = `draft-compte-abri-${E}`;
+    await local.set(abri, [{ id: 'a-1', le: '2026-11-07T10:00:00.000Z', saisie: brouillon }]);
+    confirmer.mockReturnValue(false);
+    await deconnecter();
+    expect(confirmer).toHaveBeenCalledWith(
+      t.compte.deconnexion.nonEnvoye([t.compte.deconnexion.elements.miseDeCote]),
+    );
+    expect(await local.get(abri)).toBeDefined();
+    expect(auth.signOut).not.toHaveBeenCalled();
+
+    confirmer.mockReturnValue(true);
+    await deconnecter();
+    expect(await local.get(abri)).toBeUndefined();
+    expect(await lire(clesDuCompte(E))).toEqual([undefined, undefined, undefined, undefined]);
+    expect(reload).toHaveBeenCalledOnce();
+  });
+
   test('une écriture que le serveur n’a pas prise est dite, puis plus rien ne s’écrit', async () => {
     await remplir(true);
     const { p, journal } = conservationEnMemoire();

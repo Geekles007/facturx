@@ -724,6 +724,9 @@ const fr = {
       injoignableFichier:
         "Le serveur du compte ne répond pas : ce fichier ne peut pas y être déposé maintenant. Réessayez dès qu'il répondra.",
       rechargerPage: 'Recharger la page',
+      miseDeCote:
+        "Une saisie que le serveur n'avait pas reçue n'a pas pu être relue dans ce navigateur au démarrage : elle a été mise de côté, rien n'en est perdu. Rouvrez-la pour en faire un brouillon.",
+      rouvrirMiseDeCote: 'La rouvrir',
       brouillonRefuse: (cause: string) =>
         `Le serveur refuse ce brouillon (${cause}) : votre saisie n'est pas enregistrée, mais elle reste ici. Corrigez-la, ou abandonnez-la.`,
       abandonner: 'Abandonner cette saisie',
@@ -1318,6 +1321,7 @@ const fr = {
         }. En vous déconnectant, vous le perdez : ce navigateur ne garde rien du compte après la déconnexion. Se déconnecter quand même ?`,
       elements: {
         draft: 'la saisie du brouillon ouvert',
+        miseDeCote: 'une saisie mise de côté',
         company: "l'entreprise",
         numbering: 'la numérotation',
         apparence: "l'apparence par défaut",
@@ -2032,6 +2036,9 @@ const en: Strings = {
       injoignableFichier:
         'The account server is not responding: this file cannot be uploaded now. Try again as soon as it responds.',
       rechargerPage: 'Reload the page',
+      miseDeCote:
+        'Something you typed that the server had not received could not be read back in this browser at startup: it has been set aside, nothing of it is lost. Reopen it to make it a draft.',
+      rouvrirMiseDeCote: 'Reopen it',
       brouillonRefuse: (cause: string) =>
         `The server refuses this draft (${cause}): what you typed is not saved, but it stays here. Correct it, or discard it.`,
       abandonner: 'Discard this work',
@@ -2591,6 +2598,7 @@ const en: Strings = {
         }. If you sign out, you lose it: this browser keeps nothing of the account after signing out. Sign out anyway?`,
       elements: {
         draft: 'what you typed in the open draft',
+        miseDeCote: 'something you typed that was set aside',
         company: 'the company',
         numbering: 'the numbering',
         apparence: 'the default appearance',
