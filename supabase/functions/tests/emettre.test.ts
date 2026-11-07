@@ -447,6 +447,27 @@ Deno.test('avoir dans une autre devise que la facture citée : 422 AVOIR_DEVISE,
   assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
 });
 
+Deno.test('avoir qui cite 70 000 factures : la devise se contrôle en une requête, sans limite de paramètres', async () => {
+  const compte = await creerCompte();
+  await insererFactures(compte, ['AD-EUR-1']);
+  // Une liste dépliée (`in (…)`) compterait un paramètre par numéro : Postgres n'en admet que
+  // 65 535 par requête, et ce serait un 500.
+  const citees = Array.from({ length: 70_000 }, (_, i) => ({
+    id: i === 69_999 ? 'AD-EUR-1' : `X-${i}`,
+    issueDate: aujourdhui() as IsoDate,
+  }));
+  const avoir: Invoice = {
+    ...factureDeTest(),
+    typeCode: '381',
+    currency: 'USD',
+    references: { precedingInvoices: citees },
+  };
+  const { status, corps } = await emettre(compte, avoir);
+  assertEquals(status, 422);
+  assertEquals(corps.details[0].code, 'AVOIR_DEVISE');
+  assertEquals((await numerotation(compte.entrepriseId)).prochain, 1);
+});
+
 Deno.test('adresse non confirmée : 403 NON_CONFIRME', async () => {
   const compte = await creerCompte();
   // La session reste valable ; c'est l'adresse qui ne l'est plus (le serveur d'auth le dit).

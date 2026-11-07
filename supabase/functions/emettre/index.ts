@@ -145,7 +145,8 @@ function lireCorps(texte: string): Corps {
  * dépôt du PDF : 422 `ANOMALIES`, une `Issue` sur la devise (`currency`). Seules les factures de
  * l'entreprise sont lues : un numéro d'une autre entreprise ne laisse rien voir de sa devise (il
  * reste inconnu, `ORIGINE` à l'étape 8). Une facture émise ne change plus : le contrôle n'a pas besoin
- * du verrou. Une facture que le SDK ne saurait lire (type, devise ou références absents) passe ici
+ * du verrou. Les numéros passent en un seul tableau (`= any($1::text[])`), quel que soit leur nombre :
+ * une liste dépliée compterait un paramètre par numéro, au-delà du plafond de Postgres (65 535). Une facture que le SDK ne saurait lire (type, devise ou références absents) passe ici
  * sans contrôle : la validation la refusera.
  */
 async function controlerDeviseDeLAvoir(e: string, invoice: Invoice): Promise<void> {
@@ -162,7 +163,7 @@ async function controlerDeviseDeLAvoir(e: string, invoice: Invoice): Promise<voi
   const autres = await sql<{ numero: string; devise: string }[]>`
     select numero, devise from public.factures
      where public.est_un_avoir(${typeCode}) and entreprise_id = ${e}
-       and numero in ${sql(numeros)} and devise <> ${currency}
+       and numero = any(${numeros}::text[]) and devise <> ${currency}
      order by numero`;
   if (autres.length === 0) return;
   const citees = autres.map((f) => `${f.numero} (${f.devise})`).join(', ');
