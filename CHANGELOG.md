@@ -2,6 +2,18 @@
 
 Toutes les évolutions notables de `facturx-sdk`. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; versions selon [SemVer](https://semver.org/lang/fr/). Depuis 1.0.0, une rupture d'API n'arrive que dans une version majeure ; une nouvelle règle de validation est une version mineure.
 
+## [Non publié]
+
+### Sécurité
+- **Plus de bombe de décompression à la lecture d'un PDF.** pdf-lib décompresse un flux en entier avant qu'on en voie la taille, et un seul bloc deflate peut gonfler plus de mille fois : une pièce `factur-x.xml`, un XMP ou un flux d'objets de quelques Ko pouvaient épuiser la mémoire avant tout contrôle. La décompression s'arrête désormais à la limite, avec l'erreur `TOO_LARGE` :
+  - `extractFacturX` et `extractInvoice` : la pièce Factur-X et le XMP à `xmlBytes` ;
+  - `loadPdf` (et tout ce qui charge un PDF) : chaque flux décompressé au chargement à `pdfBytes`.
+
+  Le décodage lui-même ne change pas : un PDF que le SDK lisait se lit de même, tant qu'il reste sous ces limites. La mémoire d'une lecture reste bornée à deux fois la limite.
+
+### Ajouté
+- `readXmp(doc, maxBytes?)` prend une limite de taille décompressée (défaut : `xmlBytes`, 64 Mio) et lève `TOO_LARGE` au-delà.
+
 ## [1.10.0] — 2026-10-15
 
 ### Ajouté

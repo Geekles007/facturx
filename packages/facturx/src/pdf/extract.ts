@@ -8,9 +8,10 @@ import {
   PDFRef,
   PDFStream,
 } from 'pdf-lib';
-import { type Limits, resolveLimits } from '../limits.js';
+import { DEFAULT_LIMITS, type Limits, resolveLimits } from '../limits.js';
 import type { Invoice } from '../types/invoice.js';
 import { type FromCiiXmlOptions, fromCiiXml } from '../xml/cii-read.js';
+import { withDecodeCap } from './decode-cap.js';
 import { loadPdf } from './embed.js';
 import { FacturXPdfError } from './errors.js';
 import { filespecName, KNOWN_FILENAMES, listEmbeddedFiles } from './names.js';
@@ -31,26 +32,52 @@ export interface ExtractedFacturX {
 
 const decoder = new TextDecoder('utf-8');
 
-function streamBytes(doc: PDFDocument, ref: PDFRef | PDFStream): Uint8Array | undefined {
+/**
+ * Octets décodés d'un flux, sans jamais décompresser au-delà de `maxBytes` (decode-cap.ts) : une
+ * pièce de quelques Ko peut gonfler à plusieurs Go. `what` nomme le flux et sa limite dans l'erreur.
+ */
+function streamBytes(
+  doc: PDFDocument,
+  ref: PDFRef | PDFStream,
+  maxBytes: number,
+  what: string,
+): Uint8Array | undefined {
   const stream = ref instanceof PDFRef ? doc.context.lookupMaybe(ref, PDFStream) : ref;
   if (!stream) return undefined;
-  if (stream instanceof PDFRawStream) return decodePDFRawStream(stream).decode();
-  return stream.getContents();
+  if (!(stream instanceof PDFRawStream)) return stream.getContents();
+  const decoded = withDecodeCap(maxBytes, () => decodePDFRawStream(stream).decode());
+  if ('exceeded' in decoded) {
+    throw new FacturXPdfError('TOO_LARGE', `${what}, une fois décompressé.`);
+  }
+  return decoded.value;
 }
 
-function embeddedStream(doc: PDFDocument, spec: PDFDict): Uint8Array | undefined {
+function embeddedStream(doc: PDFDocument, spec: PDFDict, limits: Limits): Uint8Array | undefined {
   const ef = spec.lookupMaybe(PDFName.of('EF'), PDFDict);
   if (!ef) return undefined;
   const target = ef.get(PDFName.of('UF')) ?? ef.get(PDFName.of('F'));
-  if (target instanceof PDFRef || target instanceof PDFStream) return streamBytes(doc, target);
+  if (target instanceof PDFRef || target instanceof PDFStream) {
+    return streamBytes(
+      doc,
+      target,
+      limits.xmlBytes,
+      `XML embarqué au-delà de la limite \`xmlBytes\` (${limits.xmlBytes})`,
+    );
+  }
   return undefined;
 }
 
-/** Métadonnées XMP du document, décodées, si présentes. */
-export function readXmp(doc: PDFDocument): string | undefined {
+/**
+ * Métadonnées XMP du document, décodées, si présentes. Lève `TOO_LARGE` si le flux dépasse
+ * `maxBytes` une fois décompressé (défaut : la limite `xmlBytes`).
+ */
+export function readXmp(
+  doc: PDFDocument,
+  maxBytes: number = DEFAULT_LIMITS.xmlBytes,
+): string | undefined {
   const ref = doc.catalog.get(PDFName.of('Metadata'));
   if (!(ref instanceof PDFRef) && !(ref instanceof PDFStream)) return undefined;
-  const bytes = streamBytes(doc, ref);
+  const bytes = streamBytes(doc, ref, maxBytes, `Métadonnées XMP au-delà de ${maxBytes} octets`);
   return bytes === undefined ? undefined : decoder.decode(bytes);
 }
 
@@ -98,7 +125,7 @@ function readFacturX(doc: PDFDocument, limits: Limits): ExtractedFacturX | undef
   for (const known of KNOWN_FILENAMES) {
     const match = candidates.find((c) => c.name.toLowerCase() === known);
     if (!match) continue;
-    const bytes = embeddedStream(doc, match.spec);
+    const bytes = embeddedStream(doc, match.spec, limits);
     if (bytes !== undefined && bytes.byteLength > limits.xmlBytes) {
       throw new FacturXPdfError(
         'TOO_LARGE',
@@ -111,7 +138,7 @@ function readFacturX(doc: PDFDocument, limits: Limits): ExtractedFacturX | undef
         `La pièce jointe « ${match.name} » n'a pas de flux lisible.`,
       );
     }
-    const xmp = readXmp(doc);
+    const xmp = readXmp(doc, limits.xmlBytes);
     const result: ExtractedFacturX = { xml: decoder.decode(bytes), bytes, filename: match.name };
     const level = xmp === undefined ? undefined : readXmpProperty(xmp, 'fx:ConformanceLevel');
     const type = xmp === undefined ? undefined : readXmpProperty(xmp, 'fx:DocumentType');

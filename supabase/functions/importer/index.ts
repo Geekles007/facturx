@@ -45,6 +45,7 @@ import {
   exigerAdmissible,
   lireObjetPortable,
   lireTexte,
+  PLAFOND_CORPS,
   serialiser,
 } from '../_shared/corps.ts';
 import { dateAdmise } from '../_shared/dates.ts';
@@ -62,6 +63,14 @@ const NUMERO_MAX = 35;
 
 /** Au-delà, un message du SDK est tronqué : il peut citer la valeur fautive, de toute longueur. */
 const MESSAGE_MAX = 300;
+
+/**
+ * Limites de lecture du PDF, à la mesure d'un worker de 256 Mo : le PDF tient dans le corps
+ * (`PLAFOND_CORPS`), et aucun de ses flux ne se décompresse au-delà ; le XML d'une facture du
+ * Studio pèse quelques dizaines de Ko. Les défauts du SDK (100 Mio, 64 Mio) laisseraient une pièce
+ * de quelques Ko gonfler jusqu'à 128 Mio avant d'être refusée.
+ */
+const LIMITES_PDF = { pdfBytes: PLAFOND_CORPS, xmlBytes: 4 * 1024 * 1024 };
 
 /** Le corps de la requête : le formulaire et l'apparence en texte JSON portable, le PDF en octets. */
 interface Corps {
@@ -116,7 +125,7 @@ async function lireFacture(
   const refus = (liste: Anomalie[]) => anomalies(liste, message);
   let lue: Awaited<ReturnType<typeof extractInvoice>>;
   try {
-    lue = await extractInvoice(pdf, { validate: false });
+    lue = await extractInvoice(pdf, { validate: false, limits: LIMITES_PDF });
   } catch (e) {
     // Un PDF illisible ou chiffré, un XML qui n'est pas du CII : le fait du fichier reçu, pas une
     // panne. Le message du SDK cite parfois la valeur fautive (« Nombre invalide « … » ») : il ne va

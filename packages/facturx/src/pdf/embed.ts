@@ -12,6 +12,7 @@ import {
 import { type Limits, resolveLimits } from '../limits.js';
 import type { Invoice } from '../types/invoice.js';
 import { toCiiXml } from '../xml/cii.js';
+import { withDecodeCapAsync } from './decode-cap.js';
 import { FacturXPdfError } from './errors.js';
 import { fingerprint128 } from './hash.js';
 import { FACTURX_FILENAME, filespecName, isKnownFilename, listEmbeddedFiles } from './names.js';
@@ -96,8 +97,13 @@ export async function loadPdf(
       `PDF de ${input.byteLength} octets au-delà de la limite \`pdfBytes\` (${max}).`,
     );
   }
+  // pdf-lib décompresse au chargement les flux d'objets et de références croisées : aucun ne peut
+  // gonfler au-delà de la taille admise pour le PDF entier (decode-cap.ts).
+  let loaded: { value: PDFDocument } | { exceeded: true };
   try {
-    return await PDFDocument.load(toBytes(input), { updateMetadata: false });
+    loaded = await withDecodeCapAsync(max, () =>
+      PDFDocument.load(toBytes(input), { updateMetadata: false }),
+    );
   } catch (error) {
     if (error instanceof EncryptedPDFError) {
       throw new FacturXPdfError(
@@ -108,6 +114,13 @@ export async function loadPdf(
     }
     throw new FacturXPdfError('INVALID_PDF', 'Impossible de lire le PDF fourni.', { cause: error });
   }
+  if ('exceeded' in loaded) {
+    throw new FacturXPdfError(
+      'TOO_LARGE',
+      `Un flux du PDF dépasse, une fois décompressé, la limite \`pdfBytes\` (${max}).`,
+    );
+  }
+  return loaded.value;
 }
 
 /** Retire les pièces jointes Factur-X existantes (arbre de noms et tableau `/AF`) et renvoie les entrées conservées. */
