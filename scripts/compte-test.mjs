@@ -22,11 +22,12 @@
  *      rendus de PDF. Ailleurs (l'étape « Tests du Studio contre la pile » de la CI), elles sont
  *      sautées : les fonctions n'y sont pas servies.
  *
- * Le code de sortie est celui de `deno test`, puis celui de Vitest. Un dossier de tests absent ou
- * vide est sauté, et sans aucun test le script sort proprement sans toucher à la pile.
+ * Le code de sortie est celui de la première étape en échec. Une étape qui n'exécute aucun test (un
+ * dossier absent, vide ou mal nommé, des fichiers introuvables, des tests tous sautés) fait sortir
+ * en 1 : un tel passage n'éprouve rien, et ne doit pas paraître vert, en CI comme ici.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deposerPolices } from './compte-polices.mjs';
@@ -100,6 +101,60 @@ async function mettreEnRoute(apiUrl) {
 function aDesTests(dossier, extension) {
   if (!existsSync(dossier)) return false;
   return readdirSync(dossier, { recursive: true }).some((nom) => nom.endsWith(extension));
+}
+
+/** Les couleurs ANSI, que les outils impriment même dans un tube quand l'environnement le demande. */
+const COULEURS = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
+
+/**
+ * Le nombre de tests qu'une étape a exécutés, lu dans le bilan qu'elle imprime : `Tests=N` de
+ * pg_prove (`supabase test db`), `N passed | M failed` de `deno test` (sans ses étapes ni les tests
+ * filtrés), `Tests  N passed | M failed | K skipped` de Vitest (sans les sautés). Un bilan
+ * introuvable compte pour zéro.
+ */
+export function testsExecutes(etape, sortie) {
+  const texte = sortie.replace(COULEURS, '');
+  const dernier = (motif) => [...texte.matchAll(motif)].at(-1);
+  if (etape === 'pgtap') return Number(dernier(/\bFiles=\d+, Tests=(\d+)/g)?.[1] ?? 0);
+  if (etape === 'deno') {
+    const bilan = dernier(/\| (\d+) passed(?: \(\d+ steps?\))? \| (\d+) failed/g);
+    return bilan ? Number(bilan[1]) + Number(bilan[2]) : 0;
+  }
+  const ligne = dernier(/^\s*Tests\s+(.*)$/gm)?.[1] ?? '';
+  const nombre = (mot) => Number(ligne.match(new RegExp(`(\\d+) ${mot}`))?.[1] ?? 0);
+  return nombre('passed') + nombre('failed');
+}
+
+/**
+ * Lance une étape, relaie sa sortie, et rend son code et le nombre de tests qu'elle a exécutés
+ * (`testsExecutes`). Seule la fin de la sortie est gardée : le bilan y est.
+ */
+function etape(nom, commande, args, options) {
+  return new Promise((resolve, reject) => {
+    const enfant = spawn(commande, args, { ...options, stdio: ['ignore', 'pipe', 'pipe'] });
+    let fin = '';
+    for (const flux of ['stdout', 'stderr']) {
+      enfant[flux].on('data', (morceau) => {
+        process[flux].write(morceau);
+        fin = (fin + morceau.toString('utf8')).slice(-65_536);
+      });
+    }
+    enfant.once('error', reject);
+    enfant.once('close', (code) => resolve({ code: code ?? 1, tests: testsExecutes(nom, fin) }));
+  });
+}
+
+/**
+ * Le code de sortie d'une étape finie : le sien s'il est en échec, 1 si elle n'a exécuté aucun test
+ * (avec le message qui le dit), 0 sinon.
+ */
+function verdict(nom, { code, tests }) {
+  if (code !== 0) return code;
+  if (tests > 0) return 0;
+  console.error(
+    `compte:test — l'étape ${nom} n'a exécuté aucun test (dossier, fichiers ou filtre à vérifier) : échec.`,
+  );
+  return 1;
 }
 
 /**
@@ -198,13 +253,20 @@ async function arreter(serveur) {
 }
 
 async function main() {
-  const pgtap = aDesTests(pgtapDir, '.sql');
-  const fonctions = aDesTests(denoDir, '.ts');
-  if (!pgtap && !fonctions) {
-    console.log(
-      'compte:test — aucun test pour l’instant (supabase/tests, supabase/functions/tests).',
-    );
-    return 0;
+  for (const [dossier, extension] of [
+    [pgtapDir, '.sql'],
+    [denoDir, '.ts'],
+  ]) {
+    if (!aDesTests(dossier, extension)) {
+      console.error(`compte:test — aucun test ${extension} dans ${dossier} : échec.`);
+      return 1;
+    }
+  }
+  const studio = studioEmission.filter((fichier) => existsSync(join(root, fichier)));
+  if (studio.length !== studioEmission.length) {
+    const absents = studioEmission.filter((fichier) => !studio.includes(fichier));
+    console.error(`compte:test — fichiers de test du Studio introuvables : ${absents.join(', ')}.`);
+    return 1;
   }
 
   const status = spawnSync('supabase', ['status', '-o', 'env'], { cwd: root, encoding: 'utf8' });
@@ -215,11 +277,11 @@ async function main() {
   }
   const stack = lireStatus(status.stdout);
 
-  if (pgtap) {
-    const resultat = spawnSync('supabase', ['test', 'db'], { cwd: root, stdio: 'inherit' });
-    if (resultat.status !== 0) return resultat.status ?? 1;
-  }
-  if (!fonctions) return 0;
+  const codePgtap = verdict(
+    'pgtap',
+    await etape('pgtap', 'supabase', ['test', 'db'], { cwd: root }),
+  );
+  if (codePgtap !== 0) return codePgtap;
 
   // Le script de `pnpm compte:polices`, avec l'adresse et la clé de la pile : mêmes polices, même bucket.
   const polices = await deposerPolices({ url: stack.API_URL, cle: stack.SERVICE_ROLE_KEY });
@@ -231,12 +293,12 @@ async function main() {
     await attendre(pret);
     await mettreEnRoute(stack.API_URL);
     // `--config` : sans lui, `deno test` lancé depuis la racine ne trouve pas l'import map.
-    const deno = spawn(
+    const deno = await etape(
+      'deno',
       'deno',
       ['test', '-A', '--config', 'supabase/functions/deno.json', 'supabase/functions/tests'],
       {
         cwd: root,
-        stdio: 'inherit',
         env: {
           ...process.env,
           SUPABASE_URL: stack.API_URL,
@@ -248,15 +310,13 @@ async function main() {
         },
       },
     );
-    const codeDeno = await new Promise((resolve) =>
-      deno.once('exit', (code) => resolve(code ?? 1)),
-    );
-    const studio = studioEmission.filter((fichier) => existsSync(join(root, fichier)));
-    if (codeDeno !== 0 || studio.length === 0) return codeDeno;
+    const codeDeno = verdict('deno', deno);
+    if (codeDeno !== 0) return codeDeno;
     // Le Studio, contre les fonctions encore servies : les clés passent par l'environnement, jamais
     // par la ligne de commande. Un fichier à la fois : leurs rendus de PDF ne se disputent pas le
     // serveur, dont emission-gel.test.ts mesure le temps de réponse.
-    const vitest = spawn(
+    const vitest = await etape(
+      'vitest',
       'pnpm',
       [
         'exec',
@@ -269,7 +329,6 @@ async function main() {
       ],
       {
         cwd: root,
-        stdio: 'inherit',
         env: {
           ...process.env,
           SUPABASE_URL: stack.API_URL,
@@ -279,16 +338,19 @@ async function main() {
         },
       },
     );
-    return await new Promise((resolve) => vitest.once('exit', (code) => resolve(code ?? 1)));
+    return verdict('vitest', vitest);
   } finally {
     await arreter(serveur);
   }
 }
 
-main().then(
-  (code) => process.exit(code),
-  (error) => {
-    console.error(error.message);
-    process.exit(1);
-  },
-);
+// Lancé, pas importé (les tests importent `testsExecutes`).
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().then(
+    (code) => process.exit(code),
+    (error) => {
+      console.error(error.message);
+      process.exit(1);
+    },
+  );
+}
