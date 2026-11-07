@@ -6,7 +6,7 @@
  * fixer — une session expirée rouvre ainsi la connexion sans passer par un bouton.
  */
 
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useId, useState } from 'preact/hooks';
 import { t } from '../i18n.js';
 import { ui, useStudio, type VoletConnexion } from '../store.js';
 import { Button, Dialog, Field, Input, Segmented } from '../ui.js';
@@ -25,6 +25,8 @@ export function Connexion() {
   const [occupe, setOccupe] = useState(false);
   const [erreur, setErreur] = useState<string>();
   const [message, setMessage] = useState<string>();
+  // La case des CGU est nommée par son étiquette (le texte et le lien), et non par sa valeur.
+  const idCgu = useId();
 
   // À la fermeture, rien ne reste : ni mot de passe, ni message d'une tentative précédente.
   useEffect(() => {
@@ -159,9 +161,10 @@ export function Connexion() {
                 type="checkbox"
                 checked={cgu}
                 aria-required="true"
+                aria-labelledby={idCgu}
                 onChange={(event) => setCgu((event.currentTarget as HTMLInputElement).checked)}
               />
-              <span>
+              <span id={idCgu}>
                 {t.compte.acceptBefore}
                 <a href={cguHref} target="_blank" rel="noopener">
                   {t.compte.acceptLink}
