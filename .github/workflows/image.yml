@@ -91,6 +91,28 @@ jobs:
             *unsafe-eval*|*'${'*) echo "CSP : jeton interdit, ou gabarit non substitué"; exit 1 ;;
           esac
 
+      # Une page gardée en cache garde sa CSP : les pages sont revalidées à chaque visite, pour qu'un
+      # changement de politique ou de projet Supabase atteigne aussi un visiteur qui revient. Les
+      # fichiers immuables gardent leur cache long.
+      - name: Les pages sont revalidées, les polices restent en cache
+        run: |
+          for chemin in / /validateur/ /studio/ /en/studio/ /studio/app.js; do
+            curl -sI "http://localhost:8080$chemin" | tr -d '\r' \
+              | grep -qi '^cache-control: no-cache$' \
+              || { echo "$chemin : pas de « Cache-Control: no-cache »"; exit 1; }
+            echo "$chemin : revalidée"
+          done
+          curl -sI http://localhost:8080/fonts/Geist-Variable.woff2 | tr -d '\r' \
+            | grep -qi '^cache-control: public, max-age=31536000, immutable$' \
+            || { echo "/fonts/ : le cache long a disparu"; exit 1; }
+          # La CSP est écrite à la construction avec l'ARG du bundle : si ce câblage disparaissait du
+          # Dockerfile, cette image (construite sans projet) resterait verte, et la production aurait
+          # un connect-src sans l'origine du projet.
+          grep -q '^ARG FACTURX_SUPABASE_URL' <(sed -n '/^FROM nginx/,$p' Dockerfile) \
+            || { echo "Dockerfile : l'ARG FACTURX_SUPABASE_URL n'est plus redéclaré dans l'étape nginx"; exit 1; }
+          grep -q 'ecrire-csp.sh "\$FACTURX_SUPABASE_URL"' Dockerfile \
+            || { echo "Dockerfile : la CSP n'est plus écrite depuis FACTURX_SUPABASE_URL"; exit 1; }
+
       # L'URL du projet est un argument de construction, gravé dans le bundle du Studio : la CSP
       # l'est aussi, par docker/ecrire-csp.sh, pour que les deux disent la même origine. On essaie
       # le script dans l'image plutôt que de la reconstruire pour chaque cas.
