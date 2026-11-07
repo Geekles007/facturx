@@ -130,7 +130,13 @@ function PageDuCompte({
     <dialog
       ref={ref}
       class="dialog page-compte"
-      aria-label={page?.vue === 'tableau' ? t.compte.tableau.titre : t.compte.suivi.liste.titre}
+      aria-label={
+        page?.vue === 'tableau'
+          ? t.compte.tableau.titre
+          : page?.vue === 'fiche'
+            ? t.compte.suivi.fiche.titre
+            : t.compte.suivi.liste.titre
+      }
       onClose={fermer}
       onClick={(event) => {
         if (event.target === ref.current) fermer();

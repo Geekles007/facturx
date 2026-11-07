@@ -93,6 +93,35 @@ function Ligne({
   );
 }
 
+/** Les factures en retard, chacune avec « Relancer », qui pose la facture de sa ligne. */
+export function ListeDesRetards({
+  retards,
+  ouvrir,
+}: {
+  retards: readonly LigneSuivi[];
+  ouvrir: (factureId: string) => void;
+}) {
+  const phrases = t.compte.tableau;
+  if (retards.length === 0) return <p class="lib-empty">{phrases.aucunRetard}</p>;
+  return (
+    <ul class="liste-tableau">
+      {retards.map((l) => (
+        <li key={l.factureId}>
+          <Ligne
+            l={l}
+            pastille={false}
+            detail={t.compte.suivi.liste.retard(l.joursRetard ?? 0)}
+            ouvrir={ouvrir}
+          />
+          <Button size="sm" icon="note" onClick={() => relancer(l.factureId)}>
+            {phrases.relancer}
+          </Button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function TableauDeBord({
   periode,
   changerPeriode,
@@ -160,6 +189,7 @@ export function TableauDeBord({
         <IconButton icon="x" label={t.app.close} onClick={fermer} />
       </header>
       <div class="page-corps">
+        <p class="field-hint">{phrases.intro}</p>
         <div class="tableau-periode">
           <Segmented<TypePeriode>
             label={phrases.periode}
@@ -190,24 +220,7 @@ export function TableauDeBord({
         <section class="fiche-section">
           <h3>{phrases.retards}</h3>
           {!erreurListes && !listes && <p class="lib-empty">{phrases.chargement}</p>}
-          {listes?.retards.length === 0 && <p class="lib-empty">{phrases.aucunRetard}</p>}
-          {listes && listes.retards.length > 0 && (
-            <ul class="liste-tableau">
-              {listes.retards.map((l) => (
-                <li key={l.factureId}>
-                  <Ligne
-                    l={l}
-                    pastille={false}
-                    detail={t.compte.suivi.liste.retard(l.joursRetard ?? 0)}
-                    ouvrir={ouvrir}
-                  />
-                  <Button size="sm" icon="note" onClick={() => relancer(l.factureId)}>
-                    {phrases.relancer}
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
+          {listes && <ListeDesRetards retards={listes.retards} ouvrir={ouvrir} />}
         </section>
 
         <section class="fiche-section">

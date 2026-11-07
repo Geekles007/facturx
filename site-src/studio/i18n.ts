@@ -916,6 +916,7 @@ const fr = {
         periode: 'La date de début dépasse la date de fin : aucune facture ne peut y tomber.',
       },
       fiche: {
+        titre: 'Fiche de la facture',
         retour: 'Toutes les factures',
         chargement: 'Chargement de la fiche…',
         netAPayer: 'Net à payer',
@@ -1875,6 +1876,7 @@ const en: Strings = {
         periode: 'The start date is after the end date: no invoice can fall in between.',
       },
       fiche: {
+        titre: 'Invoice record',
         retour: 'All invoices',
         chargement: 'Loading the record…',
         netAPayer: 'Amount due',

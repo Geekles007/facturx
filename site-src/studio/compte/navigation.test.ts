@@ -24,7 +24,7 @@ vi.mock('preact/hooks', () => ({
 }));
 
 const { Navigation, ENTREES } = await import('./navigation.js');
-const { TableauDeBord, relancer } = await import('./tableau.js');
+const { ListeDesRetards, TableauDeBord, relancer } = await import('./tableau.js');
 const { Fiche } = await import('./fiche.js');
 const { t } = await import('../i18n.js');
 const { store } = await import('../store.js');
@@ -101,6 +101,10 @@ describe('le tableau de bord dans la navigation du compte', () => {
       page: { vue: 'fiche', factureId: 'f-1', depuis: 'tableau' },
       naviguer,
     });
+    // La page nomme la vue qu'elle montre : la fiche, et non la liste des factures.
+    expect(surFiche.find((v) => v.type === 'dialog')?.props['aria-label']).toBe(
+      t.compte.suivi.fiche.titre,
+    );
     const fiche = surFiche.find((v) => v.type === Fiche);
     if (!fiche) throw new Error('fiche absente');
     expect(fiche.props.libelleRetour).toBe(t.compte.tableau.retour);
@@ -125,5 +129,61 @@ describe('le tableau de bord dans la navigation du compte', () => {
     expect(apres.ui.relance).toBe('f-9');
     expect({ ...apres.ui, relance: avant.ui.relance }).toEqual(avant.ui);
     expect(apres.form).toBe(avant.form);
+  });
+
+  test('« Relancer » sur une ligne pose la facture de cette ligne, et pas une autre', () => {
+    const ligne = (factureId: string, numero: string, joursRetard: number) => ({
+      factureId,
+      entrepriseId: 'e-1',
+      numero,
+      typeCode: '380',
+      dateEmission: '2026-09-01',
+      dateEcheance: '2026-10-01',
+      clientId: null,
+      clientNom: 'Client',
+      clientEmail: null,
+      devise: 'EUR',
+      ht: 1000,
+      ttc: 1200,
+      netAPayer: 1200,
+      encaisse: 0,
+      avoirs: 0,
+      resteDu: 1200,
+      statut: 'en_retard' as const,
+      joursRetard,
+    });
+    const ouvrir = vi.fn();
+    const arbre = [
+      ...parcourir(
+        ListeDesRetards({
+          retards: [ligne('f-1', 'F-1', 40), ligne('f-2', 'F-2', 12)],
+          ouvrir,
+        }),
+      ),
+    ];
+    const boutons = arbre.filter((v) => v.props.children === t.compte.tableau.relancer);
+    const [premier, second] = boutons;
+    if (!premier || !second) throw new Error('deux boutons « Relancer » attendus');
+    expect(boutons).toHaveLength(2);
+    (second.props.onClick as () => void)();
+    expect(store.get().ui.relance).toBe('f-2');
+    (premier.props.onClick as () => void)();
+    expect(store.get().ui.relance).toBe('f-1');
+    // « Relancer » n'ouvre pas la fiche.
+    expect(ouvrir).not.toHaveBeenCalled();
+  });
+
+  test('la page du tableau de bord dit ce que montrent ses chiffres (une devise à la fois)', () => {
+    const arbre = [
+      ...parcourir(
+        TableauDeBord({
+          periode: 'mois',
+          changerPeriode: () => undefined,
+          ouvrir: () => undefined,
+          fermer: () => undefined,
+        }),
+      ),
+    ];
+    expect(arbre.some((v) => v.props.children === t.compte.tableau.intro)).toBe(true);
   });
 });
