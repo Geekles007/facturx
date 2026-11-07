@@ -5,6 +5,14 @@ on:
     branches: [main]
   pull_request:
 
+# veraPDF, épinglé : la version que CI tire, et non `latest`, qui changerait sous les tests. Le shim
+# scripts/verapdf lit VERAPDF_IMAGE. v1.31.217 est le `latest` du 7 novembre 2026 (même empreinte,
+# sha256:635c849e…) ; la version tirée jusque-là en local, v1.31.169, n'est plus dans le registre, qui
+# ne garde que ses dernières versions (dix ce jour-là, de v1.31.208 à v1.31.217) : quand
+# `docker pull` ne trouve plus celle-ci, la remonter à une version publiée.
+env:
+  VERAPDF_IMAGE: ghcr.io/verapdf/cli:v1.31.217
+
 jobs:
   ci:
     runs-on: ubuntu-latest
@@ -39,7 +47,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends libxml2-utils >/dev/null
       - name: veraPDF (shim Docker) dans le PATH
         run: |
-          docker pull --quiet ghcr.io/verapdf/cli:latest
+          docker pull --quiet "$VERAPDF_IMAGE"
           echo "$GITHUB_WORKSPACE/scripts" >> "$GITHUB_PATH"
       - run: pnpm lint
       - run: pnpm typecheck
@@ -69,7 +77,7 @@ jobs:
       - uses: denoland/setup-deno@v2
       - name: veraPDF (shim Docker) dans le PATH
         run: |
-          docker pull --quiet ghcr.io/verapdf/cli:latest
+          docker pull --quiet "$VERAPDF_IMAGE"
           echo "$GITHUB_WORKSPACE/scripts" >> "$GITHUB_PATH"
       - name: Pile Supabase locale (sans les services inutiles aux tests)
         run: supabase start -x studio,imgproxy,vector,logflare,supavisor
