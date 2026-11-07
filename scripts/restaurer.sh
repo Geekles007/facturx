@@ -113,11 +113,13 @@ cible_sql() {
   psql "$RESTAURATION_DB_URL" -X -A -t -q -v ON_ERROR_STOP=1 "$@"
 }
 # Le nombre d'objets du bucket. Sur un bucket vide, l'AWS CLI n'écrit en général rien : `jq -s` lit
-# alors un tableau vide et donne 0 (sans `-s`, jq ne sortirait rien).
+# alors un tableau vide et donne 0 (sans `-s`, jq ne sortirait rien). L'échec de l'appel est vérifié à
+# part : dans `$(…)`, `set -e` ne joue pas, et une sortie vide passerait pour un bucket vide.
 nombre_objets() {
-  local n
-  n=$(cible_s3 s3api list-objects-v2 --bucket "$1" --output json |
-    jq -s '(.[0].Contents // []) | length')
+  local sortie n
+  sortie=$(cible_s3 s3api list-objects-v2 --bucket "$1" --output json) ||
+    echec "bucket $1 : liste impossible."
+  n=$(jq -s '(.[0].Contents // []) | length' <<<"$sortie")
   [[ "$n" =~ ^[0-9]+$ ]] || echec "bucket $1 : liste illisible."
   echo "$n"
 }
