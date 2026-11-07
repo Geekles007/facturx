@@ -103,6 +103,15 @@ export type Resultat = { ok: true } | { ok: false; message: string };
 /** Une lecture qui n'a pas abouti ; le message est une phrase de l'interface. */
 export class ErreurSuivi extends Error {
   override name = 'ErreurSuivi';
+  /**
+   * Ce que l'appelant peut en faire sans lire la phrase : `PDF_INDISPONIBLE`, un fichier absent du
+   * Storage, qu'un nouvel essai ne fera pas revenir.
+   */
+  readonly code: 'PDF_INDISPONIBLE' | undefined;
+  constructor(message: string, code?: 'PDF_INDISPONIBLE') {
+    super(message);
+    this.code = code;
+  }
 }
 
 // ---------- erreurs ----------
@@ -518,7 +527,7 @@ export async function urlPdf(factureId: string): Promise<string> {
     .from('factures')
     .createSignedUrl(lue.data.pdf_chemin, DUREE_URL_PDF_S);
   if (error && OBJET_ABSENT.test(error.message))
-    throw new ErreurSuivi(t.compte.suivi.erreurs.pdfIndisponible);
+    throw new ErreurSuivi(t.compte.suivi.erreurs.pdfIndisponible, 'PDF_INDISPONIBLE');
   if (error || !data?.signedUrl) {
     const statut = Number((error as { status?: unknown } | null)?.status);
     throw echecDeLecture(error, Number.isFinite(statut) ? statut : 0);
@@ -538,7 +547,8 @@ export async function pdfDe(factureId: string): Promise<Blob> {
   if (!reponse.ok) {
     // Effacé entre la signature et la lecture : le Storage le dit dans le corps.
     const corps = await reponse.text().catch(() => '');
-    if (OBJET_ABSENT.test(corps)) throw new ErreurSuivi(t.compte.suivi.erreurs.pdfIndisponible);
+    if (OBJET_ABSENT.test(corps))
+      throw new ErreurSuivi(t.compte.suivi.erreurs.pdfIndisponible, 'PDF_INDISPONIBLE');
     throw echecDeLecture(undefined, reponse.status);
   }
   const octets = await reponse.arrayBuffer();

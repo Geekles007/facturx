@@ -40,6 +40,7 @@ import { estPersistenceCompte } from './persistence.js';
 import {
   annulerPaiement,
   aujourdhuiParis,
+  ErreurSuivi,
   enregistrerPaiement,
   type LigneSuivi,
   ligneSuivi,
@@ -123,7 +124,13 @@ export function Fiche({
   const [message, setMessage] = useState<{ ok: boolean; texte: string }>();
   const [occupe, setOccupe] = useState(false);
   const [saisie, setSaisie] = useState<Saisie>();
-  const [pdf, setPdf] = useState<{ url?: string | undefined; octets?: Blob; erreur?: string }>({});
+  const [pdf, setPdf] = useState<{
+    url?: string | undefined;
+    octets?: Blob;
+    erreur?: string;
+    /** Le fichier n'est pas sur le serveur : un nouvel essai n'y changerait rien. */
+    absent?: boolean;
+  }>({});
   const [essaiPdf, setEssaiPdf] = useState(0);
 
   /** Relit la ligne de suivi, les paiements et les relances : la base seule fait foi. */
@@ -159,7 +166,11 @@ export function Fiche({
         setPdf({ url, octets });
       },
       (erreur) => {
-        if (!abandonne) setPdf({ erreur: messageDe(erreur) });
+        if (!abandonne)
+          setPdf({
+            erreur: messageDe(erreur),
+            absent: erreur instanceof ErreurSuivi && erreur.code === 'PDF_INDISPONIBLE',
+          });
       },
     );
     return () => {
@@ -540,7 +551,7 @@ export function Fiche({
                 <div class="banner warn actions" role="alert">
                   <span>{pdf.erreur}</span>
                   {/* Un fichier absent ne reviendra pas d'un nouvel essai. */}
-                  {pdf.erreur !== t.compte.suivi.erreurs.pdfIndisponible && (
+                  {!pdf.absent && (
                     <Button size="sm" icon="refresh" onClick={() => setEssaiPdf((n) => n + 1)}>
                       {t.compte.suivi.liste.reessayer}
                     </Button>

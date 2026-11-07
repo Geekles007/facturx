@@ -10,10 +10,17 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 const etats: { valeur: unknown; set: ReturnType<typeof vi.fn> }[] = [];
 /** Chaque `useEffect` rendu, gardé sans être lancé : un test le lance s'il le veut. */
 const effets: (() => unknown)[] = [];
+/** Les valeurs que prendront les prochains `useState`, à la place de leur valeur initiale. */
+const forces: { valeur: unknown }[] = [];
 
 vi.mock('preact/hooks', () => ({
   useState: (init: unknown) => {
-    const valeur = typeof init === 'function' ? (init as () => unknown)() : init;
+    const force = forces.shift();
+    const valeur = force
+      ? force.valeur
+      : typeof init === 'function'
+        ? (init as () => unknown)()
+        : init;
     const set = vi.fn();
     etats.push({ valeur, set });
     return [valeur, set];
@@ -34,6 +41,13 @@ vi.mock('preact/hooks', () => ({
 vi.mock('./compte/navigation.js', () => {
   throw new Error('chargement impossible');
 });
+
+// L'enregistrement qui précède un rechargement de la page : on en tient l'issue.
+const enregistrer = vi.fn(async () => true);
+vi.mock('./store.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./store.js')>()),
+  enregistrerMaintenant: () => enregistrer(),
+}));
 
 const issueInvoice = vi.fn();
 vi.mock('./workflows.js', async (importOriginal) => ({
@@ -79,6 +93,8 @@ beforeEach(() => {
 afterEach(() => {
   store.set({ ui: uiAvant });
   issueInvoice.mockReset();
+  enregistrer.mockClear();
+  forces.length = 0;
   vi.unstubAllGlobals();
 });
 
@@ -161,7 +177,7 @@ describe('la navigation du compte remplace le bouton Bibliothèque', () => {
     expect(bibliotheque(rendre(navigation(noeuds)[0]))).toHaveLength(1);
   });
 
-  test('la navigation ne se charge pas : le message propose de réessayer, qui relance le chargement', async () => {
+  test('la navigation ne se charge pas : recharger la page, après avoir enregistré la saisie', async () => {
     ui({
       compte: {
         email: 'essai@facturx.test',
@@ -176,16 +192,59 @@ describe('la navigation du compte remplace le bouton Bibliothèque', () => {
     effets.length = 0;
     // La bibliothèque reste à sa place pendant ce temps.
     expect(bibliotheque(rendre(nav))).toHaveLength(1);
-    const [, essai] = etats;
-    expect(essai?.valeur).toBe(0);
+    const [, echec] = etats;
+    expect(echec?.valeur).toBe(false);
     for (const effet of effets) effet();
     await vi.waitFor(() => expect(store.get().ui.toast?.text).toBe(t.compte.navigation.chargement));
+    // L'échec est retenu : la barre garde de quoi recharger quand le message est parti.
+    expect(echec?.set).toHaveBeenCalledWith(true);
     const action = store.get().ui.toast?.action;
-    expect(action?.label).toBe(t.compte.navigation.reessayer);
-    await action?.run();
-    // Le compteur d'essais avance : l'effet, qui en dépend, importe de nouveau la navigation.
-    const maj = essai?.set.mock.calls[0]?.[0] as (n: number) => number;
-    expect(maj(0)).toBe(1);
+    expect(action?.label).toBe(t.compte.conservation.rechargerPage);
+    // Un nouvel `import()` échouerait aussitôt : la page se recharge, une fois la saisie partie.
+    const reload = vi.fn();
+    vi.stubGlobal('location', { reload });
+    let enregistree: (fait: boolean) => void = () => undefined;
+    enregistrer.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((r) => {
+          enregistree = r;
+        }),
+    );
+    const rechargement = action?.run();
+    await vi.waitFor(() => expect(enregistrer).toHaveBeenCalledTimes(1));
+    expect(reload).not.toHaveBeenCalled();
+    enregistree(true);
+    await rechargement;
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  test('tant que la navigation n’est pas chargée, la barre garde « Recharger la page »', async () => {
+    ui({
+      compte: {
+        email: 'essai@facturx.test',
+        confirme: true,
+        entrepriseId: 'e-1',
+        suppressionDemandeeLe: undefined,
+        session: 'active',
+      },
+    });
+    const nav = navigation(barre())[0];
+    // Rendue après l'échec : pas de navigation, la bibliothèque, et le bouton de rechargement.
+    forces.push({ valeur: undefined }, { valeur: true });
+    const noeuds = rendre(nav);
+    expect(forces).toEqual([]);
+    expect(bibliotheque(noeuds)).toHaveLength(1);
+    const bouton = noeuds.find((v) => v.props.title === t.compte.conservation.rechargerPage);
+    if (!bouton) throw new Error('bouton de rechargement absent');
+    const reload = vi.fn();
+    vi.stubGlobal('location', { reload });
+    await (bouton.props.onClick as () => Promise<void>)();
+    expect(enregistrer).toHaveBeenCalled();
+    expect(reload).toHaveBeenCalledTimes(1);
+    // Avant tout échec, rien de tel.
+    expect(rendre(nav).some((v) => v.props.title === t.compte.conservation.rechargerPage)).toBe(
+      false,
+    );
   });
 });
 

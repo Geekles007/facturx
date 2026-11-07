@@ -835,8 +835,7 @@ const fr = {
       entreprise: 'Entreprise',
       bientot: 'bientôt',
       chargement:
-        "Le module des factures n'a pas pu être chargé : vérifiez votre connexion, puis réessayez.",
-      reessayer: 'Réessayer',
+        "Le module des factures n'a pas pu être chargé : vérifiez votre connexion, puis rechargez la page (votre saisie est enregistrée avant).",
     },
     /** Les factures émises, leur statut de paiement, leurs paiements et leurs relances. */
     suivi: {
@@ -879,7 +878,7 @@ const fr = {
         pdfIndisponible:
           "PDF indisponible : le fichier de cette facture n'est pas sur le serveur. Ses données restent dans la fiche.",
         inattendue:
-          'Erreur inattendue du Studio : rechargez la page, puis vérifiez la fiche avant de recommencer.',
+          'Erreur inattendue du Studio (détail dans la console du navigateur) : rechargez la page ; si une opération était en cours, vérifiez son résultat avant de la recommencer.',
       },
       montant: {
         vide: 'Saisissez le montant du paiement.',
@@ -1763,8 +1762,8 @@ const en: Strings = {
       catalogue: 'Catalogue',
       entreprise: 'Company',
       bientot: 'coming soon',
-      chargement: 'The invoices module could not be loaded: check your connection, then try again.',
-      reessayer: 'Try again',
+      chargement:
+        'The invoices module could not be loaded: check your connection, then reload the page (what you typed is saved first).',
     },
     suivi: {
       statuts: {
@@ -1805,7 +1804,7 @@ const en: Strings = {
         pdfIndisponible:
           'PDF unavailable: the file of this invoice is not on the server. Its data stays in the record.',
         inattendue:
-          'Unexpected Studio error: reload the page, then check the record before trying again.',
+          'Unexpected Studio error (details in the browser console): reload the page; if an operation was under way, check its result before doing it again.',
       },
       montant: {
         vide: 'Enter the payment amount.',

@@ -188,6 +188,8 @@ describe('les refus, en phrases de l’interface (sans pile)', () => {
       expect(console).toHaveBeenCalledTimes(3);
       expect(messageDe(new TypeError('x is not a function'))).toBe(phrases.erreurs.inattendue);
       expect(phrases.erreurs.inattendue).not.toBe(phrases.erreurs.reseau);
+      // La liste l'affiche aussi : la phrase ne renvoie pas à la seule fiche.
+      expect(phrases.erreurs.inattendue).not.toMatch(/fiche/);
     } finally {
       console.mockRestore();
     }
@@ -626,7 +628,11 @@ describe.skipIf(!process.env.SUPABASE_URL)('le suivi contre la pile, factures in
     );
     // Sans fichier déposé : la phrase dit ce qui manque, pas le réseau.
     const sansPdf = await insererFacture(entrepriseId, { prefixe: 'F' });
-    await expect(pdfDe(sansPdf)).rejects.toThrow(phrases.erreurs.pdfIndisponible);
+    // Le code de l'erreur dit à la fiche qu'un nouvel essai ne servirait à rien.
+    await expect(pdfDe(sansPdf)).rejects.toMatchObject({
+      message: phrases.erreurs.pdfIndisponible,
+      code: 'PDF_INDISPONIBLE',
+    });
     // La facture d'une autre entreprise : rien à signer.
     const autre = await compteDeTest();
     connecter(autre.sb, autre.entrepriseId);

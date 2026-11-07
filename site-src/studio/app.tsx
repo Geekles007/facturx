@@ -40,7 +40,15 @@ import { type Assets, buildXml, download, fileStem, layoutFor } from './pipeline
 import { Preview } from './preview.js';
 import { sampleForm } from './sample.js';
 import { storage } from './storage.js';
-import { persistKeys, store, type Tab, toast, ui, useStudio } from './store.js';
+import {
+  enregistrerMaintenant,
+  persistKeys,
+  store,
+  type Tab,
+  toast,
+  ui,
+  useStudio,
+} from './store.js';
 import { Button, Dialog, FilePick, Icon, IconButton, IssuesContext, Menu } from './ui.js';
 import {
   creditNoteForm,
@@ -427,6 +435,37 @@ function CompteBoutons() {
   );
 }
 
+/** Au-delà, le rechargement n'attend plus l'enregistrement : le miroir local garde la saisie. */
+const ATTENTE_AVANT_RECHARGEMENT_MS = 5_000;
+
+/**
+ * Recharge la page, une fois partie la dernière frappe (attente bornée : en mode compte, la saisie
+ * est aussi dans le miroir local, que le démarrage reprend).
+ */
+async function rechargerLaPage(): Promise<void> {
+  let minuterie: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    enregistrerMaintenant().catch(() => false),
+    new Promise((fin) => {
+      minuterie = setTimeout(fin, ATTENTE_AVANT_RECHARGEMENT_MS);
+    }),
+  ]);
+  clearTimeout(minuterie);
+  location.reload();
+}
+
+/**
+ * Un fragment du Studio (navigation, connexion, brouillons) ne s'est pas chargé. Un nouvel `import()`
+ * de la même adresse échouerait aussitôt, sans requête : le navigateur garde l'échec. Seul un
+ * rechargement de la page le refait ; le message le propose.
+ */
+function fragmentNonCharge(texte: string): void {
+  toast(texte, 'error', 15_000, {
+    label: t.compte.conservation.rechargerPage,
+    run: rechargerLaPage,
+  });
+}
+
 /** Le bouton de la bibliothèque : le Studio sans compte, ou en attendant la navigation du compte. */
 function BoutonBibliotheque() {
   return (
@@ -443,26 +482,36 @@ function BoutonBibliotheque() {
 
 /**
  * La navigation du compte (spec § 10), chargée à la connexion avec le reste du compte ; elle prend
- * la place du bouton de la bibliothèque, qui reste affiché tant qu'elle n'est pas chargée. Un échec
- * de chargement se dit, avec de quoi réessayer : sans elle, ni les factures ni les brouillons ne
- * s'ouvrent.
+ * la place du bouton de la bibliothèque, qui reste affiché tant qu'elle n'est pas chargée. Sans
+ * elle, ni les factures ni les brouillons ne s'ouvrent : un échec de chargement se dit, et, le
+ * message parti, la barre garde « Recharger la page ».
  */
 function NavigationALaDemande() {
   const [Navigation, setNavigation] =
     useState<ComponentType<{ nouvelleFacture: () => Promise<void> }>>();
-  const [essai, setEssai] = useState(0);
+  const [echec, setEchec] = useState(false);
   useEffect(() => {
     if (Navigation) return;
     import('./compte/navigation.js').then(
       (m) => setNavigation(() => m.Navigation),
-      () =>
-        toast(t.compte.navigation.chargement, 'error', 15_000, {
-          label: t.compte.navigation.reessayer,
-          run: async () => setEssai((n) => n + 1),
-        }),
+      () => {
+        setEchec(true);
+        fragmentNonCharge(t.compte.navigation.chargement);
+      },
     );
-  }, [Navigation, essai]);
-  return Navigation ? <Navigation nouvelleFacture={newBlank} /> : <BoutonBibliotheque />;
+  }, [Navigation]);
+  if (Navigation) return <Navigation nouvelleFacture={newBlank} />;
+  const recharger = t.compte.conservation.rechargerPage;
+  return (
+    <>
+      <BoutonBibliotheque />
+      {echec && (
+        <Button icon="refresh" variant="ghost" title={recharger} onClick={() => rechargerLaPage()}>
+          <span class="hide-md">{recharger}</span>
+        </Button>
+      )}
+    </>
+  );
 }
 
 /** Charge le dialogue de connexion, et avec lui `supabase-js`, à la première ouverture. */
@@ -474,7 +523,8 @@ function ConnexionALaDemande() {
     import('./compte/connexion.js').then(
       (m) => setDialogue(() => m.Connexion),
       () => {
-        toast(t.compte.errors.loadFailed, 'error');
+        // Rouvrir la boîte réimporterait la même adresse, en vain : recharger la page.
+        fragmentNonCharge(t.compte.errors.loadFailed);
         ui({ connexion: undefined });
       },
     );
@@ -725,7 +775,7 @@ function IssueDialog({
 /** Le module des brouillons du compte (liste, conflit), chargé à la première demande. */
 const moduleBrouillons = () =>
   import('./compte/brouillons.js').catch(() => {
-    toast(t.compte.errors.loadFailed, 'error');
+    fragmentNonCharge(t.compte.errors.loadFailed);
     return undefined;
   });
 
