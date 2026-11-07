@@ -3,17 +3,21 @@ name: Image du site
 # L'image du site n'était jusqu'ici construite que par Coolify, au déploiement : une erreur de
 # configuration nginx ne se voyait donc qu'en production. Ce contrôle la rattrape avant.
 # Limité aux chemins qui la composent : inutile de reconstruire une image à chaque commit du SDK.
+# `site/**` en fait partie : la CSP interdit les scripts en ligne, et une page qui en reprendrait un
+# resterait muette en production sans qu'aucun autre contrôle ne le voie.
 on:
   push:
     paths:
       - Dockerfile
       - docker/**
+      - site/**
       - .dockerignore
       - .github/workflows/image.yml
   pull_request:
     paths:
       - Dockerfile
       - docker/**
+      - site/**
       - .dockerignore
       - .github/workflows/image.yml
 
@@ -40,6 +44,97 @@ jobs:
         run: |
           curl -fsS -o /dev/null http://localhost:8080/
           curl -fsS -o /dev/null http://localhost:8080/validateur/
+
+      # nginx n'hérite d'aucun add_header du niveau server dans une location qui en définit un : la CSP
+      # est donc incluse dans chacune, et il faut un chemin par location pour le voir. Toutes les
+      # réponses disent la même politique.
+      - name: Chaque réponse du site porte la CSP, quelle que soit la location qui la sert
+        run: |
+          reference=""
+          for chemin in \
+              / /en/ /validateur/ /en/validateur/ /studio/ /en/studio/ /cgu/ /en/confidentialite/ \
+              /fonts/Geist-Variable.woff2 \
+              /studio/polices/geist-regular.ttf \
+              /validateur/vendor/SaxonJS2.rt.js \
+              /validateur/schemas/v1.4.0.04/FACTUR-X_EN16931.sef.json.gz \
+              /npm-downloads.json \
+              /validateur/compteur/controle /studio/compteur/facture; do
+            entetes=$(curl -sI "http://localhost:8080$chemin" | tr -d '\r')
+            statut=$(printf '%s\n' "$entetes" | head -1)
+            case "$chemin:$statut" in
+              # Le relevé npm n'est pas écrit quand l'API était indisponible à la construction : la
+              # location répond alors 404, avec sa CSP, et c'est la CSP que l'on regarde ici.
+              /npm-downloads.json:*) ;;
+              *:*' 2'[0-9][0-9]*) ;;
+              *) echo "$chemin : réponse inattendue « $statut »"; exit 1 ;;
+            esac
+            csp=$(printf '%s\n' "$entetes" | grep -i '^content-security-policy:' || true)
+            [ -n "$csp" ] || { echo "$chemin : pas d'en-tête content-security-policy"; exit 1; }
+            [ "$(printf '%s\n' "$csp" | wc -l)" -eq 1 ] \
+              || { echo "$chemin : content-security-policy en double"; exit 1; }
+            reference="${reference:-$csp}"
+            [ "$csp" = "$reference" ] || { echo "$chemin : CSP différente de celle de /"; exit 1; }
+            echo "$chemin : CSP présente"
+          done
+          echo "$reference"
+          # Ce qui compte dans la politique : aucun script hors du site, ni en ligne ni par eval,
+          # aucun plugin, aucune base ou cadre étranger, et le site seul pour connect-src (cette
+          # image est construite sans projet Supabase ; l'origine d'un projet est vérifiée plus bas).
+          for jeton in "script-src 'self';" "object-src 'none';" "base-uri 'self';" \
+              "frame-ancestors 'none'" "connect-src 'self';"; do
+            case "$reference" in
+              *"$jeton"*) ;;
+              *) echo "CSP : « $jeton » absent"; exit 1 ;;
+            esac
+          done
+          case "$reference" in
+            *unsafe-eval*|*'${'*) echo "CSP : jeton interdit, ou gabarit non substitué"; exit 1 ;;
+          esac
+
+      # L'URL du projet est un argument de construction, gravé dans le bundle du Studio : la CSP
+      # l'est aussi, par docker/ecrire-csp.sh, pour que les deux disent la même origine. On essaie
+      # le script dans l'image plutôt que de la reconstruire pour chaque cas.
+      - name: L'origine du projet Supabase entre dans connect-src, et rien d'autre
+        run: |
+          csp() {
+            docker run --rm --entrypoint /usr/local/bin/ecrire-csp.sh facturx-site \
+              "$1" /etc/nginx/csp.gabarit /dev/stdout | grep -o 'connect-src[^;]*;'
+          }
+          attendu() {
+            obtenu=$(csp "$1")
+            [ "$obtenu" = "$2" ] || { echo "« $1 » : attendu « $2 », reçu « $obtenu »"; exit 1; }
+          }
+          attendu '' "connect-src 'self';"
+          attendu 'https://abcdefgh.supabase.co' "connect-src 'self' https://abcdefgh.supabase.co;"
+          attendu 'https://abcdefgh.supabase.co/' "connect-src 'self' https://abcdefgh.supabase.co;"
+          attendu 'http://127.0.0.1:55421' "connect-src 'self' http://127.0.0.1:55421;"
+          # Une valeur qui n'est pas une origine ajouterait une directive à l'en-tête : la
+          # construction s'arrête plutôt que de publier une politique qu'on n'a pas écrite.
+          for mauvaise in "https://x.supabase.co; script-src *" "https://x.supabase.co/rest/v1" \
+              "supabase.co" "javascript:alert(1)" "https://x y.co"; do
+            if docker run --rm --entrypoint /usr/local/bin/ecrire-csp.sh facturx-site \
+                "$mauvaise" /etc/nginx/csp.gabarit /dev/null 2>/dev/null; then
+              echo "« $mauvaise » aurait dû être refusée"
+              exit 1
+            fi
+          done
+
+      # Un script en ligne serait bloqué par `script-src 'self'` : la page resterait muette sans que
+      # rien ne le dise. On le cherche donc dans le HTML servi, de même qu'un gestionnaire
+      # d'événement (on…=) ou une adresse javascript:, bloqués de la même façon.
+      - name: Aucune page ne porte de script en ligne
+        run: |
+          for page in / /en/ /validateur/ /en/validateur/ /studio/ /en/studio/ \
+              /cgu/ /confidentialite/ /sous-traitance/ \
+              /en/cgu/ /en/confidentialite/ /en/sous-traitance/; do
+            html=$(curl -fsS "http://localhost:8080$page")
+            if printf '%s\n' "$html" | grep -i '<script' | grep -ivq 'src='; then
+              echo "$page : script en ligne"; exit 1
+            fi
+            if printf '%s\n' "$html" | grep -Eiq '<[^>]*[[:space:]]on[a-z]+=|javascript:'; then
+              echo "$page : gestionnaire d'événement ou adresse javascript:"; exit 1
+            fi
+          done
 
       # Les CGU sont le lien de la boîte de création de compte : une page absente de l'image serait
       # un lien mort au moment où l'utilisateur doit les accepter. Les adresses sans barre finale
@@ -70,6 +165,19 @@ jobs:
           # Générée au démarrage, avant toute requête : rien n'est encore compté.
           curl -fsS -u stats:motdepassedetest http://localhost:8080/stats/compteurs.html >/tmp/compteurs.html
           grep -q 'Aucun décompte enregistré' /tmp/compteurs.html
+
+      # Le rapport de GoAccess repose sur des scripts et des styles en ligne : la CSP du site le
+      # rendrait muet. Il est derrière son mot de passe, et n'est pas une page du site.
+      - name: /stats/ n'a pas la CSP du site
+        run: |
+          for chemin in /stats/ /stats/compteurs.html /stats/rapport.js; do
+            entetes=$(curl -sI -u stats:motdepassedetest "http://localhost:8080$chemin" | tr -d '\r')
+            printf '%s\n' "$entetes" | head -1 | grep -q ' 200' \
+              || { echo "$chemin : attendu 200"; printf '%s\n' "$entetes"; exit 1; }
+            if printf '%s\n' "$entetes" | grep -iq '^content-security-policy:'; then
+              echo "$chemin : la CSP du site ne doit pas s'y appliquer"; exit 1
+            fi
+          done
 
       - name: Le rapport contient les visites, et pas d'adresse complète
         run: |

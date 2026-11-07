@@ -205,6 +205,18 @@ et le navigateur les décompresse lui-même, que le serveur ajoute ou non `Conte
 de `/validateur` vers `/validateur/` (sans quoi les chemins relatifs de la page remontent d'un cran)
 et la compression, qui fait passer le bundle d'environ 430 Ko à 195 Ko.
 
+## La politique de sécurité du contenu (CSP)
+
+Une session du Studio vit dans le navigateur (`localStorage`) : un script injecté dans une page pourrait la lire. Toutes les réponses de l'image portent donc un en-tête `Content-Security-Policy` : `default-src 'self'`, `script-src 'self'`, `object-src 'none'`, `frame-ancestors 'none'`, et `connect-src` limité au site et au projet Supabase du compte, seule origine extérieure. Les styles en ligne sont admis (`style-src 'unsafe-inline'`), les scripts jamais : ni en ligne, ni `eval` : Saxon-JS et le Studio tournent sans `unsafe-eval` ni `wasm-unsafe-eval`, ce qui s'est vérifié au navigateur (les trois schematrons rendent leur verdict). `blob:` et `data:` servent aux images, aux polices importées et à l'aperçu PDF du Studio, `frame-src` n'admet que `blob:`.
+
+- **Le gabarit** est [`docker/csp.conf`](../docker/csp.conf), une ligne avec `${FACTURX_SUPABASE_URL}`. [`docker/ecrire-csp.sh`](../docker/ecrire-csp.sh) en tire `/etc/nginx/csp.conf` **à la construction de l'image**, à partir du même argument que le bundle du Studio : les deux disent la même origine, ce qu'une variable lue au démarrage ne garantirait pas. Sans URL (image sans compte), `connect-src` se réduit à `'self'`. Une valeur qui n'est pas une origine (`https://<projet>.supabase.co`, rien après) arrête la construction.
+- **nginx n'hérite pas des `add_header`** du niveau `server` dans une `location` qui en définit un. Chaque `location` de [`docker/nginx.conf`](../docker/nginx.conf) qui a un `Cache-Control` inclut donc `/etc/nginx/csp.conf` ; une nouvelle `location` à en-têtes propres doit faire de même. Le contrôle de CI (`.github/workflows/image.yml`) interroge un chemin par `location`.
+- **`/stats/` n'a pas cette CSP** : le rapport de GoAccess repose sur des scripts en ligne. Il n'est pas une page du site, et son mot de passe le garde.
+- **Aucun script en ligne dans les pages.** L'ancien `<script>` de l'en-tête, qui posait la classe `js` sur `<html>`, est dans `classe-js.js`, chargé sans `defer` à la même place pour que la classe soit posée avant le premier rendu. Un nouveau script va dans un fichier ; pas de `on…=` ni de `javascript:` non plus. La CI le vérifie dans le HTML servi.
+- **Les pages HTML n'ont pas de `Cache-Control`** : un navigateur peut garder une page, et donc sa CSP, quelques heures sans revalider. Après un changement de l'URL du projet, un visiteur qui revient peut voir son Studio refuser d'appeler le compte jusqu'à ce que la page se rafraîchisse.
+
+**Vérifier.** `curl -sI https://facturx.ibird.dev/studio/ | grep -i content-security-policy` doit montrer le projet dans `connect-src` ; dans un navigateur, la console de l'accueil, du validateur et du Studio ne signale aucune violation. En dehors de l'image (rsync, voir plus haut), rien ne l'ajoute : reprendre la ligne de `docker/csp.conf` dans le serveur, l'URL substituée.
+
 ## Vérifier après déploiement
 
 ```bash
@@ -224,7 +236,7 @@ coup le bundle, le runtime XSLT, les trois jeux de règles du profil et la base 
 
 ## Ce qui est versionné, ce qui ne l'est pas
 
-Versionnés : les pages (`index.html`, `validateur/index.html`, `studio/index.html` et leurs versions `en/`), les styles, `app.js` de la page d'accueil, les polices Geist (licence SIL OFL) et le favicon. Les sources du validateur et du Studio sont dans `site-src/`, hors du dossier déployé.
+Versionnés : les pages (`index.html`, `validateur/index.html`, `studio/index.html` et leurs versions `en/`), les styles, `app.js` de la page d'accueil, `classe-js.js` (la classe `js`, partagée par les pages d'accueil et de validateur), les polices Geist (licence SIL OFL) et le favicon. Les sources du validateur et du Studio sont dans `site-src/`, hors du dossier déployé.
 
 Générés (ignorés par git, à reconstruire avant chaque déploiement) : `npm-downloads.json`, `studio/app.js`, ses fragments et `studio/polices/`, `validateur/app.js` et ses fragments, `validateur/vendor/` (runtime Saxon-JS et sa licence), `validateur/schemas/<version France_RFE>/` (schematrons compilés et bases de codes, dans un dossier qui change de nom à chaque version, puisque nginx les garde un an en cache) et `validateur/exemples/` — dont `facture-exemple.pdf` et `facture-exemple-non-conforme.pdf`, deux PDF/A-3 Factur-X produits par le SDK à chaque construction (`scripts/example-invoice.mjs`, testés dans `pnpm site:check`).
 
