@@ -443,18 +443,25 @@ function BoutonBibliotheque() {
 
 /**
  * La navigation du compte (spec § 10), chargée à la connexion avec le reste du compte ; elle prend
- * la place du bouton de la bibliothèque, qui reste affiché tant qu'elle n'est pas chargée.
+ * la place du bouton de la bibliothèque, qui reste affiché tant qu'elle n'est pas chargée. Un échec
+ * de chargement se dit, avec de quoi réessayer : sans elle, ni les factures ni les brouillons ne
+ * s'ouvrent.
  */
 function NavigationALaDemande() {
   const [Navigation, setNavigation] =
     useState<ComponentType<{ nouvelleFacture: () => Promise<void> }>>();
+  const [essai, setEssai] = useState(0);
   useEffect(() => {
     if (Navigation) return;
     import('./compte/navigation.js').then(
       (m) => setNavigation(() => m.Navigation),
-      () => toast(t.compte.navigation.chargement, 'error'),
+      () =>
+        toast(t.compte.navigation.chargement, 'error', 15_000, {
+          label: t.compte.navigation.reessayer,
+          run: async () => setEssai((n) => n + 1),
+        }),
     );
-  }, [Navigation]);
+  }, [Navigation, essai]);
   return Navigation ? <Navigation nouvelleFacture={newBlank} /> : <BoutonBibliotheque />;
 }
 

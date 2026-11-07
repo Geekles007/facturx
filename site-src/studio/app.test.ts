@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 /** Chaque `useState` rendu : sa valeur initiale et son setter espion. */
 const etats: { valeur: unknown; set: ReturnType<typeof vi.fn> }[] = [];
+/** Chaque `useEffect` rendu, gardé sans être lancé : un test le lance s'il le veut. */
+const effets: (() => unknown)[] = [];
 
 vi.mock('preact/hooks', () => ({
   useState: (init: unknown) => {
@@ -16,7 +18,9 @@ vi.mock('preact/hooks', () => ({
     etats.push({ valeur, set });
     return [valeur, set];
   },
-  useEffect: () => undefined,
+  useEffect: (effet: () => unknown) => {
+    effets.push(effet);
+  },
   useLayoutEffect: () => undefined,
   useMemo: (f: () => unknown) => f(),
   useCallback: (f: unknown) => f,
@@ -25,6 +29,11 @@ vi.mock('preact/hooks', () => ({
   useId: () => 'id',
   useReducer: (_r: unknown, init: unknown) => [init, vi.fn()],
 }));
+
+// La navigation du compte ne se charge pas (réseau coupé) : seul l'effet qui l'importe la demande.
+vi.mock('./compte/navigation.js', () => {
+  throw new Error('chargement impossible');
+});
 
 const issueInvoice = vi.fn();
 vi.mock('./workflows.js', async (importOriginal) => ({
@@ -150,6 +159,33 @@ describe('la navigation du compte remplace le bouton Bibliothèque', () => {
     expect(bibliotheque(noeuds)).toHaveLength(0);
     // Avant que son module ne soit chargé, la navigation laisse la bibliothèque à sa place.
     expect(bibliotheque(rendre(navigation(noeuds)[0]))).toHaveLength(1);
+  });
+
+  test('la navigation ne se charge pas : le message propose de réessayer, qui relance le chargement', async () => {
+    ui({
+      compte: {
+        email: 'essai@facturx.test',
+        confirme: true,
+        entrepriseId: 'e-1',
+        suppressionDemandeeLe: undefined,
+        session: 'active',
+      },
+    });
+    const nav = navigation(barre())[0];
+    etats.length = 0;
+    effets.length = 0;
+    // La bibliothèque reste à sa place pendant ce temps.
+    expect(bibliotheque(rendre(nav))).toHaveLength(1);
+    const [, essai] = etats;
+    expect(essai?.valeur).toBe(0);
+    for (const effet of effets) effet();
+    await vi.waitFor(() => expect(store.get().ui.toast?.text).toBe(t.compte.navigation.chargement));
+    const action = store.get().ui.toast?.action;
+    expect(action?.label).toBe(t.compte.navigation.reessayer);
+    await action?.run();
+    // Le compteur d'essais avance : l'effet, qui en dépend, importe de nouveau la navigation.
+    const maj = essai?.set.mock.calls[0]?.[0] as (n: number) => number;
+    expect(maj(0)).toBe(1);
   });
 });
 

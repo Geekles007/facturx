@@ -11,10 +11,10 @@ import { formatDate, formatMoney, t } from '../i18n.js';
 import { useStudio } from '../store.js';
 import { Button, Field, IconButton, Input, Select } from '../ui.js';
 import {
-  ErreurSuivi,
   type FiltresSuivi,
   type LigneSuivi,
   listerSuivi,
+  messageDe,
   STATUTS,
   type Statut,
 } from './suivi.js';
@@ -31,6 +31,17 @@ export function echeanceDe(ligne: LigneSuivi): string {
   return ligne.dateEcheance
     ? phrases.liste.echeance(formatDate(ligne.dateEcheance))
     : phrases.fiche.sansEcheance;
+}
+
+/**
+ * Ce qu'on ajoute au net à payer d'une ligne : le reste dû quand il en diffère, ou le montant à
+ * rendre (sans signe) d'une facture à rembourser ; rien quand il est nul ou égal au net.
+ */
+export function resteDeLigne(ligne: LigneSuivi): string {
+  const phrases = t.compte.suivi.liste;
+  if (ligne.resteDu < 0) return phrases.aRembourser(formatMoney(-ligne.resteDu, ligne.devise));
+  if (ligne.resteDu === 0 || ligne.resteDu === ligne.netAPayer) return '';
+  return phrases.reste(formatMoney(ligne.resteDu, ligne.devise));
 }
 
 export function Factures({
@@ -59,8 +70,7 @@ export function Factures({
         if (!abandonne) setLignes(lues);
       },
       (raison) => {
-        if (!abandonne)
-          setErreur(raison instanceof ErreurSuivi ? raison.message : t.compte.suivi.erreurs.reseau);
+        if (!abandonne) setErreur(messageDe(raison));
       },
     );
     return () => {
@@ -166,11 +176,7 @@ export function Factures({
                       ' · ',
                     )}
                   </span>
-                  <span class="ligne-reste">
-                    {l.resteDu !== 0 && l.resteDu !== l.netAPayer
-                      ? phrases.reste(formatMoney(l.resteDu, l.devise))
-                      : ''}
-                  </span>
+                  <span class="ligne-reste">{resteDeLigne(l)}</span>
                 </button>
               </li>
             ))}

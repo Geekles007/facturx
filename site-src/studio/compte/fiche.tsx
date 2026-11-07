@@ -17,15 +17,23 @@
  * Chargé par `import()` avec la navigation du compte.
  */
 
+import { DepositError } from 'facturx-sdk';
 import { useEffect, useState } from 'preact/hooks';
 import { formatDate, formatMoney, t } from '../i18n.js';
 import type { SavedInvoice } from '../library.js';
 import type { InvoiceForm } from '../model.js';
+import { ErreurConservation } from '../persistence.js';
 import { download, fileStem } from '../pipeline.js';
 import { storage } from '../storage.js';
 import { store, toast } from '../store.js';
 import { Button, Field, IconButton, Input, Select } from '../ui.js';
-import { balanceForm, creditNoteForm, duplicateForm, startDraft } from '../workflows.js';
+import {
+  balanceForm,
+  creditNoteForm,
+  duplicateForm,
+  messageEnAttente,
+  startDraft,
+} from '../workflows.js';
 import { relireHistorique } from './emission.js';
 import { echeanceDe, PastilleStatut } from './factures.js';
 import { estPersistenceCompte } from './persistence.js';
@@ -69,6 +77,26 @@ interface Saisie {
 const jourDe = (horodatage: string): string => formatDate(aujourdhuiParis(new Date(horodatage)));
 
 /**
+ * Le navigateur affiche-t-il un PDF dans la page ? Non sur un téléphone Android (Chrome n'y a pas de
+ * lecteur intégré) : un cadre resterait vide. Un navigateur qui ne connaît pas `pdfViewerEnabled`
+ * garde l'aperçu.
+ */
+export function lecteurPdfIntegre(
+  nav: { pdfViewerEnabled?: boolean } | undefined = globalThis.navigator,
+): boolean {
+  return nav?.pdfViewerEnabled !== false;
+}
+
+/** Pourquoi un nouveau brouillon n'a pas pu être créé, quand `startDraft` lève. */
+function echecDuBrouillon(erreur: unknown): string {
+  if (erreur instanceof ErreurConservation)
+    return erreur.code === 'EN_ATTENTE'
+      ? messageEnAttente(erreur.detail)
+      : t.compte.brouillons.echec;
+  return messageDe(erreur);
+}
+
+/**
  * La facture émise telle que l'historique la garde (formulaire et apparence) : celle du magasin,
  * ou, si elle n'y est pas encore (émise ailleurs), celle de l'historique relu.
  */
@@ -95,7 +123,7 @@ export function Fiche({
   const [message, setMessage] = useState<{ ok: boolean; texte: string }>();
   const [occupe, setOccupe] = useState(false);
   const [saisie, setSaisie] = useState<Saisie>();
-  const [pdf, setPdf] = useState<{ url?: string; octets?: Blob; erreur?: string }>({});
+  const [pdf, setPdf] = useState<{ url?: string | undefined; octets?: Blob; erreur?: string }>({});
   const [essaiPdf, setEssaiPdf] = useState(0);
 
   /** Relit la ligne de suivi, les paiements et les relances : la base seule fait foi. */
@@ -118,6 +146,8 @@ export function Fiche({
   }, [factureId]);
 
   // Le PDF, depuis une URL `blob:` que l'on libère en quittant la fiche (ou avant un nouvel essai).
+  // Sans lecteur intégré, pas d'URL : le PDF ne sert qu'au téléchargement.
+  const lecteur = lecteurPdfIntegre();
   useEffect(() => {
     let abandonne = false;
     let url: string | undefined;
@@ -125,7 +155,7 @@ export function Fiche({
     pdfDe(factureId).then(
       (octets) => {
         if (abandonne) return;
-        url = URL.createObjectURL(octets);
+        if (lecteur) url = URL.createObjectURL(octets);
         setPdf({ url, octets });
       },
       (erreur) => {
@@ -196,7 +226,8 @@ export function Fiche({
   const marquer = (l: LigneSuivi) => {
     if (!confirm(phrases.marquerConfirm(formatMoney(l.resteDu, l.devise)))) return;
     setSaisie(undefined);
-    void ecrire(() => marquerPayee(factureId, aujourdhuiParis()), phrases.marquee);
+    // Le montant confirmé, et lui seul : s'il n'est plus le reste dû, rien ne part.
+    void ecrire(() => marquerPayee(factureId, aujourdhuiParis(), l.resteDu), phrases.marquee);
   };
 
   const annuler = (p: Paiement, devise: string) => {
@@ -223,13 +254,15 @@ export function Fiche({
       try {
         form = fabriquer(saved);
       } catch (erreur) {
-        setMessage({ ok: false, texte: (erreur as Error).message });
+        // Les acomptes refusés par `withDeposits` disent pourquoi ; le reste est une erreur du Studio.
+        const texte = erreur instanceof DepositError ? erreur.message : messageDe(erreur);
+        setMessage({ ok: false, texte });
         return;
       }
       try {
         await startDraft(form, structuredClone(saved.appearance));
-      } catch {
-        toast(t.compte.brouillons.echec, 'error', 9000);
+      } catch (erreur) {
+        toast(echecDuBrouillon(erreur), 'error', 9000);
       }
       fermer();
     } finally {
@@ -296,8 +329,11 @@ export function Fiche({
                   </div>
                 )}
                 <div class={`reste statut-${ligne.statut}`}>
-                  <dt class="libelle">{phrases.resteDu}</dt>
-                  <dd>{formatMoney(ligne.resteDu, ligne.devise)}</dd>
+                  {/* Trop reçu : le montant à rendre, sans signe. */}
+                  <dt class="libelle">
+                    {ligne.resteDu < 0 ? t.compte.suivi.statuts.a_rembourser : phrases.resteDu}
+                  </dt>
+                  <dd>{formatMoney(Math.abs(ligne.resteDu), ligne.devise)}</dd>
                 </div>
               </dl>
 
@@ -498,19 +534,23 @@ export function Fiche({
 
             <section class="fiche-pdf" aria-label={phrases.pdf}>
               {pdf.url && <iframe src={pdf.url} title={phrases.pdf} />}
-              {!pdf.url && !pdf.erreur && <p class="lib-empty">{phrases.pdfChargement}</p>}
+              {!pdf.octets && !pdf.erreur && <p class="lib-empty">{phrases.pdfChargement}</p>}
+              {pdf.octets && !lecteur && <p class="field-hint">{phrases.sansLecteur}</p>}
               {pdf.erreur && (
                 <div class="banner warn actions" role="alert">
                   <span>{pdf.erreur}</span>
-                  <Button size="sm" icon="refresh" onClick={() => setEssaiPdf((n) => n + 1)}>
-                    {t.compte.suivi.liste.reessayer}
-                  </Button>
+                  {/* Un fichier absent ne reviendra pas d'un nouvel essai. */}
+                  {pdf.erreur !== t.compte.suivi.erreurs.pdfIndisponible && (
+                    <Button size="sm" icon="refresh" onClick={() => setEssaiPdf((n) => n + 1)}>
+                      {t.compte.suivi.liste.reessayer}
+                    </Button>
+                  )}
                 </div>
               )}
               {pdf.octets && (
                 <Button
                   size="sm"
-                  variant="ghost"
+                  variant={lecteur ? 'ghost' : 'default'}
                   icon="download"
                   onClick={() => void telecharger(ligne.numero)}
                 >

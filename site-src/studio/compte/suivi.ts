@@ -423,24 +423,28 @@ export async function enregistrerPaiement(p: {
 }
 
 /**
- * Enregistre le reste dû, relu dans la base, à la date `aujourdhui` (« Marquer comme payée »). Une
- * facture qui n'a plus rien à payer n'appelle rien. Le moyen n'est pas demandé : `autre`. Ne lève pas.
+ * « Marquer comme payée » : enregistre `attendu`, le reste dû que l'utilisateur a vu et confirmé, à
+ * la date `aujourdhui`. Le reste dû est d'abord relu dans la base : s'il n'est plus `attendu` (un
+ * paiement ou un avoir enregistré ailleurs entre-temps), rien ne part, et le Studio le dit — jamais
+ * un autre montant que celui confirmé. Une facture qui n'a plus rien à payer n'appelle rien non plus.
+ * Le moyen n'est pas demandé : `autre`. Ne lève pas.
  */
-export async function marquerPayee(factureId: string, aujourdhui: string): Promise<Resultat> {
+export async function marquerPayee(
+  factureId: string,
+  aujourdhui: string,
+  attendu: number,
+): Promise<Resultat> {
   let ligne: LigneSuivi | undefined;
   try {
     ligne = await ligneSuivi(factureId);
   } catch (erreur) {
     return { ok: false, message: messageDe(erreur) };
   }
-  if (!ligne) return { ok: false, message: t.compte.suivi.erreurs.introuvable };
-  if (ligne.resteDu <= 0) return { ok: false, message: t.compte.suivi.erreurs.rienAPayer };
-  return enregistrerPaiement({
-    factureId,
-    date: aujourdhui,
-    montant: ligne.resteDu,
-    moyen: 'autre',
-  });
+  const erreurs = t.compte.suivi.erreurs;
+  if (!ligne) return { ok: false, message: erreurs.introuvable };
+  if (ligne.resteDu <= 0) return { ok: false, message: erreurs.rienAPayer };
+  if (ligne.resteDu !== attendu) return { ok: false, message: erreurs.resteChange };
+  return enregistrerPaiement({ factureId, date: aujourdhui, montant: attendu, moyen: 'autre' });
 }
 
 /**
@@ -467,9 +471,25 @@ export async function annulerPaiement(id: string): Promise<Resultat> {
   }
 }
 
-/** La phrase d'une exception attrapée : la sienne si c'est une `ErreurSuivi`, sinon le réseau. */
+/**
+ * Ce que lève `fetch` quand la requête n'a pas pu partir ou revenir, selon le navigateur : Chrome
+ * (« Failed to fetch »), Firefox (« NetworkError… »), Safari (« Load failed »), Node (« fetch
+ * failed »). Toujours un `TypeError`, mais toute `TypeError` n'en est pas une.
+ */
+const ERREUR_RESEAU =
+  /failed to fetch|networkerror|load failed|fetch failed|network request failed/i;
+
+/**
+ * La phrase d'une exception attrapée : la sienne si c'est une `ErreurSuivi`, celle du réseau pour
+ * un `fetch` qui n'a pas abouti ; toute autre (une erreur du Studio) n'est pas dite « réseau » : un
+ * message générique, et le détail dans la console.
+ */
 export function messageDe(erreur: unknown): string {
-  return erreur instanceof ErreurSuivi ? erreur.message : t.compte.suivi.erreurs.reseau;
+  if (erreur instanceof ErreurSuivi) return erreur.message;
+  if (erreur instanceof TypeError && ERREUR_RESEAU.test(erreur.message))
+    return t.compte.suivi.erreurs.reseau;
+  console.error(erreur);
+  return t.compte.suivi.erreurs.inattendue;
 }
 
 // ---------- PDF ----------
@@ -477,12 +497,28 @@ export function messageDe(erreur: unknown): string {
 /** Les URL signées des PDF valent 60 secondes : le temps de les lire, pas de les partager. */
 export const DUREE_URL_PDF_S = 60;
 
-/** L'URL signée (60 secondes) du PDF de la facture, dans le bucket `factures`. */
+/** Le Storage dit un objet absent par ce message (en 400, ou en 404 selon la route). */
+const OBJET_ABSENT = /object not found|not_found/i;
+
+/**
+ * L'URL signée (60 secondes) du PDF de la facture, dans le bucket `factures`, au chemin enregistré
+ * avec elle (`pdf_chemin`). Une facture sans fichier déposé : « PDF indisponible ».
+ */
 export async function urlPdf(factureId: string): Promise<string> {
   const { sb, E } = contexte();
+  const lue = await sb
+    .from('factures')
+    .select('pdf_chemin')
+    .eq('entreprise_id', E)
+    .eq('id', factureId)
+    .maybeSingle<{ pdf_chemin: string }>();
+  if (lue.error) throw echecDeLecture(lue.error, statutDe(lue));
+  if (!lue.data) throw new ErreurSuivi(t.compte.suivi.erreurs.introuvable);
   const { data, error } = await sb.storage
     .from('factures')
-    .createSignedUrl(`${E}/${factureId}.pdf`, DUREE_URL_PDF_S);
+    .createSignedUrl(lue.data.pdf_chemin, DUREE_URL_PDF_S);
+  if (error && OBJET_ABSENT.test(error.message))
+    throw new ErreurSuivi(t.compte.suivi.erreurs.pdfIndisponible);
   if (error || !data?.signedUrl) {
     const statut = Number((error as { status?: unknown } | null)?.status);
     throw echecDeLecture(error, Number.isFinite(statut) ? statut : 0);
@@ -499,7 +535,12 @@ export async function pdfDe(factureId: string): Promise<Blob> {
   } catch {
     throw new ErreurSuivi(t.compte.suivi.erreurs.reseau);
   }
-  if (!reponse.ok) throw echecDeLecture(undefined, reponse.status);
+  if (!reponse.ok) {
+    // Effacé entre la signature et la lecture : le Storage le dit dans le corps.
+    const corps = await reponse.text().catch(() => '');
+    if (OBJET_ABSENT.test(corps)) throw new ErreurSuivi(t.compte.suivi.erreurs.pdfIndisponible);
+    throw echecDeLecture(undefined, reponse.status);
+  }
   const octets = await reponse.arrayBuffer();
   return new Blob([octets], { type: 'application/pdf' });
 }

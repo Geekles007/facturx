@@ -6,17 +6,21 @@ import { defaultAppearance } from '../library.js';
 import { buildInvoice, type InvoiceForm } from '../model.js';
 import { sampleForm } from '../sample.js';
 import { store } from '../store.js';
+import { resteDeLigne } from './factures.js';
+import { lecteurPdfIntegre } from './fiche.js';
 import {
   annulerPaiement,
   aujourdhuiParis,
   DUREE_URL_PDF_S,
   enregistrerPaiement,
   filtrer,
+  type LigneSuivi,
   ligneSuivi,
   lireMontant,
   listerSuivi,
   marquerPayee,
   messageDErreur,
+  messageDe,
   montantSaisi,
   ordonnerPaiements,
   type Paiement,
@@ -153,20 +157,71 @@ describe('les refus, en phrases de l’interface (sans pile)', () => {
     expect(store.get().ui.connexion).toBe('connexion');
   });
 
-  test('le réseau coupé, ou un client qui lève : une phrase, jamais une exception', async () => {
+  test('le réseau coupé : la phrase du réseau, jamais une exception', async () => {
     const { client } = fauxClient([
       { data: null, error: { code: '', message: 'TypeError: fetch failed' }, status: 0 },
     ]);
     connecter(client, 'e-1');
     const p = { factureId: 'f-1', date: '2026-11-04', montant: 100, moyen: 'virement' as const };
     expect(await enregistrerPaiement(p)).toEqual({ ok: false, message: phrases.erreurs.reseau });
-    connecter(aucunAppel, 'e-1');
-    expect(await enregistrerPaiement(p)).toEqual({ ok: false, message: phrases.erreurs.reseau });
-    expect(await annulerPaiement('p-1')).toEqual({ ok: false, message: phrases.erreurs.reseau });
-    expect(await marquerPayee('f-1', '2026-11-04')).toEqual({
-      ok: false,
-      message: phrases.erreurs.reseau,
+    // `fetch` qui lève (Chrome, Firefox, Safari, Node) : c'est encore le réseau.
+    for (const texte of ['Failed to fetch', 'NetworkError when attempting', 'Load failed']) {
+      const leve = {
+        from: () => {
+          throw new TypeError(texte);
+        },
+      };
+      connecter(leve, 'e-1');
+      expect(await enregistrerPaiement(p)).toEqual({ ok: false, message: phrases.erreurs.reseau });
+    }
+  });
+
+  test('une exception qui n’est pas le réseau : un message honnête, le détail en console', async () => {
+    const console = vi.spyOn(globalThis.console, 'error').mockImplementation(() => undefined);
+    try {
+      connecter(aucunAppel, 'e-1');
+      const p = { factureId: 'f-1', date: '2026-11-04', montant: 100, moyen: 'virement' as const };
+      const inattendue = { ok: false, message: phrases.erreurs.inattendue };
+      expect(await enregistrerPaiement(p)).toEqual(inattendue);
+      expect(await annulerPaiement('p-1')).toEqual(inattendue);
+      expect(await marquerPayee('f-1', '2026-11-04', 100)).toEqual(inattendue);
+      expect(console).toHaveBeenCalledTimes(3);
+      expect(messageDe(new TypeError('x is not a function'))).toBe(phrases.erreurs.inattendue);
+      expect(phrases.erreurs.inattendue).not.toBe(phrases.erreurs.reseau);
+    } finally {
+      console.mockRestore();
+    }
+  });
+
+  test('« Marquer comme payée » : le montant confirmé, ou rien si le reste dû a changé', async () => {
+    const ligne = (resteDu: number) => ({
+      data: { facture_id: 'f-1', entreprise_id: 'e-1', reste_du: resteDu, statut: 'a_payer' },
     });
+    // Un autre onglet a payé 1 000 depuis l'affichage : rien ne part.
+    const change = fauxClient([ligne(5000)]);
+    connecter(change.client, 'e-1');
+    expect(await marquerPayee('f-1', '2026-11-04', 6000)).toEqual({
+      ok: false,
+      message: phrases.erreurs.resteChange,
+    });
+    expect(change.appels.filter((a) => a[0] === 'insert')).toEqual([]);
+    // Le même reste : le paiement est celui qui a été confirmé.
+    const meme = fauxClient([ligne(6000), { data: null, error: null, status: 201 }]);
+    connecter(meme.client, 'e-1');
+    expect(await marquerPayee('f-1', '2026-11-04', 6000)).toEqual({ ok: true });
+    expect(meme.appels.filter((a) => a[0] === 'insert')).toEqual([
+      [
+        'insert',
+        {
+          entreprise_id: 'e-1',
+          facture_id: 'f-1',
+          date: '2026-11-04',
+          montant: 6000,
+          moyen: 'autre',
+          note: null,
+        },
+      ],
+    ]);
   });
 
   test('sans compte chargé : rien ne part, et le Studio le dit', async () => {
@@ -328,6 +383,49 @@ describe('les filtres et l’ordre (sans pile)', () => {
   });
 });
 
+describe('l’affichage (sans pile)', () => {
+  const ligne = (statut: LigneSuivi['statut'], netAPayer: number, resteDu: number): LigneSuivi => ({
+    factureId: 'f',
+    entrepriseId: 'e',
+    numero: 'F-1',
+    typeCode: '380',
+    dateEmission: '2026-11-04',
+    dateEcheance: null,
+    clientId: null,
+    clientNom: 'Client',
+    clientEmail: null,
+    devise: 'EUR',
+    ht: netAPayer,
+    ttc: netAPayer,
+    netAPayer,
+    encaisse: netAPayer - resteDu,
+    avoirs: 0,
+    resteDu,
+    statut,
+    joursRetard: null,
+  });
+
+  test('une facture à rembourser le dit, au montant à rendre, sans signe', () => {
+    expect(resteDeLigne(ligne('a_rembourser', 12000, -1000))).toBe(
+      phrases.liste.aRembourser('10,00 €'),
+    );
+    expect(resteDeLigne(ligne('payee_en_partie', 12000, 2000))).toBe(
+      phrases.liste.reste('20,00 €'),
+    );
+    // Rien à ajouter quand le reste est le net à payer, ou qu'il est nul.
+    expect(resteDeLigne(ligne('a_payer', 12000, 12000))).toBe('');
+    expect(resteDeLigne(ligne('payee', 12000, 0))).toBe('');
+  });
+
+  test('le lecteur PDF du navigateur : absent seulement quand il le dit', () => {
+    expect(lecteurPdfIntegre({ pdfViewerEnabled: false })).toBe(false);
+    expect(lecteurPdfIntegre({ pdfViewerEnabled: true })).toBe(true);
+    // Un navigateur qui ne connaît pas la propriété garde l'aperçu (comportement d'avant).
+    expect(lecteurPdfIntegre({})).toBe(true);
+    expect(lecteurPdfIntegre(undefined)).toBe(true);
+  });
+});
+
 // ---------- contre la pile ----------
 
 /**
@@ -398,6 +496,7 @@ async function insererFacture(
     typeCode?: string;
     ttc?: number;
     origine?: string;
+    pdfChemin?: (id: string) => string;
   },
 ): Promise<string> {
   const admin = adminDeTest();
@@ -418,7 +517,7 @@ async function insererFacture(
     invoice: {},
     form: {},
     appearance: defaultAppearance(),
-    pdf_chemin: `${entrepriseId}/${id}.pdf`,
+    pdf_chemin: options.pdfChemin?.(id) ?? `${entrepriseId}/${id}.pdf`,
     sdk_version: 'essai',
     origine: 'emise',
     facture_origine_id: options.origine ?? null,
@@ -463,7 +562,7 @@ describe.skipIf(!process.env.SUPABASE_URL)('le suivi contre la pile, factures in
         moyen: 'virement',
       }),
     ).toEqual({ ok: false, message: phrases.erreurs.excessif });
-    expect(await marquerPayee(facture, aujourdhuiParis())).toEqual({ ok: true });
+    expect(await marquerPayee(facture, aujourdhuiParis(), 10000)).toEqual({ ok: true });
     expect(await ligneSuivi(facture)).toMatchObject({
       encaisse: 10000,
       resteDu: 0,
@@ -489,6 +588,49 @@ describe.skipIf(!process.env.SUPABASE_URL)('le suivi contre la pile, factures in
     expect(await listerSuivi({})).toEqual([]);
     const { data } = await adminDeTest().from('paiements').select('id').eq('facture_id', facture);
     expect(data).toEqual([]);
+  }, 60_000);
+
+  test('« Marquer comme payée » après un paiement fait ailleurs : refusé, puis au nouveau reste', async () => {
+    const { sb, entrepriseId } = await compteDeTest();
+    connecter(sb, entrepriseId);
+    const facture = await insererFacture(entrepriseId, { prefixe: 'F', ttc: 12000 });
+    const jour = aujourdhuiParis();
+    // La fiche affichait 12 000 ; un autre onglet enregistre 2 000 entre-temps.
+    expect(
+      await enregistrerPaiement({ factureId: facture, date: jour, montant: 2000, moyen: 'cheque' }),
+    ).toEqual({ ok: true });
+    expect(await marquerPayee(facture, jour, 12000)).toEqual({
+      ok: false,
+      message: phrases.erreurs.resteChange,
+    });
+    expect((await paiementsDe(facture)).map((p) => p.montant)).toEqual([2000]);
+    expect(await marquerPayee(facture, jour, 10000)).toEqual({ ok: true });
+    expect((await paiementsDe(facture)).map((p) => p.montant)).toEqual([2000, 10000]);
+    expect(await ligneSuivi(facture)).toMatchObject({ statut: 'payee', resteDu: 0 });
+  }, 60_000);
+
+  test('le PDF : lu au chemin enregistré avec la facture ; absent, « PDF indisponible »', async () => {
+    const { sb, entrepriseId } = await compteDeTest();
+    connecter(sb, entrepriseId);
+    // Un chemin qui n'est pas `<entreprise>/<facture>.pdf` : c'est celui de la facture qui compte.
+    const chemin = (id: string) => `${entrepriseId}/ailleurs-${id}.pdf`;
+    const facture = await insererFacture(entrepriseId, { prefixe: 'F', pdfChemin: chemin });
+    const octets = new TextEncoder().encode('%PDF-1.7\n% essai du chemin\n%%EOF\n');
+    const depot = await adminDeTest()
+      .storage.from('factures')
+      .upload(chemin(facture), octets, { contentType: 'application/pdf' });
+    if (depot.error) throw new Error(depot.error.message);
+    const pdf = await pdfDe(facture);
+    expect(new TextDecoder().decode(new Uint8Array(await pdf.arrayBuffer()))).toContain(
+      'essai du chemin',
+    );
+    // Sans fichier déposé : la phrase dit ce qui manque, pas le réseau.
+    const sansPdf = await insererFacture(entrepriseId, { prefixe: 'F' });
+    await expect(pdfDe(sansPdf)).rejects.toThrow(phrases.erreurs.pdfIndisponible);
+    // La facture d'une autre entreprise : rien à signer.
+    const autre = await compteDeTest();
+    connecter(autre.sb, autre.entrepriseId);
+    await expect(urlPdf(facture)).rejects.toThrow(phrases.erreurs.introuvable);
   }, 60_000);
 
   test('les relances de la facture, la plus récente d’abord, envoyées ou refusées', async () => {
@@ -550,7 +692,7 @@ describe.skipIf(pile)('le suivi contre la pile, factures émises par `emettre`',
       resteDu: ligne.netAPayer - 1000,
     });
 
-    expect(await marquerPayee(facture.id, jour)).toEqual({ ok: true });
+    expect(await marquerPayee(facture.id, jour, ligne.netAPayer - 1000)).toEqual({ ok: true });
     expect(await ligneSuivi(facture.id)).toMatchObject({
       statut: 'payee',
       encaisse: ligne.netAPayer,
@@ -562,7 +704,7 @@ describe.skipIf(pile)('le suivi contre la pile, factures émises par `emettre`',
       [ligne.netAPayer - 1000, 'autre', null, null],
     ]);
     // Plus rien à payer : « Marquer comme payée » ne part pas.
-    expect(await marquerPayee(facture.id, jour)).toEqual({
+    expect(await marquerPayee(facture.id, jour, 0)).toEqual({
       ok: false,
       message: phrases.erreurs.rienAPayer,
     });
@@ -640,7 +782,7 @@ describe.skipIf(pile)('le suivi contre la pile, factures émises par `emettre`',
     const form = sampleForm(aujourdhuiParis());
     const aPayer = await emettre(sb, entrepriseId, form, 'client-filtre');
     const jour = aujourdhuiParis();
-    expect(await marquerPayee(payee.id, jour)).toEqual({ ok: true });
+    expect(await marquerPayee(payee.id, jour, ligne.netAPayer)).toEqual({ ok: true });
     expect(
       await enregistrerPaiement({ factureId: aPayer.id, date: jour, montant: 1, moyen: 'carte' }),
     ).toEqual({ ok: true });

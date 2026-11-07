@@ -836,6 +836,7 @@ const fr = {
       bientot: 'bientôt',
       chargement:
         "Le module des factures n'a pas pu être chargé : vérifiez votre connexion, puis réessayez.",
+      reessayer: 'Réessayer',
     },
     /** Les factures émises, leur statut de paiement, leurs paiements et leurs relances. */
     suivi: {
@@ -873,6 +874,12 @@ const fr = {
         introuvable:
           "Cette facture n'a pas de suivi : c'est un avoir, ou elle n'est pas de ce compte.",
         rienAPayer: "Cette facture n'a plus rien à payer : rien n'a été enregistré.",
+        resteChange:
+          "Le reste dû a changé depuis son affichage (un paiement ou un avoir enregistré ailleurs) : rien n'a été enregistré. Vérifiez le nouveau montant, puis recommencez.",
+        pdfIndisponible:
+          "PDF indisponible : le fichier de cette facture n'est pas sur le serveur. Ses données restent dans la fiche.",
+        inattendue:
+          'Erreur inattendue du Studio : rechargez la page, puis vérifiez la fiche avant de recommencer.',
       },
       montant: {
         vide: 'Saisissez le montant du paiement.',
@@ -899,6 +906,7 @@ const fr = {
         echeance: (date: string) => `échéance le ${date}`,
         retard: (jours: number) => `${jours} jour${jours > 1 ? 's' : ''} de retard`,
         reste: (montant: string) => `reste ${montant}`,
+        aRembourser: (montant: string) => `à rembourser ${montant}`,
         periode: 'La date de début dépasse la date de fin : aucune facture ne peut y tomber.',
       },
       fiche: {
@@ -912,6 +920,8 @@ const fr = {
         pdf: 'PDF de la facture',
         pdfChargement: 'Chargement du PDF…',
         telecharger: 'Télécharger le PDF',
+        sansLecteur:
+          "Ce navigateur n'affiche pas les PDF dans la page : téléchargez celui de la facture pour le lire.",
         paiements: 'Paiements',
         aucunPaiement: 'Aucun paiement enregistré.',
         annuleLe: (date: string) => `annulé le ${date}`,
@@ -1754,6 +1764,7 @@ const en: Strings = {
       entreprise: 'Company',
       bientot: 'coming soon',
       chargement: 'The invoices module could not be loaded: check your connection, then try again.',
+      reessayer: 'Try again',
     },
     suivi: {
       statuts: {
@@ -1789,6 +1800,12 @@ const en: Strings = {
         introuvable:
           'This invoice has no payment tracking: it is a credit note, or it does not belong to this account.',
         rienAPayer: 'Nothing is left to pay on this invoice: nothing was recorded.',
+        resteChange:
+          'The amount left to pay changed since it was shown (a payment or a credit note recorded elsewhere): nothing was recorded. Check the new amount, then try again.',
+        pdfIndisponible:
+          'PDF unavailable: the file of this invoice is not on the server. Its data stays in the record.',
+        inattendue:
+          'Unexpected Studio error: reload the page, then check the record before trying again.',
       },
       montant: {
         vide: 'Enter the payment amount.',
@@ -1815,6 +1832,7 @@ const en: Strings = {
         echeance: (date: string) => `due ${date}`,
         retard: (jours: number) => `${jours} day${jours > 1 ? 's' : ''} overdue`,
         reste: (montant: string) => `${montant} left`,
+        aRembourser: (montant: string) => `${montant} to refund`,
         periode: 'The start date is after the end date: no invoice can fall in between.',
       },
       fiche: {
@@ -1828,6 +1846,8 @@ const en: Strings = {
         pdf: 'Invoice PDF',
         pdfChargement: 'Loading the PDF…',
         telecharger: 'Download the PDF',
+        sansLecteur:
+          'This browser does not show PDFs inside the page: download the invoice PDF to read it.',
         paiements: 'Payments',
         aucunPaiement: 'No payment recorded.',
         annuleLe: (date: string) => `cancelled ${date}`,
