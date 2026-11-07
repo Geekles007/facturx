@@ -7,12 +7,13 @@
  * pour le décompte (site/README.md, « Compter les factures du Studio »). Avec un compte, la session
  * est restaurée avant la lecture de ce qui a été conservé, qui vient alors du serveur. Un compte dont
  * la suppression est demandée n'ouvre que l'écran d'annulation (spec § 12) : ni l'éditeur, ni rien
- * de ce qu'il conserve.
+ * de ce qu'il conserve. Le lien « Créer un compte gratuit » de l'accueil (`?compte=creer`) ouvre le
+ * dialogue de connexion sur la création d'un compte.
  */
 
 import { render } from 'preact';
 import { App } from './app.js';
-import { compteActif, retourDeLien, sessionProbable } from './compte/session.js';
+import { compteActif, creationDemandee, retourDeLien, sessionProbable } from './compte/session.js';
 import { t } from './i18n.js';
 import {
   defaultAppearance,
@@ -29,6 +30,8 @@ import { DELAI_COMPTE_MS, type Loaded, loadPersisted, startPersistence, store } 
 async function boot(): Promise<void> {
   const root = document.getElementById('studio');
   if (!root) return;
+  // Lu (et retiré de l'adresse) avant tout : le lien « Créer un compte gratuit » de l'accueil.
+  const creation = creationDemandee();
   // Qui n'a pas de session ne télécharge ni `supabase-js` ni le code du compte. Le retour d'un lien
   // de confirmation arrive sans session, avec un code (ou une erreur) dans l'adresse : il charge le
   // compte, qui échange le code ou explique l'échec. Si le fragment ne se charge pas (hors ligne),
@@ -75,6 +78,11 @@ async function boot(): Promise<void> {
     });
   } else {
     store.set({ form: sampleForm(), ui: { ...ui, storage: 'memory', sample: true } });
+  }
+  // Le lien de l'accueil ouvre la création d'un compte, si ce site en offre et qu'aucun n'est
+  // connecté : le dialogue se charge à la demande, comme depuis le bouton de l'en-tête.
+  if (creation && compteActif() && !store.get().ui.compte) {
+    store.set((s) => ({ ui: { ...s.ui, connexion: 'inscription' } }));
   }
   // En mode compte, l'enregistrement part vers le serveur une seconde après la dernière frappe.
   startPersistence(store.get().ui.compte ? { delai: DELAI_COMPTE_MS } : {});

@@ -73,6 +73,25 @@ export function retourDeLien(): 'code' | 'erreur' | 'message' | undefined {
   return undefined;
 }
 
+/**
+ * Le lien « Créer un compte gratuit » de l'accueil ouvre le Studio sur `?compte=creer` : vrai si
+ * c'est le cas. Le paramètre (quelle que soit sa valeur) quitte l'adresse dès qu'il est lu : un
+ * rechargement ou un lien copié ne rouvrent pas le dialogue. Le dialogue de connexion reste chargé à
+ * la demande (main.tsx n'y fait que poser `ui.connexion`). Faux hors d'un navigateur.
+ */
+export function creationDemandee(): boolean {
+  try {
+    const url = new URL(globalThis.location.href);
+    if (!url.searchParams.has('compte')) return false;
+    const demandee = url.searchParams.get('compte') === 'creer';
+    url.searchParams.delete('compte');
+    globalThis.history.replaceState(globalThis.history.state, '', url.href);
+    return demandee;
+  } catch {
+    return false;
+  }
+}
+
 /** Les paramètres que Supabase ajoute à l'adresse de retour. */
 const PARAMETRES_DE_RETOUR = ['code', 'error', 'error_code', 'error_description', 'message'];
 

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   compteActif,
+  creationDemandee,
   effacerRetourDeLien,
   oublierSession,
   retourDeLien,
@@ -172,6 +173,46 @@ describe('effacerRetourDeLien', () => {
   it('ne lève pas hors d’un navigateur', () => {
     vi.stubGlobal('location', undefined);
     expect(() => effacerRetourDeLien()).not.toThrow();
+  });
+});
+
+describe('creationDemandee : le lien « Créer un compte gratuit » de l’accueil', () => {
+  const replaceState = vi.fn();
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    replaceState.mockClear();
+  });
+
+  it('?compte=creer : vrai, et le paramètre quitte l’adresse (un rechargement ne rouvre rien)', () => {
+    poserAdresse('https://exemple.test/en/studio/?compte=creer&lang=en#contenu');
+    vi.stubGlobal('history', { state: { n: 1 }, replaceState });
+    expect(creationDemandee()).toBe(true);
+    expect(replaceState).toHaveBeenCalledOnce();
+    expect(replaceState).toHaveBeenCalledWith(
+      { n: 1 },
+      '',
+      'https://exemple.test/en/studio/?lang=en#contenu',
+    );
+  });
+
+  it('une autre valeur : faux, et le paramètre s’en va aussi', () => {
+    poserAdresse('https://exemple.test/studio/?compte=autre');
+    vi.stubGlobal('history', { state: null, replaceState });
+    expect(creationDemandee()).toBe(false);
+    expect(replaceState).toHaveBeenCalledWith(null, '', 'https://exemple.test/studio/');
+  });
+
+  it('sans le paramètre : faux, et l’adresse ne change pas', () => {
+    poserAdresse('https://exemple.test/studio/?code=abc');
+    vi.stubGlobal('history', { state: null, replaceState });
+    expect(creationDemandee()).toBe(false);
+    expect(replaceState).not.toHaveBeenCalled();
+  });
+
+  it('ne lève pas hors d’un navigateur', () => {
+    vi.stubGlobal('location', undefined);
+    expect(creationDemandee()).toBe(false);
   });
 });
 
