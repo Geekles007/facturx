@@ -194,6 +194,7 @@ interface InputProps {
   maxLength?: number;
   'aria-label'?: string;
   'aria-invalid'?: boolean | undefined;
+  onBlur?: () => void;
 }
 
 export function Input({
@@ -223,6 +224,7 @@ export function Input({
       autoComplete={rest.autoComplete ?? 'off'}
       spellcheck={decimal ? false : rest.spellcheck}
       onInput={(event) => onValue((event.currentTarget as HTMLInputElement).value)}
+      onBlur={rest.onBlur}
     />
   );
   if (!suffix) return input;

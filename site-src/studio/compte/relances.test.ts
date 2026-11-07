@@ -1,8 +1,4 @@
-import {
-  FunctionsFetchError,
-  FunctionsHttpError,
-  FunctionsRelayError,
-} from '@supabase/supabase-js';
+import { FunctionsFetchError, FunctionsRelayError } from '@supabase/supabase-js';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { formatDate, t } from '../i18n.js';
 import { defaultCompany } from '../library.js';
@@ -20,8 +16,15 @@ import {
   preparer,
   preparerRelance,
 } from './relances.js';
-import { aujourdhuiParis, type LigneSuivi, relancesDe } from './suivi.js';
-import { adminDeTest, compteDeTest, insererFacture } from './test-aide.js';
+import { aujourdhuiParis, relancesDe } from './suivi.js';
+import {
+  adminDeTest,
+  compteDeTest,
+  DONNEES_DE_TEST,
+  insererFacture,
+  LIGNE_EN_RETARD,
+  refusDeFonction,
+} from './test-aide.js';
 
 /**
  * La relance d'une facture en retard : le modèle préparé dans la langue de la facture (sans pile),
@@ -64,17 +67,7 @@ function connecter(sb: unknown, entrepriseId: string): void {
   store.set((s) => ({ ui: { ...s.ui, compte: compteUi(entrepriseId), connexion: undefined } }));
 }
 
-const DONNEES: DonneesRelance = {
-  numero: 'F-2026-0042',
-  echeance: '2026-10-11',
-  resteDu: 123456,
-  devise: 'EUR',
-  entreprise: 'Atelier Exemple SAS',
-  iban: 'FR7630006000011234567890189',
-  reference: 'F-2026-0042',
-  penalites: '10',
-  indemnite: 4000,
-};
+const DONNEES = DONNEES_DE_TEST;
 
 /** `DONNEES` sans les champs `cles`. */
 const sansCles = (...cles: (keyof DonneesRelance)[]): DonneesRelance =>
@@ -107,17 +100,56 @@ describe('preparerRelance (sans pile)', () => {
     );
   });
 
-  test('niveau 3 sans taux ni indemnité inscrits : les pénalités, sans chiffre inventé', () => {
-    const corps = preparerRelance(sansCles('penalites', 'indemnite'), 3, 'fr').corps;
-    expect(corps).toMatch(/pénalités de retard/);
-    expect(corps).not.toMatch(/%|40,00/);
-    // L'un sans l'autre : seul celui qui est inscrit est cité.
+  test('niveau 3 à un professionnel : le taux est annuel, comme sur la facture', () => {
+    expect(espaces(preparerRelance(DONNEES, 3, 'fr').corps)).toContain(
+      'pénalités de retard au taux annuel de 10 % et une indemnité forfaitaire pour frais de recouvrement de 40,00 €.',
+    );
+    expect(espaces(preparerRelance(DONNEES, 3, 'en').corps)).toContain(
+      'late-payment penalties at an annual rate of 10% and a fixed recovery fee of €40.00.',
+    );
+  });
+
+  test('niveau 3 sur une facture en USD : l’indemnité reste en euros (art. D441-5), le reste dû en USD', () => {
+    const usd = { ...DONNEES, devise: 'USD' };
+    const fr = espaces(preparerRelance(usd, 3, 'fr').corps);
+    expect(fr).toContain('indemnité forfaitaire pour frais de recouvrement de 40,00 €');
+    expect(fr).toContain(
+      espaces(
+        new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'USD' }).format(1234.56),
+      ),
+    );
+    expect(fr).not.toContain('40,00 $');
+    const en = preparerRelance(usd, 3, 'en').corps;
+    expect(en).toContain('fixed recovery fee of €40.00');
+    expect(en).toContain('US$1,234.56');
+    expect(en).not.toContain('US$40.00');
+  });
+
+  test('niveau 3 à un particulier : ni indemnité forfaitaire ni pénalités de retard', () => {
+    for (const langue of ['fr', 'en'] as const) {
+      const { objet, corps } = preparerRelance({ ...DONNEES, particulier: true }, 3, langue);
+      expect(corps).not.toMatch(/pénalit|indemnit|penalt|recovery fee|%|40[,.]00|D441|L441/i);
+      // Un rappel ferme, toujours : le dernier, avec la demande de règlement.
+      expect(objet).toBe(preparerRelance(DONNEES, 3, langue).objet);
+      expect(corps).toContain(langue === 'fr' ? 'dès réception' : 'upon receipt');
+      expect(corps).toContain('IBAN');
+    }
+  });
+
+  test('niveau 3 sans taux ni indemnité sur la facture : un renvoi à ses conditions, rien d’affirmé', () => {
+    const fr = preparerRelance(sansCles('penalites', 'indemnite'), 3, 'fr').corps;
+    expect(fr).toContain('Nous vous renvoyons aux conditions de paiement figurant sur la facture.');
+    expect(fr).not.toMatch(/pénalit|indemnit|exigible|%|40,00/i);
+    const en = preparerRelance(sansCles('penalites', 'indemnite'), 3, 'en').corps;
+    expect(en).toContain('Please refer to the payment terms stated on the invoice.');
+    expect(en).not.toMatch(/penalt|recovery fee|incurs|%|40\.00/i);
+    // L'un sans l'autre : seul celui qui est inscrit est cité, et rien de l'autre.
     const sansTaux = espaces(preparerRelance(sansCles('penalites'), 3, 'fr').corps);
-    expect(sansTaux).toContain('40,00 €');
-    expect(sansTaux).not.toContain('%');
+    expect(sansTaux).toContain('indemnité forfaitaire pour frais de recouvrement de 40,00 €');
+    expect(sansTaux).not.toMatch(/pénalit|%/);
     const sansIndemnite = espaces(preparerRelance(sansCles('indemnite'), 3, 'fr').corps);
-    expect(sansIndemnite).toContain('10 %');
-    expect(sansIndemnite).not.toContain('40,00');
+    expect(sansIndemnite).toContain('pénalités de retard au taux annuel de 10 %');
+    expect(sansIndemnite).not.toMatch(/indemnit|40,00/);
   });
 
   test('chaque niveau a son objet et son ton ; le numéro est partout', () => {
@@ -265,26 +297,7 @@ describe('le niveau et les données de la relance (sans pile)', () => {
     expect(niveauPropose([refusee, refusee, refusee])).toBe(1);
   });
 
-  const ligne: LigneSuivi = {
-    factureId: 'f-1',
-    entrepriseId: 'e-1',
-    numero: 'F-2026-0042',
-    typeCode: '380',
-    dateEmission: '2026-09-11',
-    dateEcheance: '2026-10-11',
-    clientId: null,
-    clientNom: 'Client Démo SARL',
-    clientEmail: 'compta@client-demo.fr',
-    devise: 'EUR',
-    ht: 102880,
-    ttc: 123456,
-    netAPayer: 123456,
-    encaisse: 0,
-    avoirs: 0,
-    resteDu: 123456,
-    statut: 'en_retard',
-    joursRetard: 27,
-  };
+  const ligne = LIGNE_EN_RETARD;
 
   /** Un profil d'entreprise à lui : son nom, son IBAN, ses conditions par défaut. */
   function profil() {
@@ -335,7 +348,15 @@ describe('le niveau et les données de la relance (sans pile)', () => {
     expect(d.entreprise).toBe(form.seller.name);
   });
 
-  test('la facture illisible (ou sans ces champs) : le profil de l’entreprise', () => {
+  test('un acheteur particulier est signalé ; un professionnel ne l’est pas', () => {
+    const form = sampleForm('2026-09-11');
+    expect(donneesDe(ligne, form, profil())).not.toHaveProperty('particulier');
+    form.buyer = { ...form.buyer, consumer: true };
+    expect(donneesDe(ligne, form, profil())).toMatchObject({ particulier: true });
+  });
+
+  test('la facture illisible (ou sans ces champs) : l’IBAN et le nom du profil, jamais ses pénalités', () => {
+    // Le profil a un taux et une indemnité, que la facture ne porte peut-être pas : rien n'est cité.
     const attendu = {
       numero: 'F-2026-0042',
       echeance: '2026-10-11',
@@ -343,8 +364,6 @@ describe('le niveau et les données de la relance (sans pile)', () => {
       devise: 'EUR',
       entreprise: 'Atelier Profil',
       iban: 'FR1420041010050500013M02606',
-      penalites: '8',
-      indemnite: 4000,
     };
     expect(donneesDe(ligne, undefined, profil())).toEqual(attendu);
     // Une facture enregistrée sans formulaire complet (`{}`) ne casse rien.
@@ -358,16 +377,7 @@ describe('le niveau et les données de la relance (sans pile)', () => {
 
 // ---------- l'envoi, faux client ----------
 
-/** Un refus de la fonction, tel que `functions.invoke` le rend. */
-const refusDe = (statut: number, corps: unknown) => ({
-  data: null,
-  error: new FunctionsHttpError(
-    new Response(typeof corps === 'string' ? corps : JSON.stringify(corps), {
-      status: statut,
-      headers: { 'content-type': 'application/json' },
-    }),
-  ),
-});
+const refusDe = refusDeFonction;
 
 /** Une anomalie (422) de code `code` sur `path`, avec le texte du serveur (en français). */
 const anomalie = (code: string, path: string) => ({

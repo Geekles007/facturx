@@ -1,6 +1,7 @@
 /**
  * Aides des tests du compte contre la pile Supabase locale : un compte neuf, le client de service,
- * un jeton que le serveur refuse, une facture insérée comme `emettre` l'enregistre.
+ * un jeton que le serveur refuse, une facture insérée comme `emettre` l'enregistre. Et, sans pile,
+ * ce que les tests de la relance partagent : un refus d'Edge Function, une facture en retard.
  *
  * Les variables sont celles de `supabase status -o env`, que le job CI `compte` pose sans les
  * afficher : `SUPABASE_URL` (`API_URL`), `SUPABASE_ANON_KEY` et `SUPABASE_SERVICE_ROLE_KEY`. Chaque
@@ -10,9 +11,10 @@
  * Seuls des tests importent ce module : il n'entre pas dans le bundle du Studio.
  */
 
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient, FunctionsHttpError, type SupabaseClient } from '@supabase/supabase-js';
 import { defaultAppearance } from '../library.js';
-import { aujourdhuiParis } from './suivi.js';
+import type { DonneesRelance } from './relances.js';
+import { aujourdhuiParis, type LigneSuivi } from './suivi.js';
 
 function variable(nom: string): string {
   const valeur = process.env[nom];
@@ -172,3 +174,51 @@ export async function insererFacture(
   }
   return id;
 }
+
+// ---------- la relance, sans pile ----------
+
+/** Un refus d'Edge Function, tel que `functions.invoke` le rend (`corps` : un objet, ou du texte brut). */
+export const refusDeFonction = (statut: number, corps: unknown) => ({
+  data: null,
+  error: new FunctionsHttpError(
+    new Response(typeof corps === 'string' ? corps : JSON.stringify(corps), {
+      status: statut,
+      headers: { 'content-type': 'application/json' },
+    }),
+  ),
+});
+
+/** Une facture en retard, telle que la vue de suivi la rend. */
+export const LIGNE_EN_RETARD: LigneSuivi = {
+  factureId: 'f-1',
+  entrepriseId: 'e-1',
+  numero: 'F-2026-0042',
+  typeCode: '380',
+  dateEmission: '2026-09-11',
+  dateEcheance: '2026-10-11',
+  clientId: null,
+  clientNom: 'Client Démo SARL',
+  clientEmail: 'compta@client-demo.fr',
+  devise: 'EUR',
+  ht: 102880,
+  ttc: 123456,
+  netAPayer: 123456,
+  encaisse: 0,
+  avoirs: 0,
+  resteDu: 123456,
+  statut: 'en_retard',
+  joursRetard: 27,
+};
+
+/** Les données d'une relance à un professionnel, avec tout ce que la facture peut porter. */
+export const DONNEES_DE_TEST: DonneesRelance = {
+  numero: 'F-2026-0042',
+  echeance: '2026-10-11',
+  resteDu: 123456,
+  devise: 'EUR',
+  entreprise: 'Atelier Exemple SAS',
+  iban: 'FR7630006000011234567890189',
+  reference: 'F-2026-0042',
+  penalites: '10',
+  indemnite: 4000,
+};

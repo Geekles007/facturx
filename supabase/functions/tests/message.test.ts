@@ -5,10 +5,10 @@
  * le destinataire est une seule adresse.
  */
 import { assert, assertEquals, assertThrows } from '@std/assert';
+import { destinataireValide } from '../_vendor/shared/destinataire.ts';
 import { fromBase64 } from '../_vendor/shared/portable.ts';
 import {
   composer,
-  destinataireValide,
   echapper,
   type MessageBrevo,
   nettoyerObjet,

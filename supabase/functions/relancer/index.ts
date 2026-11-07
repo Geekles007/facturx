@@ -49,9 +49,10 @@ import { aujourdhui, contexte, exigerCompteActif } from '../_shared/contexte.ts'
 import { exigerAdmissible, lireObjetPortable, lireTexte, UUID } from '../_shared/corps.ts';
 import { admin, sql } from '../_shared/db.ts';
 import { type Anomalie, anomalies, erreur, json, traiter } from '../_shared/erreurs.ts';
+import { destinataireValide } from '../_vendor/shared/destinataire.ts';
 import { EnvoiIncertain, ErreurBrevo, expediteurConfigure } from './brevo.ts';
 import { appliquerLimites } from './limites.ts';
-import { composer, destinataireValide, nettoyerObjet, uneLigne } from './message.ts';
+import { composer, nettoyerObjet, uneLigne } from './message.ts';
 
 /** Longueur du message, en caractères : au-delà, ce n'est plus une relance. */
 const CORPS_MAX = 10_000;

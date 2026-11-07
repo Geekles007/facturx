@@ -143,6 +143,8 @@ export function FormulaireRelance({
   const [corps, setCorps] = useState(preparee.corps);
   const [etat, setEtat] = useState<Etat>({ kind: 'saisie' });
   const [confirmation, setConfirmation] = useState<string>();
+  // L'adresse a été quittée, ou un envoi tenté : son avertissement peut paraître (pas pendant la frappe).
+  const [adresseVue, setAdresseVue] = useState(false);
   // Le second clic d'un double clic arrive avant le nouveau rendu : cette marque l'arrête, l'état non.
   const enVol = useRef(false);
 
@@ -156,6 +158,7 @@ export function FormulaireRelance({
   };
 
   const envoyer = async () => {
+    setAdresseVue(true);
     if (enVol.current || !envoyable) return;
     enVol.current = true;
     setEtat({ kind: 'envoi' });
@@ -232,8 +235,12 @@ export function FormulaireRelance({
           preparee.niveau,
           phrases.niveaux[preparee.niveau],
           phrases.langues[preparee.langue],
+          preparee.langueDeLaFacture,
         )}
       </p>
+      {preparee.niveau === 3 && preparee.particulier && (
+        <p class="field-hint">{phrases.particulier}</p>
+      )}
       {!preparee.enRetard && (
         <div class="banner warn">
           <span>{phrases.pasEnRetard}</span>
@@ -243,7 +250,9 @@ export function FormulaireRelance({
         label={phrases.destinataire}
         hint={destinataire.trim() === '' ? phrases.destinataireVide : undefined}
         warning={
-          destinataire.trim() !== '' && !adresseValide ? phrases.destinataireInvalide : undefined
+          adresseVue && destinataire.trim() !== '' && !adresseValide
+            ? phrases.destinataireInvalide
+            : undefined
         }
       >
         {(id, invalide) => (
@@ -252,6 +261,7 @@ export function FormulaireRelance({
             type="email"
             value={destinataire}
             onValue={saisir(setDestinataire)}
+            onBlur={() => setAdresseVue(true)}
             autoComplete="off"
             inputMode="email"
             spellcheck={false}

@@ -1003,15 +1003,17 @@ const fr = {
       chargement: 'Préparation de la relance…',
       niveaux: { 1: 'rappel courtois', 2: 'rappel ferme', 3: 'dernier rappel' },
       langues: { fr: 'en français', en: 'en anglais' },
-      presentation: (niveau: number, nom: string, langue: string) =>
-        `Relance de niveau ${niveau}, ${nom}, rédigée ${langue}, la langue de la facture. Relisez-la et modifiez-la librement : le PDF de la facture est joint à l'e-mail.`,
+      presentation: (niveau: number, nom: string, langue: string, deLaFacture: boolean) =>
+        `Relance de niveau ${niveau}, ${nom}, rédigée ${langue}${deLaFacture ? ', la langue de la facture' : " (la langue de la facture n'a pas pu être lue)"}. Relisez-la et modifiez-la librement : le PDF de la facture est joint à l'e-mail.`,
+      particulier:
+        "Client particulier : le dernier rappel ne cite ni pénalités de retard ni indemnité forfaitaire de recouvrement, qui ne s'appliquent qu'entre professionnels.",
       pasEnRetard:
         "Cette facture n'est pas en retard (son échéance n'est pas passée, ou rien n'est dû) : le serveur refusera la relance.",
       destinataire: 'Destinataire',
       destinataireVide:
         "La facture ne porte pas d'adresse e-mail pour ce client : saisissez celle à qui écrire.",
       destinataireInvalide:
-        'Une seule adresse e-mail, sans espace, virgule, point-virgule ni retour à la ligne.',
+        'Adresse e-mail non valide : une seule adresse, sans espace ni caractère spécial.',
       objet: 'Objet',
       corps: 'Message',
       corpsAide:
@@ -1036,15 +1038,16 @@ const fr = {
         pasDeRetard:
           "Cette facture n'est plus en retard : son échéance n'est pas passée, ou rien n'est dû.",
         destinataire:
-          'Le serveur refuse cette adresse : une seule adresse e-mail est attendue, sans espace, virgule, point-virgule ni retour à la ligne.',
+          'Le serveur refuse cette adresse : une seule adresse e-mail est attendue, sans espace ni caractère spécial.',
         objet: "L'objet est vide, ou contient un caractère que le serveur refuse.",
         corps:
           'Le message est vide, dépasse 10 000 caractères, ou contient un caractère que le serveur refuse.',
         illisible: 'Le serveur ne lit pas cette demande : rechargez la page, puis recommencez.',
+        /** La réponse ne dit pas laquelle des limites (délai, plafonds du jour, envoi en cours). */
         limite: (moment: string | undefined) =>
           moment
-            ? `Limite des relances atteinte (une par facture tous les trois jours, vingt par jour) : réessayez après ${moment}.`
-            : 'Limite des relances atteinte (une par facture tous les trois jours, vingt par jour) : réessayez plus tard.',
+            ? `Une limite des relances est atteinte : réessayez après ${moment}.`
+            : 'Une limite des relances est atteinte : réessayez plus tard.',
       },
       ouvrirEntreprise: "Ouvrir la fiche de l'entreprise",
       renvoyer: "Renvoyer l'e-mail de confirmation",
@@ -2020,15 +2023,17 @@ const en: Strings = {
       chargement: 'Preparing the reminder…',
       niveaux: { 1: 'polite reminder', 2: 'firm reminder', 3: 'final reminder' },
       langues: { fr: 'in French', en: 'in English' },
-      presentation: (niveau: number, nom: string, langue: string) =>
-        `Level ${niveau} reminder, ${nom}, written ${langue}, the language of the invoice. Read it over and edit it freely: the invoice PDF is attached to the email.`,
+      presentation: (niveau: number, nom: string, langue: string, deLaFacture: boolean) =>
+        `Level ${niveau} reminder, ${nom}, written ${langue}${deLaFacture ? ', the language of the invoice' : ' (the language of the invoice could not be read)'}. Read it over and edit it freely: the invoice PDF is attached to the email.`,
+      particulier:
+        'Consumer client: the final reminder mentions neither late-payment penalties nor the fixed recovery fee, which only apply between businesses.',
       pasEnRetard:
         'This invoice is not overdue (its due date has not passed, or nothing is owed): the server will refuse the reminder.',
       destinataire: 'Recipient',
       destinataireVide:
         'The invoice has no email address for this client: enter the one to write to.',
       destinataireInvalide:
-        'A single email address, without spaces, commas, semicolons or line breaks.',
+        'Invalid email address: a single address, without spaces or special characters.',
       objet: 'Subject',
       corps: 'Message',
       corpsAide:
@@ -2052,15 +2057,15 @@ const en: Strings = {
         pasDeRetard:
           'This invoice is no longer overdue: its due date has not passed, or nothing is owed.',
         destinataire:
-          'The server refuses this address: a single email address is expected, without spaces, commas, semicolons or line breaks.',
+          'The server refuses this address: a single email address is expected, without spaces or special characters.',
         objet: 'The subject is empty, or contains a character the server refuses.',
         corps:
           'The message is empty, exceeds 10,000 characters, or contains a character the server refuses.',
         illisible: 'The server cannot read this request: reload the page, then start again.',
         limite: (moment: string | undefined) =>
           moment
-            ? `Reminder limit reached (one per invoice every three days, twenty per day): try again after ${moment}.`
-            : 'Reminder limit reached (one per invoice every three days, twenty per day): try again later.',
+            ? `A reminder limit has been reached: try again after ${moment}.`
+            : 'A reminder limit has been reached: try again later.',
       },
       ouvrirEntreprise: 'Open the company record',
       renvoyer: 'Resend the confirmation email',

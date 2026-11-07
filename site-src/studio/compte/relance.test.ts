@@ -5,7 +5,6 @@
  * repris dans l'arbre rendu. Le client Supabase est un faux (`functions.invoke`, `auth.resend`), et
  * les lectures du suivi rendent ce que le test leur donne.
  */
-import { FunctionsHttpError } from '@supabase/supabase-js';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
@@ -81,8 +80,9 @@ import { store } from '../store.js';
 import { Button, Dialog } from '../ui.js';
 import { Fiche } from './fiche.js';
 import { DialogueRelance, FormulaireRelance } from './relance.js';
-import { type DonneesRelance, preparerRelance, type RelancePreparee } from './relances.js';
-import type { LigneSuivi, Relance } from './suivi.js';
+import { preparerRelance, type RelancePreparee } from './relances.js';
+import type { Relance } from './suivi.js';
+import { DONNEES_DE_TEST, LIGNE_EN_RETARD, refusDeFonction } from './test-aide.js';
 
 type VNode = { type: unknown; props: Record<string, unknown> & { children?: unknown } };
 
@@ -132,46 +132,21 @@ const attendre = () => new Promise((resolve) => setTimeout(resolve, 0));
 const phrases = t.compte.relance;
 const sans = (texte: string) => `${texte} ${phrases.aucuneEnvoyee}`;
 
-const DONNEES: DonneesRelance = {
-  numero: 'F-2026-0042',
-  echeance: '2026-10-11',
-  resteDu: 123456,
-  devise: 'EUR',
-  entreprise: 'Atelier Exemple SAS',
-};
-
 function preparee(destinataire = 'compta@client-demo.fr'): RelancePreparee {
   return {
     factureId: 'f-1',
     numero: 'F-2026-0042',
     niveau: 1,
     langue: 'fr',
+    langueDeLaFacture: true,
+    particulier: false,
     enRetard: true,
     destinataire,
-    ...preparerRelance(DONNEES, 1, 'fr'),
+    ...preparerRelance(DONNEES_DE_TEST, 1, 'fr'),
   };
 }
 
-const LIGNE: LigneSuivi = {
-  factureId: 'f-1',
-  entrepriseId: 'e-1',
-  numero: 'F-2026-0042',
-  typeCode: '380',
-  dateEmission: '2026-09-11',
-  dateEcheance: '2026-10-11',
-  clientId: null,
-  clientNom: 'Client Démo SARL',
-  clientEmail: 'compta@client-demo.fr',
-  devise: 'EUR',
-  ht: 102880,
-  ttc: 123456,
-  netAPayer: 123456,
-  encaisse: 0,
-  avoirs: 0,
-  resteDu: 123456,
-  statut: 'en_retard',
-  joursRetard: 27,
-};
+const LIGNE = LIGNE_EN_RETARD;
 
 const uiAvant = store.get().ui;
 const historiqueAvant = store.get().history;
@@ -229,16 +204,7 @@ function gestionnaire(v: VNode | undefined, nom: string): (...args: unknown[]) =
 const soumettre = (arbre: VNode[]) =>
   gestionnaire(formulaire(arbre), 'onSubmit')({ preventDefault: () => undefined });
 
-/** Un refus de la fonction, tel que `functions.invoke` le rend. */
-const refusDe = (statut: number, corps: unknown) => ({
-  data: null,
-  error: new FunctionsHttpError(
-    new Response(JSON.stringify(corps), {
-      status: statut,
-      headers: { 'content-type': 'application/json' },
-    }),
-  ),
-});
+const refusDe = refusDeFonction;
 
 describe('le formulaire de relance', () => {
   test('destinataire vide : envoi désactivé, et rien ne part', async () => {
@@ -246,14 +212,15 @@ describe('le formulaire de relance', () => {
     let arbre = rendre(FormulaireRelance, props);
     expect(envoyer(arbre)?.props.disabled).toBe(true);
     expect(texte(arbre)).toContain(phrases.destinataireVide);
-    soumettre(arbre);
-    await attendre();
-    expect(faux.invoke).not.toHaveBeenCalled();
 
-    // Deux adresses : refusé par le serveur, donc par le bouton.
+    // Deux adresses : refusé par le serveur, donc par le bouton ; l'avertissement attend que l'on
+    // quitte le champ, pas pendant la frappe.
     (saisie(arbre, phrases.destinataire).props.onValue as (v: string) => void)('a@b.fr, c@d.fr');
     arbre = rendre(FormulaireRelance, props);
     expect(envoyer(arbre)?.props.disabled).toBe(true);
+    expect(texte(arbre)).not.toContain(phrases.destinataireInvalide);
+    gestionnaire(saisie(arbre, phrases.destinataire), 'onBlur')();
+    arbre = rendre(FormulaireRelance, props);
     expect(texte(arbre)).toContain(phrases.destinataireInvalide);
     (saisie(arbre, phrases.destinataire).props.onValue as (v: string) => void)(
       ' compta@client.fr ',
@@ -264,6 +231,41 @@ describe('le formulaire de relance', () => {
     (saisie(arbre, phrases.objet).props.onValue as (v: string) => void)('  ');
     arbre = rendre(FormulaireRelance, props);
     expect(envoyer(arbre)?.props.disabled).toBe(true);
+    soumettre(arbre);
+    await attendre();
+    expect(faux.invoke).not.toHaveBeenCalled();
+  });
+
+  test('une tentative d’envoi montre aussi l’avertissement d’une adresse non valide', async () => {
+    const props = accessoires(preparee('client'));
+    let arbre = rendre(FormulaireRelance, props);
+    expect(texte(arbre)).not.toContain(phrases.destinataireInvalide);
+    soumettre(arbre);
+    await attendre();
+    arbre = rendre(FormulaireRelance, props);
+    expect(texte(arbre)).toContain(phrases.destinataireInvalide);
+    expect(faux.invoke).not.toHaveBeenCalled();
+  });
+
+  test('la présentation dit d’où vient la langue, et, au dernier rappel, ce qu’on ne réclame pas à un particulier', () => {
+    const langueDe = (p: RelancePreparee) => texte(rendre(FormulaireRelance, accessoires(p)));
+    expect(langueDe(preparee())).toContain(
+      phrases.presentation(1, phrases.niveaux[1], phrases.langues.fr, true),
+    );
+    demonter();
+    // La facture ne s'est pas lue : la langue est celle de l'interface, et le dialogue ne prétend pas
+    // le contraire.
+    const repli = langueDe({ ...preparee(), langueDeLaFacture: false });
+    expect(repli).toContain(phrases.presentation(1, phrases.niveaux[1], phrases.langues.fr, false));
+    expect(phrases.presentation(1, 'x', 'y', false)).not.toBe(
+      phrases.presentation(1, 'x', 'y', true),
+    );
+    demonter();
+    expect(langueDe({ ...preparee(), niveau: 3, particulier: true })).toContain(
+      phrases.particulier,
+    );
+    demonter();
+    expect(langueDe({ ...preparee(), niveau: 3 })).not.toContain(phrases.particulier);
   });
 
   test('l’objet et le message sont préremplis et modifiables ; ce qui part est ce qui est relu', async () => {
@@ -520,6 +522,7 @@ describe('le dialogue de relance', () => {
       destinataire: 'compta@client-demo.fr',
     });
     expect(p.objet).toMatch(/^Second reminder/);
+    expect(p.langueDeLaFacture).toBe(true);
     expect(p.corps).toContain('FR76 3000 6000 0112 3456 7890 189');
     // Fermer : plus de facture à relancer.
     gestionnaire(dialogue, 'onClose')();
@@ -545,6 +548,29 @@ describe('le dialogue de relance', () => {
     expect(dialogue?.props.fermable).toBe(false);
     gestionnaire(dialogue, 'onClose')();
     expect(store.get().ui.relance).toBe('f-1');
+  });
+
+  test('préparée : un particulier au dernier rappel, rien de réclamé ; sans facture lue, la langue de l’interface', async () => {
+    const { preparer } = await import('./relances.js');
+    const particulier = facture('fr');
+    particulier.form = {
+      ...particulier.form,
+      buyer: { ...particulier.form.buyer, consumer: true },
+    };
+    store.set({ history: [particulier] });
+    lectures.ligneSuivi.mockResolvedValue(LIGNE);
+    lectures.relancesDe.mockResolvedValue([relance('envoyee'), relance('envoyee')]);
+    const p = await preparer('f-1');
+    expect(p).toMatchObject({ niveau: 3, particulier: true, langueDeLaFacture: true });
+    expect(p?.corps).not.toMatch(/pénalit|indemnit|%/i);
+    // La facture n'est pas dans l'historique (et sans conservation du compte, rien à relire).
+    store.set({ history: [] });
+    const repli = await preparer('f-1');
+    expect(repli).toMatchObject({ langue: t.lang, langueDeLaFacture: false, particulier: false });
+    // Rien de la facture : au dernier rappel, un renvoi à ses conditions, aucun chiffre.
+    expect(repli?.corps).toContain(
+      'Nous vous renvoyons aux conditions de paiement figurant sur la facture.',
+    );
   });
 
   test('une facture qui n’est plus en retard : le dialogue prévient, le serveur décidera', async () => {

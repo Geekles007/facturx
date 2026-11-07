@@ -6,9 +6,15 @@
  * Le modèle est du texte brut, sans HTML : le serveur l'échappe et le met en forme. Montants (en
  * centimes) et dates sont formatés par `Intl`, dans la langue et la devise de la facture. Les données
  * viennent de la ligne de suivi (numéro, échéance, reste dû, devise) et de la facture telle que
- * l'historique la garde (IBAN, référence de paiement, pénalités et indemnité « inscrites sur la
- * facture », § 9), ou, si elle ne se lit pas, du profil de l'entreprise ; le nom qui signe est celui
- * du profil, comme celui de l'expéditeur (« Nom via facturx »).
+ * l'historique la garde (langue, IBAN, référence de paiement, pénalités et indemnité « inscrites sur
+ * la facture », § 9) ; l'IBAN, à défaut, du profil de l'entreprise, et le nom qui signe, du profil
+ * d'abord, comme celui de l'expéditeur (« Nom via facturx »).
+ *
+ * Le dernier rappel part au nom de l'entreprise : il ne contient aucune mention fausse (Ruling 52).
+ * L'indemnité forfaitaire est en euros (art. D441-5 C. com.), comme la facture l'imprime, quelle que
+ * soit sa devise. À un acheteur particulier, ni indemnité ni pénalités de retard commerciales, qui ne
+ * s'appliquent qu'entre professionnels (art. L441-10). Rien n'est cité que la facture ne porte pas :
+ * sans conditions de paiement structurées, un renvoi à celles de la facture, sans en rien affirmer.
  *
  * Le serveur reste la seule autorité : il recalcule le niveau, applique les limites et juge le
  * destinataire. Le Studio prévient seulement : `peutEnvoyer` refuse ce que `relancer` refuserait, pour
@@ -20,6 +26,7 @@
  */
 
 import { FunctionsHttpError } from '@supabase/supabase-js';
+import { destinataireValide } from '../../shared/destinataire.js';
 import { t } from '../i18n.js';
 import type { CompanyProfile, SavedInvoice } from '../library.js';
 import { type InvoiceForm, parseScaled } from '../model.js';
@@ -48,8 +55,10 @@ export interface DonneesRelance {
   reference?: string;
   /** Le taux des pénalités de retard, en pour cent, tel qu'il est saisi (`10`, `12,5`). */
   penalites?: string;
-  /** L'indemnité forfaitaire pour frais de recouvrement, en centimes. */
+  /** L'indemnité forfaitaire pour frais de recouvrement, en centimes d'euro. */
   indemnite?: number;
+  /** L'acheteur est un particulier : le dernier rappel ne lui réclame ni pénalités ni indemnité. */
+  particulier?: boolean;
 }
 
 // ---------- le modèle ----------
@@ -112,16 +121,19 @@ const fr = {
     2: 'Nous vous remercions de procéder à son règlement sans tarder.',
     3: 'Nous vous demandons de procéder à son règlement dès réception de ce message.',
   },
-  /** Le dernier rappel : ce que le retard rend exigible, avec les chiffres inscrits sur la facture. */
-  penalites: (taux: string | undefined, indemnite: string | undefined): string => {
-    const debut = 'Nous vous rappelons que tout retard de paiement rend exigibles';
+  /**
+   * Le dernier rappel, à un professionnel : ce que le retard rend exigible, avec les seuls chiffres
+   * que la facture porte. Sans eux, un renvoi à ses conditions de paiement, qui n'en affirme rien.
+   */
+  mentions: (taux: string | undefined, indemnite: string | undefined): string => {
+    const debut =
+      "Nous vous rappelons que, comme l'indique la facture, tout retard de paiement rend";
     if (taux && indemnite)
-      return `${debut} des pénalités de retard au taux de ${taux} et une indemnité forfaitaire pour frais de recouvrement de ${indemnite}, inscrites sur la facture.`;
-    if (taux)
-      return `${debut} des pénalités de retard au taux de ${taux}, inscrites sur la facture.`;
+      return `${debut} exigibles des pénalités de retard au taux annuel de ${taux} et une indemnité forfaitaire pour frais de recouvrement de ${indemnite}.`;
+    if (taux) return `${debut} exigibles des pénalités de retard au taux annuel de ${taux}.`;
     if (indemnite)
-      return `${debut} des pénalités de retard, ainsi que l'indemnité forfaitaire pour frais de recouvrement de ${indemnite} inscrite sur la facture.`;
-    return `${debut} des pénalités de retard et une indemnité forfaitaire pour frais de recouvrement, prévues par nos conditions de paiement.`;
+      return `${debut} exigible une indemnité forfaitaire pour frais de recouvrement de ${indemnite}.`;
+    return 'Nous vous renvoyons aux conditions de paiement figurant sur la facture.';
   },
   coordonnees: 'Nos coordonnées bancaires :',
   iban: (iban: string) => `IBAN : ${iban}`,
@@ -150,15 +162,13 @@ const en: typeof fr = {
     2: 'Please arrange payment without delay.',
     3: 'We ask you to settle it upon receipt of this message.',
   },
-  penalites: (taux, indemnite) => {
-    const debut = 'Please note that';
+  mentions: (taux, indemnite) => {
+    const debut = 'Please note that, as stated on the invoice, late payment incurs';
     if (taux && indemnite)
-      return `${debut}, as stated on the invoice, late payment incurs late-payment penalties at the rate of ${taux} and a fixed recovery fee of ${indemnite}.`;
-    if (taux)
-      return `${debut}, as stated on the invoice, late payment incurs late-payment penalties at the rate of ${taux}.`;
-    if (indemnite)
-      return `${debut} late payment incurs late-payment penalties and, as stated on the invoice, a fixed recovery fee of ${indemnite}.`;
-    return `${debut} late payment incurs the late-payment penalties and fixed recovery fee set out in our payment terms.`;
+      return `${debut} late-payment penalties at an annual rate of ${taux} and a fixed recovery fee of ${indemnite}.`;
+    if (taux) return `${debut} late-payment penalties at an annual rate of ${taux}.`;
+    if (indemnite) return `${debut} a fixed recovery fee of ${indemnite}.`;
+    return 'Please refer to the payment terms stated on the invoice.';
   },
   coordonnees: 'Our bank details:',
   iban: (iban) => `IBAN: ${iban}`,
@@ -172,7 +182,8 @@ const MODELES: Record<Langue, typeof fr> = { fr, en };
 /**
  * L'objet et le message de la relance de niveau `niveau`, en `langue` : texte brut, paragraphes
  * séparés par une ligne vide. Les coordonnées bancaires ne figurent qu'avec un IBAN ; le dernier
- * rappel cite pénalités et indemnité, avec les chiffres qu'il a.
+ * rappel, à un professionnel, cite pénalités et indemnité avec les chiffres de la facture, ou renvoie
+ * à ses conditions de paiement ; à un particulier, il n'en dit rien.
  */
 export function preparerRelance(
   d: DonneesRelance,
@@ -185,11 +196,12 @@ export function preparerRelance(
     m.constat[niveau](d.numero, date(d.echeance, langue), montant(d.resteDu, d.devise, langue)),
     m.demande[niveau],
   ];
-  if (niveau === 3) {
+  if (niveau === 3 && !d.particulier) {
     paragraphes.push(
-      m.penalites(
+      m.mentions(
         d.penalites === undefined ? undefined : taux(d.penalites, langue),
-        d.indemnite === undefined ? undefined : montant(d.indemnite, d.devise, langue),
+        // En euros, comme la facture l'imprime et comme D441-5 la fixe, quelle que soit sa devise.
+        d.indemnite === undefined ? undefined : montant(d.indemnite, 'EUR', langue),
       ),
     );
   }
@@ -204,34 +216,13 @@ export function preparerRelance(
 
 // ---------- le destinataire et le niveau ----------
 
-/** Un segment de la partie locale d'une adresse : le sous-ensemble courant de la RFC 5322. */
-const ATOME = "[A-Za-z0-9_%+'&=-]+";
-const PARTIE_LOCALE = new RegExp(`^${ATOME}(?:\\.${ATOME})*$`);
-const ETIQUETTE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
-const SUFFIXE = /^(?:[A-Za-z]{2,}|xn--[A-Za-z0-9-]+)$/;
-
 /**
  * L'adresse, sans ses espaces de début et de fin, est-elle une seule adresse que `relancer`
- * admettra ? La règle du serveur (`destinataireValide`, relancer/message.ts), sur ce qui part :
- * `local@domaine.suffixe`, ni espace, ni virgule, ni point-virgule, ni retour à la ligne, ni chevron
- * ni guillemet ; un domaine ASCII d'au moins deux étiquettes (accentué, il s'écrit en `xn--`) ; 254
- * caractères au plus, 64 pour la partie locale. Un test contre la pile vérifie qu'ils s'accordent.
+ * admettra ? La règle est celle du serveur, partagée (`site-src/shared/destinataire.ts`) ; elle est
+ * appliquée à ce qui part, l'adresse rognée. Un test contre la pile vérifie qu'ils s'accordent.
  */
-export function peutEnvoyer(destinataire: string): boolean {
-  const adresse = destinataire.trim();
-  if (adresse.length > 254) return false;
-  const arobase = adresse.indexOf('@');
-  if (arobase < 1 || arobase !== adresse.lastIndexOf('@')) return false;
-  const local = adresse.slice(0, arobase);
-  const etiquettes = adresse.slice(arobase + 1).split('.');
-  return (
-    local.length <= 64 &&
-    PARTIE_LOCALE.test(local) &&
-    etiquettes.length >= 2 &&
-    etiquettes.every((etiquette) => ETIQUETTE.test(etiquette)) &&
-    SUFFIXE.test(etiquettes[etiquettes.length - 1] ?? '')
-  );
-}
+export const peutEnvoyer = (destinataire: string): boolean =>
+  destinataireValide(destinataire.trim());
 
 /**
  * Le niveau de la prochaine relance : les relances envoyées plus un, au plus 3 (les refusées ne
@@ -243,10 +234,11 @@ export function niveauPropose(relances: readonly Pick<Relance, 'etat'>[]): Nivea
 }
 
 /**
- * Les données de la relance : la ligne de suivi, puis la facture (`form`), ou, pour ce qu'elle n'a
- * pas (elle ne se lit pas, ou elle a été enregistrée sans formulaire complet), le profil de
- * l'entreprise. Des conditions de paiement en texte libre n'ont ni taux ni indemnité à citer : rien
- * n'est inventé. Un taux ou une indemnité nuls ne se citent pas.
+ * Les données de la relance : la ligne de suivi, puis la facture (`form`). Pénalités et indemnité ne
+ * viennent que des conditions de paiement structurées de la facture : en texte libre, absentes, ou la
+ * facture illisible, rien n'est cité (jamais les valeurs du profil, que la facture ne porte peut-être
+ * pas). Un taux ou une indemnité nuls ne se citent pas. L'IBAN vient, à défaut de la facture, du profil
+ * de l'entreprise ; le nom qui signe, du profil d'abord. Un acheteur particulier est signalé.
  */
 export function donneesDe(
   ligne: LigneSuivi,
@@ -257,11 +249,7 @@ export function donneesDe(
   const iban = (f?.paymentMeans ?? company.paymentMeans)
     .map((m) => (m.iban ?? '').replace(/\s+/g, '').toUpperCase())
     .find((i) => i !== '');
-  const termes = f?.paymentTerms
-    ? f.paymentTerms.mode === 'structured'
-      ? f.paymentTerms
-      : undefined
-    : company.defaults;
+  const termes = f?.paymentTerms?.mode === 'structured' ? f.paymentTerms : undefined;
   // Ce qui vient du serveur peut manquer d'un champ : rien ne lève pour autant.
   const saisi = termes?.latePenaltyRate?.trim() ?? '';
   const penalites = saisi !== '' && parseScaled(saisi, 2, '', []) !== 0 ? saisi : undefined;
@@ -277,13 +265,14 @@ export function donneesDe(
     ...(reference ? { reference } : {}),
     ...(penalites ? { penalites } : {}),
     ...(indemnite ? { indemnite } : {}),
+    ...(f?.buyer?.consumer ? { particulier: true } : {}),
   };
 }
 
-/** La langue de la facture (celle de ses libellés) ; à défaut, celle de l'interface. */
-function langueDe(facture: SavedInvoice | undefined): Langue {
+/** La langue de la facture (celle de ses libellés), si elle se lit. */
+function langueDe(facture: SavedInvoice | undefined): Langue | undefined {
   const langue = facture?.appearance?.language;
-  return langue === 'fr' || langue === 'en' ? langue : t.lang;
+  return langue === 'fr' || langue === 'en' ? langue : undefined;
 }
 
 /** La relance préparée pour le dialogue : ce que l'utilisateur relit avant l'envoi. */
@@ -291,7 +280,12 @@ export interface RelancePreparee {
   factureId: string;
   numero: string;
   niveau: Niveau;
+  /** La langue de la facture ; à défaut (elle ne se lit pas), celle de l'interface. */
   langue: Langue;
+  /** `langue` est bien celle de la facture : le dialogue ne le dit que dans ce cas. */
+  langueDeLaFacture: boolean;
+  /** L'acheteur est un particulier : le dernier rappel ne lui réclame rien, et le dialogue le dit. */
+  particulier: boolean;
   /** En retard selon la base (échéance passée, reste dû positif) ; sinon le serveur refusera. */
   enRetard: boolean;
   /** L'adresse de contact de l'acheteur sur la facture ; vide si elle n'en a pas. */
@@ -313,13 +307,16 @@ export async function preparer(factureId: string): Promise<RelancePreparee | und
   ]);
   if (!ligne) return undefined;
   const niveau = niveauPropose(relances);
-  const langue = langueDe(facture);
+  const langueLue = langueDe(facture);
+  const langue = langueLue ?? t.lang;
   const donnees = donneesDe(ligne, facture?.form, store.get().company);
   return {
     factureId,
     numero: ligne.numero,
     niveau,
     langue,
+    langueDeLaFacture: langueLue !== undefined,
+    particulier: donnees.particulier === true,
     enRetard: ligne.statut === 'en_retard',
     destinataire: ligne.clientEmail?.trim() ?? '',
     ...preparerRelance(donnees, niveau, langue),
