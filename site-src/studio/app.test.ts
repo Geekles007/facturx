@@ -288,6 +288,44 @@ describe('le module des brouillons ne se charge pas', () => {
   });
 });
 
+describe('le pied de l’éditeur dit où sont les données, selon le mode', () => {
+  /** Le premier paragraphe du pied de l'éditeur, rendu : celui qui parle des données. */
+  function pied(): string {
+    // Le lien vers les licences des polices se résout contre l'adresse de la page.
+    vi.stubGlobal('document', { baseURI: 'http://127.0.0.1/studio/', body: { dataset: {} } });
+    for (const v of parcourir(App())) {
+      if (typeof v.type !== 'function' || (v.type as { name: string }).name !== 'ContentEditor') {
+        continue;
+      }
+      for (const n of parcourir((v.type as (p: unknown) => unknown)(v.props))) {
+        if (n.type !== 'footer') continue;
+        for (const p of parcourir(n)) if (p.type === 'p') return String(p.props.children);
+      }
+    }
+    throw new Error('pied absent');
+  }
+
+  test('sans compte : rien ne quitte ce navigateur', () => {
+    ui({ compte: undefined });
+    expect(pied()).toBe(t.app.footPrivacy);
+  });
+
+  test('connecté : le pied dit le serveur, et ne promet pas que rien ne quitte le navigateur', () => {
+    ui({
+      compte: {
+        email: 'essai@facturx.test',
+        confirme: true,
+        entrepriseId: 'e-1',
+        suppressionDemandeeLe: undefined,
+        session: 'active',
+      },
+    });
+    expect(pied()).toBe(t.app.footPrivacyCompte);
+    expect(t.app.footPrivacyCompte).not.toBe(t.app.footPrivacy);
+    expect(t.app.footPrivacyCompte).not.toMatch(/quitte|leaves/);
+  });
+});
+
 describe('le dialogue d’émission', () => {
   test('une exception de l’émission : le dialogue redevient fermable (occupé, puis libre)', async () => {
     let dialogue: VNode | undefined;

@@ -1,13 +1,15 @@
 /**
  * Conservation locale : IndexedDB, dans le navigateur de l'utilisateur, et nulle part ailleurs.
  *
- * Une facture est une donnée commerciale ; le Studio n'a pas de serveur où la mettre. Tout ce qui
- * doit survivre à la fermeture de l'onglet — brouillon en cours, entreprise, clients, catalogue,
- * historique, logo, police — vit ici. Si le stockage est indisponible (navigation privée stricte,
- * quota épuisé), le Studio continue en mémoire et le dit ; il ne perd rien en silence.
+ * Une facture est une donnée commerciale ; sans compte, le Studio n'a pas de serveur où la mettre.
+ * Tout ce qui doit survivre à la fermeture de l'onglet — brouillon en cours, entreprise, clients,
+ * catalogue, historique, logo, police — vit ici. Si le stockage est indisponible (navigation privée
+ * stricte, quota épuisé), le Studio continue en mémoire et le dit ; il ne perd rien en silence.
  *
  * Les appelants importent `storage` et ne connaissent que `Persistence` : `utiliser` change la
- * réponse derrière ce nom, et chacun la voit aussitôt (liaison ES vivante).
+ * réponse derrière ce nom, et chacun la voit aussitôt (liaison ES vivante). Avec un compte, la
+ * persistance du serveur prend la place : IndexedDB n'y reçoit plus que le miroir du brouillon ouvert
+ * (`compte/persistence.ts`), et garde ce qu'on y avait saisi sans compte.
  */
 
 import type { Persistence, StoreName } from './persistence.js';

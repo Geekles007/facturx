@@ -1,6 +1,7 @@
 /**
  * La bibliothèque : mon entreprise, clients, catalogue, historique, numérotation, sauvegarde.
- * Tout reste dans ce navigateur ; la sauvegarde est un fichier que l'utilisateur garde où il veut.
+ * Sans compte, tout reste dans ce navigateur ; avec un compte, c'est le serveur qui garde. Dans les
+ * deux cas, la sauvegarde est un fichier que l'utilisateur garde où il veut.
  *
  * En mode compte, l'entreprise et la numérotation sont dans la page Entreprise (`compte/entreprise.tsx`),
  * qui reprend leurs formulaires : la bibliothèque n'en garde pas les onglets.
@@ -462,7 +463,7 @@ function BackupTab() {
   };
   return (
     <div class="lib-tab">
-      <p class="field-hint">{t.library.backupIntro}</p>
+      <p class="field-hint">{compte ? t.library.backupIntroCompte : t.library.backupIntro}</p>
       <p class="numbering-preview">{t.library.counts(clients, products, invoices)}</p>
       <div class="row-actions">
         <Button icon="download" variant="primary" onClick={exportAll}>

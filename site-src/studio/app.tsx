@@ -3,7 +3,8 @@
  *
  * À chaque modification, le formulaire devient une `Invoice` (`buildInvoice`), le SDK la valide
  * (`validateInvoice`), la met en page (`layoutInvoice`) et, une fois conforme, produit son XML
- * (`toCiiXml`) que les trois schematrons officiels jugent. Rien de cela ne quitte le navigateur.
+ * (`toCiiXml`) que les trois schematrons officiels jugent. Ces calculs se font dans le navigateur,
+ * avec ou sans compte ; avec un compte, l'émission passe en plus par le serveur.
  */
 
 import { toCiiXml, validateInvoice } from 'facturx-sdk';
@@ -247,6 +248,9 @@ function SectionNav({ issues }: { issues: StudioIssue[] }) {
 
 function ContentEditor({ issues }: { issues: StudioIssue[] }) {
   const issued = useStudio((s) => s.ui.issued);
+  // « Rien ne quitte ce navigateur » n'est vrai que sans compte : avec un compte, le pied dit où sont
+  // les données.
+  const compte = useStudio((s) => s.ui.compte !== undefined);
   return (
     // `inert` : une facture émise ne se modifie plus, au clavier comme à la souris.
     <div
@@ -266,12 +270,13 @@ function ContentEditor({ issues }: { issues: StudioIssue[] }) {
       <NotesSection />
       <AttachmentsSection />
       <footer class="editor-foot">
-        <p>{t.app.footPrivacy}</p>
+        <p>{compte ? t.app.footPrivacyCompte : t.app.footPrivacy}</p>
         <p>{t.app.footLegal}</p>
         <p class="foot-links">
           <a href="../">{t.app.footLinks.home}</a>
           <a href="../validateur/">{t.app.footLinks.validator}</a>
           <a href="https://github.com/Geekles007/facturx">{t.app.footLinks.source}</a>
+          <a href="../confidentialite/">{t.app.footLinks.privacy}</a>
           <a href={studioAsset('polices/LICENCES.txt')}>{t.app.footLinks.fonts}</a>
         </p>
       </footer>

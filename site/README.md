@@ -1,6 +1,6 @@
 # Site
 
-Trois pages : la présentation (`index.html`), le **validateur en ligne** (`validateur/`), qui exécute les schematrons officiels dans le navigateur de l'utilisateur — aucun fichier n'est transmis —, et le **Studio** (`studio/`), où l'on compose une facture conforme à son image, dans le navigateur lui aussi. Chacune a sa version anglaise sous `en/`.
+Six pages : la présentation (`index.html`), le **validateur en ligne** (`validateur/`), qui exécute les schematrons officiels dans le navigateur de l'utilisateur — aucun fichier n'est transmis —, le **Studio** (`studio/`), où l'on compose une facture conforme à son image — dans le navigateur sans compte, avec un compte sur un serveur (voir « Le Studio ») —, et trois textes juridiques : les CGU (`cgu/`), la politique de confidentialité (`confidentialite/`) et l'accord de sous-traitance (`sous-traitance/`). Chacune a sa version anglaise sous `en/`.
 
 ## Déployer avec Coolify
 
@@ -10,8 +10,10 @@ le tout avec nginx ([`docker/nginx.conf`](../docker/nginx.conf)).
 
 Dans Coolify : **+ New → Resource → Public Repository**, dépôt `https://github.com/Geekles007/facturx`,
 branche `main`, **Build Pack : Dockerfile**, **Port Exposes : 80**, puis le domaine
-`https://facturx.ibird.dev` et *Deploy*. Rien d'autre à régler : ni commande de build, ni dossier de
-publication, ni variable d'environnement.
+`https://facturx.ibird.dev` et *Deploy*. Rien d'autre à régler pour un site sans compte : ni commande
+de build, ni dossier de publication, ni variable d'environnement. Le compte du Studio demande deux
+variables de construction, `FACTURX_SUPABASE_URL` et `FACTURX_SUPABASE_KEY` : voir
+[`docs/compte.md`](../docs/compte.md), § 1.9.
 
 Trois points à connaître.
 
@@ -22,8 +24,9 @@ donc un fichier modifié en amont fait échouer la construction au lieu de passe
 Elle consomme de la **mémoire** au moment de générer les types du SDK. Sur un très petit serveur
 chargé, prévoir du swap ou un serveur de build dédié dans Coolify.
 
-Le conteneur ne sert que des fichiers statiques : aucune donnée n'y transite, le validateur
-s'exécutant entièrement chez le visiteur.
+Le conteneur ne sert que des fichiers statiques : aucune donnée du visiteur n'y transite. Le
+validateur et le Studio sans compte s'exécutent chez lui ; avec un compte, le Studio parle
+directement au projet Supabase, sans passer par le conteneur.
 
 Vérifier localement avant de pousser :
 
@@ -36,10 +39,11 @@ docker build -t facturx-site . && docker run --rm -p 8080:80 facturx-site
 L'image embarque [GoAccess](https://goaccess.io) : il lit le journal d'accès de nginx et en tire un
 rapport HTML — pages vues, référents, pays, navigateurs, codes de retour. **Aucun script de mesure
 n'est ajouté aux pages** : pas de traceur, pas de cookie, pas de tiers, donc pas de bandeau de
-consentement à afficher. Les seules requêtes que les pages émettent d'elles-mêmes sont les
-décomptes décrits plus bas — un contrôle du validateur, un PDF du Studio —, sans contenu,
+consentement à afficher. Les seules requêtes que les pages émettent d'elles-mêmes vers ce site sont
+les décomptes décrits plus bas — un contrôle du validateur, un PDF du Studio —, sans contenu,
 journalisées comme une page vue ; le fichier déposé dans le validateur, lui, ne quitte jamais la
-machine du visiteur.
+machine du visiteur. Un visiteur qui s'est connecté au Studio émet en plus les requêtes de son
+compte, vers Supabase et non vers ce site (voir « Le Studio »).
 
 Le rapport est servi sur `/stats/`, protégé par mot de passe, et régénéré toutes les cinq minutes.
 À côté, `/stats/compteurs.html` détaille ces décomptes jour par jour.
@@ -117,13 +121,15 @@ Le message affiché au démarrage du conteneur dit dans quel état se trouvent l
 
 Le validateur s'exécute entièrement chez le visiteur : le journal ne distinguait donc pas une page
 ouverte d'un contrôle réellement lancé. La page demande maintenant, à chaque contrôle,
-`GET /validateur/compteur/controle` ; nginx répond **204, sans corps**, et il en reste une ligne de
-journal. C'est tout le mécanisme.
+`GET /validateur/compteur/controle` ; nginx répond **204, sans corps**, et il en reste une ligne dans
+chacun des deux journaux de nginx (voir « Ce que le rapport compte »). C'est tout le mécanisme.
 
 **Ce qui part** : le chemin, et rien d'autre. Aucun octet du fichier, aucun nom de fichier, aucun
-verdict, aucun cookie, aucun identifiant. La ligne écrite a exactement la forme de celle d'une page
-vue, avec la même adresse déjà tronquée de son dernier octet. Autrement dit, le décompte
-n'introduit **aucune donnée nouvelle** dans le journal : ce qui change, c'est qu'une page émet une
+verdict, aucun cookie, aucun identifiant. Les deux lignes écrites ont exactement la forme de celles
+d'une page vue : adresse, date, chemin demandé, code de retour, référent (la page du validateur) et
+navigateur. Dans le journal des statistiques, l'adresse est tronquée de son dernier octet ; le
+journal d'exploitation, éphémère, la garde entière, comme pour toute page. Autrement dit, le décompte
+n'introduit **aucune donnée nouvelle** dans les journaux : ce qui change, c'est qu'une page émet une
 requête qu'elle n'émettait pas.
 
 Rien n'est écrit ni lu sur l'appareil du visiteur, donc rien qui appelle un bandeau de consentement.
@@ -162,13 +168,17 @@ le JavaScript : le décompte ne voit que des contrôles humains.
 
 `/studio/` (et `/en/studio/`) compose une facture Factur-X de bout en bout : saisie, apparence, contrôle, PDF. Les sources sont dans `site-src/studio/` (TypeScript et TSX, avec Preact) ; `pnpm site:build` les réunit dans `site/studio/app.js` et ses fragments, et copie les polices proposées dans `site/studio/polices/`. Le Studio n'emploie que l'API publique du SDK : ce qu'il sait faire, un développeur le fait avec les mêmes appels, et l'onglet « Code » les écrit.
 
-**Rien n'est transmis.** Le Studio n'a pas de serveur : brouillon, entreprise, clients, catalogue, historique des factures émises (PDF compris) et numérotation vivent dans IndexedDB, dans le navigateur du visiteur, et nulle part ailleurs. L'onglet « Bibliothèque › Sauvegarde » télécharge l'ensemble dans un fichier que le visiteur garde où il veut, et le restaure. Si le stockage est indisponible (navigation privée stricte), le Studio travaille en mémoire et le dit dans un bandeau.
+**Deux modes** (D73, `docs/decisions.md`). C'est l'utilisateur qui choisit : créer un compte exige d'accepter les CGU, et sans compte le Studio reste local, comme le validateur.
+
+**Sans compte, rien n'est transmis.** Le Studio n'envoie rien à un serveur, hors le décompte décrit plus bas : brouillon, entreprise, clients, catalogue, historique des factures émises (PDF compris) et numérotation vivent dans IndexedDB, dans le navigateur du visiteur, et nulle part ailleurs. L'onglet « Bibliothèque › Sauvegarde » télécharge l'ensemble dans un fichier que le visiteur garde où il veut, et le restaure. Si le stockage est indisponible (navigation privée stricte), le Studio travaille en mémoire et le dit dans un bandeau. Tant que le navigateur ne garde pas de session, et qu'on n'arrive pas par un lien reçu par e-mail, le Studio ne télécharge ni `supabase-js` ni le code du compte (`site-src/studio/compte/`, chargé par `import()`, à la première connexion).
+
+**Avec un compte, les données sont chez Supabase.** Brouillons, entreprise, clients, catalogue, numérotation, factures émises avec leur PDF, paiements et relances sont dans un projet de la région `eu-west-3` (Paris). L'hébergeur les chiffre au repos, mais le service les lit : l'émission, la numérotation, le calcul du reste dû et les relances se font sur le serveur (fonctions `supabase/functions/`). Le navigateur garde la session (`localStorage`) et une copie du brouillon ouvert (IndexedDB), pour ne rien perdre de la saisie si le réseau ou la session lâche. Le pied de l'éditeur dit l'un ou l'autre mode (`app.footPrivacy`, `app.footPrivacyCompte`, `site-src/studio/i18n.ts`). Un site construit sans l'une de ces deux variables, `FACTURX_SUPABASE_URL` ou `FACTURX_SUPABASE_KEY`, n'a aucun bouton de compte : c'est le Studio sans compte seul. Mise en service : [`docs/compte.md`](../docs/compte.md).
 
 **Ce qu'il emprunte.** Le runtime XSLT, les trois schematrons et le code du validateur servent aussi aux « Validateurs officiels » de l'onglet Contrôle : la page les désigne par `data-assets="../validateur/"`, sans copie. La page anglaise déclare en plus `data-studio="../../studio/"` pour les polices et le bundle.
 
 **Les polices.** Sept familles libres (licence SIL OFL) : Geist et Geist Mono (paquet `geist`), Inter, IBM Plex Sans, DM Sans, Source Serif 4 et Libre Baskerville (paquets `@expo-google-fonts/*`, qui livrent des TTF statiques). Statiques, et en TTF plutôt qu'en WOFF : le SDK les embarque telles quelles dans chaque PDF/A produit. Leurs licences sont réunies dans `polices/LICENCES.txt`, lié depuis le pied de l'éditeur. Environ 3 Mo au total, chargés à la demande : la page ne télécharge que la police employée (Geist par défaut), et les autres quand on ouvre l'onglet Apparence, qui en montre un échantillon.
 
-**Le décompte.** Comme le validateur (voir plus bas), le Studio demande `GET /studio/compteur/facture` à chaque PDF Factur-X produit — émission ou téléchargement —, et nginx répond **204, sans corps**. Ni contenu, ni montant, ni nom, ni cookie, ni identifiant : le chemin, et rien d'autre. Le pied de l'éditeur le dit en clair. La page anglaise compte au même chemin. Dans GoAccess, panneau **Requested Files**, ligne `/studio/compteur/facture` ; `/studio/` compte les ouvertures. Le détail jour par jour est sur `/stats/compteurs.html`.
+**Le décompte.** Comme le validateur (voir plus bas), le Studio demande `GET /studio/compteur/facture` à chaque PDF Factur-X produit — émission ou téléchargement —, et nginx répond **204, sans corps**. Ni contenu, ni montant, ni nom, ni cookie, ni identifiant : le chemin, et rien d'autre. Le pied de l'éditeur le dit en clair, dans les deux modes ; avec un compte, la requête part aussi quand le serveur a émis la facture. La page anglaise compte au même chemin. Dans GoAccess, panneau **Requested Files**, ligne `/studio/compteur/facture` ; `/studio/` compte les ouvertures. Le détail jour par jour est sur `/stats/compteurs.html`.
 
 **Vérifier.** Après déploiement, `/studio` doit rediriger vers `/studio/`, `curl -sI https://facturx.ibird.dev/studio/polices/geist-regular.ttf` répondre 200, et `/studio/compteur/facture` 204. Puis, dans un navigateur : l'exemple de la première visite doit afficher « Conforme », et l'onglet Contrôle le verdict des trois schematrons.
 
@@ -236,7 +246,7 @@ coup le bundle, le runtime XSLT, les trois jeux de règles du profil et la base 
 
 ## Ce qui est versionné, ce qui ne l'est pas
 
-Versionnés : les pages (`index.html`, `validateur/index.html`, `studio/index.html` et leurs versions `en/`), les styles, `app.js` de la page d'accueil, `classe-js.js` (la classe `js`, partagée par les pages d'accueil et de validateur), les polices Geist (licence SIL OFL) et le favicon. Les sources du validateur et du Studio sont dans `site-src/`, hors du dossier déployé.
+Versionnés : les pages (`index.html`, `validateur/index.html`, `studio/index.html`, les trois textes juridiques `cgu/`, `confidentialite/` et `sous-traitance/`, et leurs versions `en/`), les styles, `app.js` de la page d'accueil, `classe-js.js` (la classe `js`, partagée par les pages d'accueil et de validateur), les polices Geist (licence SIL OFL) et le favicon. Les sources du validateur et du Studio sont dans `site-src/`, hors du dossier déployé.
 
 Générés (ignorés par git, à reconstruire avant chaque déploiement) : `npm-downloads.json`, `studio/app.js`, ses fragments et `studio/polices/`, `validateur/app.js` et ses fragments, `validateur/vendor/` (runtime Saxon-JS et sa licence), `validateur/schemas/<version France_RFE>/` (schematrons compilés et bases de codes, dans un dossier qui change de nom à chaque version, puisque nginx les garde un an en cache) et `validateur/exemples/` — dont `facture-exemple.pdf` et `facture-exemple-non-conforme.pdf`, deux PDF/A-3 Factur-X produits par le SDK à chaque construction (`scripts/example-invoice.mjs`, testés dans `pnpm site:check`).
 

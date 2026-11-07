@@ -38,9 +38,18 @@ Everything runs **in your browser**: no file is uploaded anywhere. The rule sets
 
 ## Studio
 
-**[facturx.ibird.dev/en/studio](https://facturx.ibird.dev/en/studio/)** — compose a Factur-X invoice, free and without an account: every document type (invoice, credit note, prepayment, corrected invoice…), lines, allowances and charges split by VAT rate, exemptions, delivery, payment, references, attachments. Six templates, your colour, your font, your logo, a SEPA payment QR code — and every mandatory statement, which no setting can remove.
+**[facturx.ibird.dev/en/studio](https://facturx.ibird.dev/en/studio/)** — compose a Factur-X invoice, free, with or without an account: every document type (invoice, credit note, prepayment, corrected invoice…), lines, allowances and charges split by VAT rate, exemptions, delivery, payment, references, attachments. Six templates, your colour, your font, your logo, a SEPA payment QR code — and every mandatory statement, which no setting can remove.
 
-The Studio is an honest showcase of the SDK: it only uses the public API (`computeTotals`, `validateInvoice`, `layoutInvoice`, `renderInvoicePdf`, `embedFacturX`, `withDeposits`…) and its “Code” tab shows the exact TypeScript program that produces the invoice on screen. It checks live with the SDK, then with the three official schematrons, and its preview is painted from the PDF's own layout — clicking a block takes you to the field that produced it. Company, customers, catalogue, history and numbering stay **in the browser** (IndexedDB): nothing is sent anywhere.
+The Studio is an honest showcase of the SDK: it only uses the public API (`computeTotals`, `validateInvoice`, `layoutInvoice`, `renderInvoicePdf`, `embedFacturX`, `withDeposits`…) and its “Code” tab shows the exact TypeScript program that produces the invoice on screen. It checks live with the SDK, then with the three official schematrons, and its preview is painted from the PDF's own layout — clicking a block takes you to the field that produced it.
+
+**Two modes, and the user chooses** ([D73](docs/decisions.md), in French):
+
+- **Without an account**, nothing you type is sent anywhere. Company, customers, catalogue, history and numbering stay **in the browser** (IndexedDB), and the Studio sends nothing to a server. A single signal is sent, with no content, when a Factur-X PDF is produced: a count, with no cookie and no identifier (see [site/README.md](site/README.md), in French).
+- **With a free account** (email address and password, terms of use accepted), the data is **on a server**: a Supabase project in an EU region (Paris, `eu-west-3`). The host encrypts it at rest, but the **service reads it**: it reads an invoice to issue it, number it, work out what is still owed and send a reminder. This is not end-to-end encryption. The account adds what the mode without an account does not do: multiple drafts, issued invoices numbered and checked on the server with the SDK, with their Factur-X PDF frozen, payments and the status of each invoice, a dashboard, reminders sent after you have read them, import of the browser's data, a complete export, and account deletion (30 days' grace). The open draft is also copied into the browser: an expired session or a dropped network does not lose what you typed.
+
+An account is a choice, never a prerequisite: the validator above stays entirely local, and without a session the Studio downloads neither `supabase-js` nor the account code. The texts that govern the service: [terms of use](https://facturx.ibird.dev/en/cgu/), [privacy policy](https://facturx.ibird.dev/en/confidentialite/) and [data processing agreement](https://facturx.ibird.dev/en/sous-traitance/).
+
+**Licence.** The [`supabase/`](supabase) folder (schema, access rules, the functions that issue, remind, import, delete and purge) is under **AGPL-3.0-or-later**, with its own [`LICENSE`](supabase/LICENSE): whoever modifies this service and offers it to third parties over a network must publish the modifications. The rest of the repository — the SDK, the Studio, the validator — stays under **MIT**. Putting the account into production (Supabase, email, backups, deployment) is described in [docs/compte.md](docs/compte.md), in French.
 
 ## Install
 
@@ -224,10 +233,10 @@ pnpm install
 pnpm check       # lint + typecheck + tests + build + site + examples
 ```
 
-A pnpm monorepo: `packages/facturx` is the SDK, `examples/*` run in CI, `site/` and `site-src/` are the landing page and the in-browser validator. Releases are driven by a `vX.Y.Z` tag through npm trusted publishing.
+A pnpm monorepo: `packages/facturx` is the SDK, `examples/*` run in CI, `site/` and `site-src/` are the landing page, the in-browser validator and the Studio, and `supabase/` is the account service (database, access rules, functions). Releases are driven by a `vX.Y.Z` tag through npm trusted publishing.
 
 **A note on these two READMEs.** [README.md](README.md) is in French and is the authoritative one — this project implements French regulation, and its documentation, error messages and commit history are in French. This page is kept deliberately close in structure so a change on one side is easy to mirror on the other. If the two ever disagree, the French one is right.
 
 ## Licence
 
-MIT
+MIT, except the [`supabase/`](supabase) folder, which is under AGPL-3.0-or-later ([`supabase/LICENSE`](supabase/LICENSE)). See [LICENSE](LICENSE).

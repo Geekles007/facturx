@@ -15,7 +15,6 @@ const fr = {
   app: {
     studio: 'Studio',
     untitled: 'Sans numéro',
-    privacy: 'Rien ne quitte votre navigateur',
     tabs: { content: 'Contenu', appearance: 'Apparence', check: 'Contrôle', code: 'Code' },
     mobile: { edit: 'Éditer', preview: 'Aperçu' },
     new: 'Nouveau',
@@ -64,14 +63,19 @@ const fr = {
     loading: 'Chargement du Studio…',
     replaceConfirm: 'Remplacer la facture en cours ? Les saisies non émises seront perdues.',
     readOnly: 'Facture émise : lecture seule',
+    /** Le pied de l'éditeur sans compte : la seule variante où « rien ne quitte ce navigateur » est vrai. */
     footPrivacy:
-      "Rien de ce que vous saisissez ne quitte ce navigateur : le Studio n'a pas de serveur, vos factures, clients et réglages restent ici. Un seul signal part, sans contenu, quand un PDF Factur-X est produit — pour savoir si l'outil sert, sans cookie, sans identifiant, sans rien de votre facture.",
+      "Sans compte, rien de ce que vous saisissez ne quitte ce navigateur : le Studio n'envoie vos factures, clients et réglages à aucun serveur, ils restent ici. Un seul signal part, sans contenu, quand un PDF Factur-X est produit — pour savoir si l'outil sert, sans cookie, sans identifiant, sans rien de votre facture.",
+    /** Le pied de l'éditeur avec un compte : où sont les données, et qui peut les lire. */
+    footPrivacyCompte:
+      "Avec un compte, vos factures, clients et réglages sont conservés sur un serveur en Europe (Supabase, à Paris). L'hébergeur les chiffre au repos, mais le service les lit : il le faut pour émettre, numéroter et relancer. Le brouillon ouvert est aussi recopié dans ce navigateur. Comme sans compte, un signal sans contenu part vers ce site quand un PDF Factur-X est produit.",
     footLegal:
       'Le Studio ne constitue pas un conseil juridique et ne remplace pas la plateforme agréée qui transmettra vos factures.',
     footLinks: {
       home: 'Accueil',
       validator: 'Validateur',
       source: 'Code source',
+      privacy: 'Confidentialité',
       fonts: 'Licences des polices',
     },
     sections: 'Sections',
@@ -597,6 +601,8 @@ const fr = {
       'La numérotation doit rester continue : ne sautez pas de numéro, et ne revenez jamais en arrière sur un numéro déjà émis.',
     backupIntro:
       "Tout est conservé dans ce navigateur, et seulement là. Une sauvegarde vous protège d'un nettoyage des données du site ou d'un changement d'ordinateur.",
+    backupIntroCompte:
+      "Vos données sont conservées sur le serveur du compte. Cette sauvegarde est un fichier à garder où vous voulez, sans les PDF des factures ; pour l'archive complète, avec le PDF de chaque facture, utilisez « Exporter mes données » dans le menu du compte.",
     export: 'Télécharger une sauvegarde',
     restore: 'Restaurer une sauvegarde…',
     restored: 'Sauvegarde restaurée.',
@@ -1212,8 +1218,8 @@ const fr = {
         'Votre entreprise telle que vos factures la présentent, la numérotation des prochaines, et votre compte.',
       profil: 'Profil vendeur',
       logo: 'Logo',
-      logoIntro:
-        "Le logo de vos prochaines factures : PNG ou JPEG, 1 Mo au plus. Celui de la facture ouverte se change dans l'onglet Apparence.",
+      logoIntro: (largeur: number, hauteur: number) =>
+        `Le logo de vos prochaines factures : PNG ou JPEG, 1 Mo et ${largeur} × ${hauteur} pixels au plus. Celui de la facture ouverte se change dans l'onglet Apparence.`,
       logoAucun: 'Pas de logo sur vos prochaines factures.',
       logoChoisir: 'Choisir un logo…',
       logoRemplacer: 'Remplacer…',
@@ -1331,7 +1337,6 @@ const en: Strings = {
   app: {
     studio: 'Studio',
     untitled: 'No number',
-    privacy: 'Nothing leaves your browser',
     tabs: { content: 'Content', appearance: 'Appearance', check: 'Check', code: 'Code' },
     mobile: { edit: 'Edit', preview: 'Preview' },
     new: 'New',
@@ -1381,13 +1386,16 @@ const en: Strings = {
     replaceConfirm: 'Replace the current invoice? Anything not issued will be lost.',
     readOnly: 'Issued invoice: read only',
     footPrivacy:
-      'Nothing you type leaves this browser: the Studio has no server, and your invoices, customers and settings stay here. A single signal is sent, with no content, when a Factur-X PDF is produced — to know whether the tool is used, with no cookie, no identifier, nothing from your invoice.',
+      'Without an account, nothing you type leaves this browser: the Studio sends your invoices, customers and settings to no server, they stay here. A single signal is sent, with no content, when a Factur-X PDF is produced — to know whether the tool is used, with no cookie, no identifier, nothing from your invoice.',
+    footPrivacyCompte:
+      'With an account, your invoices, customers and settings are kept on a server in Europe (Supabase, in Paris). The host encrypts them at rest, but the service reads them: it has to, to issue, number and send reminders. The open draft is also copied into this browser. As without an account, a signal with no content is sent to this site when a Factur-X PDF is produced.',
     footLegal:
       'The Studio is not legal advice and does not replace the approved platform that will transmit your invoices.',
     footLinks: {
       home: 'Home',
       validator: 'Validator',
       source: 'Source code',
+      privacy: 'Privacy',
       fonts: 'Font licences',
     },
     sections: 'Sections',
@@ -1904,6 +1912,8 @@ const en: Strings = {
       'Numbering must stay continuous: do not skip numbers, and never reuse one already issued.',
     backupIntro:
       'Everything is kept in this browser, and only there. A backup protects you from a site-data cleanup or a change of computer.',
+    backupIntroCompte:
+      "Your data is kept on the account's server. This backup is a file to keep wherever you like, without the invoice PDFs; for the full archive, with the PDF of each invoice, use “Export my data” in the account menu.",
     export: 'Download a backup',
     restore: 'Restore a backup…',
     restored: 'Backup restored.',
@@ -2483,8 +2493,8 @@ const en: Strings = {
         'Your company as your invoices present it, the numbering of the next ones, and your account.',
       profil: 'Seller profile',
       logo: 'Logo',
-      logoIntro:
-        'The logo of your next invoices: PNG or JPEG, 1 MB at most. The one of the open invoice is changed in the Appearance tab.',
+      logoIntro: (largeur: number, hauteur: number) =>
+        `The logo of your next invoices: PNG or JPEG, 1 MB and ${largeur} × ${hauteur} pixels at most. The one of the open invoice is changed in the Appearance tab.`,
       logoAucun: 'No logo on your next invoices.',
       logoChoisir: 'Choose a logo…',
       logoRemplacer: 'Replace…',

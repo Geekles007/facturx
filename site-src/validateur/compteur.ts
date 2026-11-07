@@ -4,8 +4,9 @@
  * Le validateur s'exécute entièrement dans le navigateur : sans cet appel, rien ne dirait s'il
  * sert à quelqu'un. Ce qui part tient donc tout entier dans la requête elle-même — son chemin,
  * et rien d'autre : aucun octet du fichier, aucun nom, aucun verdict, aucun cookie, aucun
- * identifiant. Le serveur répond 204, sans corps, et n'en garde qu'une ligne de journal dont
- * l'adresse est déjà tronquée à l'écriture (docker/nginx.conf).
+ * identifiant. Le serveur répond 204, sans corps, et la requête laisse une ligne dans chacun des
+ * deux journaux de nginx : celui des statistiques, dont l'adresse est tronquée à l'écriture, et le
+ * journal d'exploitation, éphémère, qui la garde entière (docker/nginx.conf).
  *
  * Le compteur n'est pas le service rendu : il échoue en silence plutôt que de gêner un contrôle.
  */

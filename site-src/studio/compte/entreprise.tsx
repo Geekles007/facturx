@@ -478,7 +478,7 @@ export function Entreprise({ fermer }: { fermer: () => void }) {
         </section>
         <section class="section-entreprise" aria-labelledby="entreprise-logo">
           <h3 id="entreprise-logo">{phrases.logo}</h3>
-          <p class="field-hint">{phrases.logoIntro}</p>
+          <p class="field-hint">{phrases.logoIntro(PLAFOND_LOGO.largeur, PLAFOND_LOGO.hauteur)}</p>
           <LogoDesFactures />
         </section>
         <section class="section-entreprise" aria-labelledby="entreprise-numerotation">

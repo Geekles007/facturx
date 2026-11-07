@@ -1,6 +1,6 @@
 # Comptes, factures conservées et suivi des paiements — design
 
-*3 novembre 2026. Design validé section par section, spec à relire avant le plan d'implémentation.*
+*3 novembre 2026. Design validé section par section. Mis à jour le 7 novembre 2026 : les § 6 à 13 décrivent le service tel qu'il est construit.*
 
 ## 1. Contexte
 
@@ -124,7 +124,7 @@ Montants en centimes (`bigint`). Dates d'affaires en `date`, horodatages en `tim
 **La vue `suivi_factures`** donne pour chaque facture qui n'est pas un avoir :
 
 - `encaisse` = somme des paiements non annulés ;
-- `avoirs` = somme des TTC des avoirs émis qui la citent (`facture_origine_id`) ;
+- `avoirs` = somme des TTC des avoirs émis qui la citent (`facture_origine_id`) ; un avoir est dans la devise de la facture qu'il cite, `emettre` le refuse sinon (422 `AVOIR_DEVISE`) et la base aussi, par un déclencheur, quel que soit l'écrivain ;
 - `reste_du` = `net_a_payer` − `encaisse` − `avoirs` ;
 - `statut`, dans cet ordre :
   - `payee` si `reste_du` = 0 ;
@@ -147,10 +147,10 @@ L'Edge Function `emettre` reçoit `{ brouillonId, version, invoice, appearance }
 2. **Rejouer sans dupliquer.** Si une facture porte déjà ce `brouillon_id`, la renvoyer telle quelle : un double clic ou un réseau qui coupe n'émet pas deux factures.
 3. **Vérifier le brouillon.** Il appartient à l'entreprise et sa `version` est celle reçue ; sinon 409. Ce qu'on émet est ce que l'utilisateur voit.
 4. **Ouvrir une transaction** sur une connexion Postgres directe (PostgREST ne tient pas une transaction sur plusieurs étapes) et verrouiller la ligne `numerotation` de l'entreprise (`SELECT … FOR UPDATE`). Deux émissions simultanées se suivent.
-5. **Contrôler la date.** `issueDate` ne doit être ni postérieure à aujourd'hui (Europe/Paris), ni antérieure à la date de la dernière facture émise par l'entreprise ; sinon 409. La numérotation reste chronologique.
-6. **Attribuer le numéro.** Rang selon `nextRank`, numéro selon `formatNumber`, contrôle par `numberProblems`. Ces fonctions quittent `library.ts` pour `site-src/shared/numerotation.ts`, que le Studio importe et que `pnpm compte:preparer` copie dans les fonctions (§ 5). En mode compte, on ne saisit pas de numéro à la main : le Studio propose le numéro suivant, et le serveur le remplace par celui qu'il attribue.
+5. **Contrôler la date.** `issueDate` ne doit être ni postérieure à aujourd'hui (Europe/Paris), ni antérieure à la date de la dernière facture émise par l'entreprise. En numérotation annuelle, elle ne doit pas non plus être antérieure au 1er janvier de l'année de la numérotation : sans cette borne, une facture de décembre prendrait le rang 1 de la série courante, et celle de janvier commencerait à 2. Hors de ces bornes : 409. La numérotation reste chronologique.
+6. **Attribuer le numéro.** Rang selon `nextRank`, numéro selon `formatNumber`, contrôle par `numberProblems`. Si ce numéro est déjà pris (une facture importée le porte), le serveur prend le premier libre qui suit ; s'il n'y en a pas dans les suivants, 409 `DOUBLON`. Ces fonctions quittent `library.ts` pour `site-src/shared/numerotation.ts`, que le Studio importe et que `pnpm compte:preparer` copie dans les fonctions (§ 5). En mode compte, on ne saisit pas de numéro à la main : le Studio propose le numéro suivant, et le serveur le remplace par celui qu'il attribue.
 7. **Valider.** `validateInvoice` sur la facture numérotée. Des anomalies : 422 avec la liste, annulation de la transaction.
-8. **Pour un avoir**, vérifier que chaque facture citée existe dans l'entreprise, et renseigner `facture_origine_id`.
+8. **Pour un avoir**, vérifier que chaque facture citée existe dans l'entreprise, et renseigner `facture_origine_id`. Un avoir est dans la devise des factures qu'il cite : sinon, 422 avec une `Issue` `AVOIR_DEVISE` sur la devise, avant le verrou et avant le dépôt du PDF.
 9. **Produire le PDF.** `renderInvoicePdf` puis `embedFacturX`, avec les polices du bucket `polices`, ou la police et le logo de l'utilisateur depuis `fichiers`. Déposer le PDF dans `factures`.
 10. **Enregistrer** la facture, avancer la numérotation (`advance`), supprimer le brouillon, valider la transaction.
 
@@ -164,7 +164,7 @@ Un échec avant la validation annule tout : aucun numéro n'est consommé, aucun
 
 **Enregistrer un paiement.** Depuis la fiche d'une facture : date, montant (le reste dû par défaut), moyen, note facultative. « Marquer comme payée » enregistre le reste dû à la date du jour. Une erreur se corrige par « Annuler ce paiement » : l'entrée reste visible, barrée.
 
-**Le tableau de bord**, sur la période choisie (mois ou année) :
+**Le tableau de bord**, sur la période choisie (mois ou année), **devise par devise** : il n'en convertit ni n'en additionne aucune. Chaque devise présente (une facture, un avoir ou un paiement dans la période, ou un reste dû positif) a ses propres chiffres :
 
 - facturé HT, avoirs déduits ;
 - encaissé ;
@@ -173,7 +173,7 @@ Un échec avant la validation annule tout : aucun numéro n'est consommé, aucun
 - les factures en retard, triées par jours de retard, chacune avec « Relancer » ;
 - les échéances des quinze prochains jours.
 
-Tout est calculé par une fonction SQL `tableau_de_bord(debut, fin)` sur `suivi_factures`.
+Tout est calculé par une fonction SQL `tableau_de_bord(debut, fin)` sur `suivi_factures`, qui rend une ligne par devise présente. Le Studio montre un bloc par devise, celle de l'entreprise d'abord : sans ligne pour elle, il affiche des zéros. Les factures en retard et les échéances gardent chacune la devise de leur facture.
 
 **Vers 2027.** Une date et un montant encaissé sont le contenu du statut 212 « Encaissée » que la PA devra recevoir pour les prestations de services avec TVA sur les encaissements. Le sous-projet 2 les lira sans rien faire ressaisir.
 
@@ -197,7 +197,7 @@ L'utilisateur relit, modifie, puis envoie.
 **L'Edge Function `relancer`**
 
 1. Authentifie, et vérifie que la facture appartient à l'entreprise, que l'échéance est passée et que le reste dû est positif.
-2. Applique les limites : adresse du compte confirmée, SIREN du vendeur renseigné, une relance par facture tous les trois jours au plus, vingt par jour et par compte au plus ; sinon 429.
+2. Applique les limites : adresse du compte confirmée, SIREN du vendeur renseigné, une relance par facture tous les trois jours au plus, vingt par jour et par compte au plus, et soixante refus du service d'envoi par jour et par compte au plus (une tentative refusée n'envoie rien, mais elle ne doit pas se répéter sans fin) ; sinon 429.
 3. Compose l'e-mail : corps en texte, échappé, placé dans un gabarit HTML fixe ; objet débarrassé des retours à la ligne. Aucun HTML fourni par l'utilisateur n'est envoyé.
 4. Envoie par l'API Brevo. Expéditeur « *Nom de l'entreprise* via facturx », adresse `relances@` du domaine facturx ; `Reply-To` : l'adresse du compte.
 5. Consigne l'envoi dans `relances`, avec l'identifiant renvoyé par Brevo. Un refus de Brevo est consigné aussi, et répond 502.
@@ -206,7 +206,7 @@ Le Studio affiche « envoyée » et jamais « reçue » : le fournisseur a accep
 
 ## 10. Le Studio
 
-**Entrer.** `/studio/` s'ouvre comme aujourd'hui, sans compte. L'en-tête gagne « Se connecter » et « Créer un compte gratuit » ; la page d'accueil du site renvoie vers la création de compte.
+**Entrer.** `/studio/` s'ouvre comme aujourd'hui, sans compte. L'en-tête gagne « Se connecter » et « Créer un compte gratuit » (ce dernier seulement quand la fenêtre est assez large ; sinon, « Se connecter » ouvre le dialogue, qui offre la création) ; la page d'accueil du site propose « Créer un compte gratuit », qui ouvre le Studio.
 
 **Connecté, la navigation offre**
 
@@ -232,7 +232,7 @@ Le Studio affiche « envoyée » et jamais « reçue » : le fournisseur a accep
 - Une Edge Function retrouve l'entreprise depuis le jeton, jamais depuis le corps de la requête.
 - La clé de service n'existe que dans les secrets des fonctions.
 - Buckets `factures` et `fichiers` privés, règles par préfixe `{entreprise_id}/`, URL signées de 60 secondes.
-- Fichiers déposés : logo en PNG ou JPEG de 1 Mo au plus, police TTF de 2 Mo au plus, type vérifié à l'ouverture et non d'après l'extension.
+- Fichiers déposés : logo en PNG ou JPEG de 1 Mo et de 2000 × 2000 pixels au plus (dimensions lues dans l'en-tête, sans décoder l'image), police TTF de 2 Mo au plus, type vérifié à l'ouverture et non d'après l'extension.
 - Limites de débit : `emettre` 60 par heure et par compte ; relances (§ 9) ; authentification selon les réglages de Supabase.
 - Sauvegardes : les sauvegardes quotidiennes du plan Pro, plus un dump hebdomadaire chiffré, déposé chez un autre hébergeur européen, avec une restauration testée au moins une fois avant l'ouverture.
 - Le site n'a aujourd'hui aucune CSP. Une session vit désormais dans le navigateur : une CSP est ajoutée à `docker/nginx.conf`, avec `connect-src` limité au site et au projet Supabase.
@@ -259,9 +259,10 @@ Les fonctions répondent `{ code, message, details? }` avec ces statuts :
 |---|---|---|---|
 | 401 | `SESSION` | jeton absent ou expiré | renvoie à la connexion, en gardant le brouillon |
 | 403 | `DROITS`, `NON_CONFIRME`, `SUPPRESSION` | pas membre ; adresse non confirmée ; suppression du compte demandée | explique ; propose de renvoyer la confirmation, ou d'annuler la suppression |
-| 409 | `BROUILLON_MODIFIE`, `DATE`, `DOUBLON`, `PDF_DEJA_DEPOSE` | version périmée ; date hors bornes ; numéro déjà importé ; PDF déjà déposé (repli du § 7) | recharge le brouillon ; indique la date admise ; liste les doublons de l'import |
-| 422 | `ANOMALIES` | `validateInvoice` refuse ; `details` porte les `Issue` | ouvre l'onglet Contrôle sur le champ en cause (`focusField`) |
-| 429 | `LIMITE` | limite de débit | indique quand réessayer |
+| 409 | `BROUILLON_MODIFIE`, `DATE`, `DOUBLON`, `PDF_DEJA_DEPOSE` | version périmée ; date hors bornes (`details.min` et `details.max`) ; numéro déjà importé, ou déjà pris sans numéro libre dans les suivants (`emettre`) ; PDF déjà déposé (repli du § 7) | recharge le brouillon ; indique la date admise ; liste les doublons de l'import, ou invite à changer le gabarit |
+| 413 | `ANOMALIES` | corps de la requête de plus de 10 Mio (`emettre`, `importer`) ; `details` porte une `Issue` de code `CORPS` | demande d'alléger les pièces jointes |
+| 422 | `ANOMALIES` | `validateInvoice` refuse, ou un avoir n'est pas dans la devise de la facture qu'il cite (`AVOIR_DEVISE`) ; `details` porte les `Issue` | ouvre l'onglet Contrôle sur le champ en cause (`focusField`), ou le champ de la devise |
+| 429 | `LIMITE` | limite de débit ; `details.reessayerApres` (date ISO) ; pour `relancer`, `details.cause` dit laquelle : `delai` (trois jours sur la facture), `jour` (vingt envois du jour), `tentatives` (soixante refus du jour) ou `verrou` (une autre relance de l'entreprise est en cours d'envoi) | indique quand réessayer, et pour une relance la limite en cause |
 | 502 | `ENVOI` | Brevo refuse | dit que la relance n'est pas partie |
 | 500 | `INTERNE` | le reste | message générique, identifiant de requête |
 
