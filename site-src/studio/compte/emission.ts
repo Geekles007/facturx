@@ -44,8 +44,15 @@ import {
   toast,
   ui,
 } from '../store.js';
-import { openIssued } from '../workflows.js';
+import { causeEnAttente, openIssued } from '../workflows.js';
 import { client } from './client.js';
+import {
+  DELAI_EMISSION_MS,
+  DELAI_GEL_MS,
+  DELAI_LOCAL_MS,
+  DELAI_RECHERCHE_MS,
+  DELAI_RELECTURE_MS,
+} from './delais.js';
 import { type Reaction, reaction } from './erreurs.js';
 import { renvoyerConfirmation } from './index.js';
 import { estPersistenceCompte, formulaireNumerote, type PersistenceCompte } from './persistence.js';
@@ -60,30 +67,22 @@ const ESSAIS = 10;
 const DUREE_MS = 9000;
 
 /**
- * Le plus long qu'une étape de l'émission fige l'éditeur : l'enregistrement qui la précède, l'appel
- * à `emettre` (le `fetch` est abandonné au même délai). Au-delà, l'issue est incertaine (on cherche
- * la facture par son brouillon) et l'éditeur reprend.
+ * Où en est l'émission : partie au serveur (`envoye`), engagée (`engagee` : le brouillon est en
+ * train d'être quitté, `brouillonEmis` ; on ne l'abandonne plus), ou abandonnée au bout du plafond
+ * (`abandonnee`, jamais une fois engagée).
  */
-export const DELAI_EMISSION_MS = 60_000;
-
-/** Le plus long que dure la recherche de la facture d'une réponse perdue. */
-const DELAI_RECHERCHE_MS = 15_000;
-
-/** Le plus long que dure la relecture de l'historique après l'émission (sinon : `reconstituer`). */
-const DELAI_RELECTURE_MS = 15_000;
-
-/**
- * Le plus long que l'éditeur reste figé, toutes étapes comprises. Au-delà, l'émission est abandonnée
- * (`Etape.abandonnee`) : ce qui en reviendrait ensuite ne quitte ni n'ouvre plus rien, l'issue est
- * dite incertaine, et l'éditeur reprend.
- */
-export const DELAI_GEL_MS = 120_000;
-
-/** Où en est l'émission : partie au serveur, ou abandonnée au bout du délai. */
 interface Etape {
   envoye: boolean;
+  engagee: boolean;
   abandonnee: boolean;
 }
+
+/**
+ * Les échanges avec le serveur encore en vol. Hors d'un abandon, il n'y en a qu'un, celui de
+ * l'émission en cours ; après un abandon au plafond, l'appel peut voler encore jusqu'à sa propre
+ * borne : un nouvel essai le dit au lieu d'attendre derrière lui.
+ */
+let echangesEnVol = 0;
 
 /** `promesse`, ou `repli` au bout de `ms` : l'émission ne fige jamais l'éditeur sans fin. */
 function borne<T>(promesse: Promise<T>, ms: number, repli: T): Promise<T> {
@@ -129,7 +128,12 @@ export async function emettreSurServeur(): Promise<boolean> {
     return false;
   }
   const phrases = t.compte.emission;
-  const etape: Etape = { envoye: false, abandonnee: false };
+  // Une émission abandonnée au plafond peut encore aboutir : on ne part pas derrière elle.
+  if (echangesEnVol > 0) {
+    toast(phrases.precedenteEnCours, 'info', DUREE_MS);
+    return false;
+  }
+  const etape: Etape = { envoye: false, engagee: false, abandonnee: false };
   ui({ emissionEnCours: true });
   // Une exception du Studio avant l'envoi n'a rien consommé ; après, l'issue est incertaine.
   const issue = emettre(etape).catch(() => {
@@ -141,6 +145,9 @@ export async function emettreSurServeur(): Promise<boolean> {
   const emission = borne<boolean | undefined>(issue, DELAI_GEL_MS, undefined)
     .then((reponse) => {
       if (reponse !== undefined) return reponse;
+      // Le brouillon est déjà quitté : on va jusqu'au bout (il ne reste que la relecture, bornée).
+      // Rendre la main maintenant la donnerait sur un brouillon qui ne reçoit plus rien.
+      if (etape.engagee) return issue;
       // Trop long : l'éditeur reprend, et ce qui reviendrait de cette émission n'y touche plus.
       etape.abandonnee = true;
       if (etape.envoye) toast(phrases.incertain, 'error', 12_000);
@@ -199,20 +206,22 @@ function refus(texte: string): false {
 }
 
 /**
- * Pourquoi le brouillon n'a pas pu être enregistré avant l'émission, d'après ce que le magasin en
- * sait (réseau, session, conflit, refus, serveur injoignable), ou parce que l'enregistrement n'a pas
- * répondu à temps (`delaiDepasse`). Sans rien supposer d'un bandeau.
+ * Pourquoi le brouillon n'a pas pu être enregistré avant l'émission : la même cause, dans le même
+ * ordre, que pour changer de document (`causeEnAttente`), ou, à défaut, parce que l'enregistrement
+ * n'a pas répondu à temps (`delaiDepasse`). Sans rien supposer d'un bandeau.
  */
 function pourquoiNonEnregistre(delaiDepasse: boolean): string {
-  const s = store.get().ui;
   const phrases = t.compte.emission.nonEnregistre;
-  if (s.storage === 'injoignable') return phrases.injoignable;
-  if (s.compte?.session === 'expiree') return phrases.session;
-  if (s.reseau === 'hors-ligne') return phrases.reseau;
-  if (s.conflit === 'supprime') return phrases.supprime;
-  if (s.conflit) return phrases.conflit;
-  if (s.brouillonRefuse !== undefined) return phrases.refus(s.brouillonRefuse);
-  return delaiDepasse ? phrases.delai : phrases.autre;
+  const c = causeEnAttente();
+  switch (c.cause) {
+    case 'refus':
+      return phrases.refus(c.detail);
+    case 'enCours':
+    case 'inconnue':
+      return delaiDepasse ? phrases.delai : phrases.autre;
+    default:
+      return phrases[c.cause];
+  }
 }
 
 /**
@@ -277,8 +286,9 @@ async function emettre(etape: Etape): Promise<boolean> {
   if (!lancee) return false;
   const { envoi } = lancee;
   const resultat = await lancee.resultat;
-  // Abandonnée au bout du délai : l'issue a été dite, l'utilisateur a repris la main.
-  if (etape.abandonnee) return false;
+  // Abandonnée au bout du délai : l'issue a été dite, l'utilisateur a repris la main. Jamais une
+  // émission engagée (le brouillon quitté), que le plafond attend jusqu'au bout.
+  if (etape.abandonnee && !etape.engagee) return false;
   switch (resultat.kind) {
     case 'emise':
       await ouvrirLaFactureEmise(p, resultat.emise, {
@@ -302,6 +312,15 @@ async function emettre(etape: Etape): Promise<boolean> {
 async function echanger(p: PersistenceCompte, envoi: Envoi, etape: Etape): Promise<Resultat> {
   // Abandonnée pendant l'attente de la file : rien ne part.
   if (etape.abandonnee) return { kind: 'incertaine' };
+  echangesEnVol++;
+  try {
+    return await echangerEnVol(p, envoi, etape);
+  } finally {
+    echangesEnVol--;
+  }
+}
+
+async function echangerEnVol(p: PersistenceCompte, envoi: Envoi, etape: Etape): Promise<Resultat> {
   etape.envoye = true;
   // Sans réponse au bout du délai, l'issue est incertaine ; la réponse tardive, s'il en vient une,
   // est ignorée (rien n'est quitté pour elle) : la recherche ci-dessous, ou plus tard la reprise
@@ -318,7 +337,12 @@ async function echanger(p: PersistenceCompte, envoi: Envoi, etape: Etape): Promi
   if (resultat.kind !== 'emise' || etape.abandonnee) {
     return resultat.kind === 'emise' ? { kind: 'incertaine' } : resultat;
   }
-  return { ...resultat, ouvert: await p.brouillonEmis(envoi.brouillonId) };
+  // Engagée, dans le même temps que la vérification ci-dessus : le plafond ne l'abandonne plus.
+  etape.engagee = true;
+  // Les recopies locales sont bornées aussi ; le brouillon est marqué quitté avant elles, et il
+  // était l'ouvert (l'éditeur est figé depuis le début de l'émission).
+  const ouvert = await borne(p.brouillonEmis(envoi.brouillonId), DELAI_LOCAL_MS, true);
+  return { ...resultat, ouvert };
 }
 
 /** L'appel à `emettre`, et ce que sa réponse dit. */

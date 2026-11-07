@@ -809,6 +809,8 @@ const fr = {
         "Le compte n'est pas chargé dans cette page : rechargez-la, puis émettez de nouveau. La facture n'est pas émise.",
       dejaEmise:
         'Cette facture est déjà émise : pour en faire une autre, dupliquez-la ; pour la corriger, émettez un avoir.',
+      precedenteEnCours:
+        "Une émission précédente de ce brouillon est encore en train d'aboutir : patientez un instant, puis réessayez. Si elle a abouti, le nouvel essai retrouvera la facture, sans en émettre une seconde.",
       erreurLocale:
         "Le Studio n'a pas pu préparer l'émission : rien n'est parti. Rechargez la page, puis émettez de nouveau.",
       renvoyer: "Renvoyer l'e-mail de confirmation",
@@ -1602,6 +1604,8 @@ const en: Strings = {
         'The account is not loaded in this page: reload it, then issue again. The invoice is not issued.',
       dejaEmise:
         'This invoice is already issued: to make another one, duplicate it; to correct it, issue a credit note.',
+      precedenteEnCours:
+        'A previous issue of this draft is still completing: wait a moment, then try again. If it went through, the new attempt will find the invoice without issuing a second one.',
       erreurLocale:
         'The Studio could not prepare the issue: nothing was sent. Reload the page, then issue again.',
       renvoyer: 'Resend the confirmation email',

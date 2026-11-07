@@ -13,9 +13,9 @@
  *      supabase/functions/deno.json), l'adresse de la pile et ses clés dans l'environnement, avec
  *      `PURGE_SECRET`, tiré du même fichier que celui des fonctions : les tests de `purger` l'envoient ;
  *   3. le Studio contre les fonctions servies : les émissions réelles de
- *      site-src/studio/compte/emission-pile.test.ts (`FACTURX_EMETTRE=1`), avec Vitest, pendant que
- *      `emettre` est servie. Ailleurs (l'étape « Tests du Studio contre la pile » de la CI), elles
- *      sont sautées : les fonctions n'y sont pas servies.
+ *      site-src/studio/compte/emission-pile.test.ts et emission-gel.test.ts (`FACTURX_EMETTRE=1`),
+ *      avec Vitest, pendant que `emettre` est servie. Ailleurs (l'étape « Tests du Studio contre la
+ *      pile » de la CI), elles sont sautées : les fonctions n'y sont pas servies.
  *
  * Le code de sortie est celui de `deno test`, puis celui de Vitest. Un dossier de tests absent ou
  * vide est sauté, et sans aucun test le script sort proprement sans toucher à la pile.
@@ -31,7 +31,10 @@ const pgtapDir = join(root, 'supabase/tests');
 const fonctionsDir = join(root, 'supabase/functions');
 const denoDir = join(fonctionsDir, 'tests');
 /** Les émissions réelles du Studio, qui demandent `emettre` servie. */
-const studioEmission = 'site-src/studio/compte/emission-pile.test.ts';
+const studioEmission = [
+  'site-src/studio/compte/emission-pile.test.ts',
+  'site-src/studio/compte/emission-gel.test.ts',
+];
 /** Les variables des fonctions : le fichier local s'il existe, sinon sa copie versionnée. */
 const envFonctions = ['.env', '.env.example']
   .map((nom) => join(fonctionsDir, nom))
@@ -236,12 +239,13 @@ async function main() {
     const codeDeno = await new Promise((resolve) =>
       deno.once('exit', (code) => resolve(code ?? 1)),
     );
-    if (codeDeno !== 0 || !existsSync(join(root, studioEmission))) return codeDeno;
+    const studio = studioEmission.filter((fichier) => existsSync(join(root, fichier)));
+    if (codeDeno !== 0 || studio.length === 0) return codeDeno;
     // Le Studio, contre les fonctions encore servies : les clés passent par l'environnement, jamais
     // par la ligne de commande.
     const vitest = spawn(
       'pnpm',
-      ['exec', 'vitest', 'run', '--config', 'vitest.site.config.mts', studioEmission],
+      ['exec', 'vitest', 'run', '--config', 'vitest.site.config.mts', ...studio],
       {
         cwd: root,
         stdio: 'inherit',

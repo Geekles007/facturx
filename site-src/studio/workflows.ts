@@ -176,18 +176,41 @@ export function openIssued(saved: SavedInvoice): void {
   }));
 }
 
+/** Pourquoi la saisie du brouillon ouvert n'est pas partie, sans encore la dire. */
+export type CauseEnAttente =
+  | { cause: 'injoignable' | 'session' | 'supprime' | 'conflit' | 'reseau' | 'enCours' }
+  | { cause: 'refus'; detail: string }
+  | { cause: 'inconnue'; detail: string | undefined };
+
+/**
+ * Pourquoi la saisie du brouillon ouvert n'est pas partie, d'après ce que le magasin en sait et
+ * `raison` (un code de la conservation) : une seule source, dans un seul ordre, pour le refus de
+ * changer de document (`messageEnAttente`) et pour l'émission qui ne peut pas partir.
+ */
+export function causeEnAttente(raison?: string): CauseEnAttente {
+  const s = store.get().ui;
+  if (s.storage === 'injoignable') return { cause: 'injoignable' };
+  if (s.compte?.session === 'expiree' || raison === 'SESSION') return { cause: 'session' };
+  if (s.conflit === 'supprime') return { cause: 'supprime' };
+  if (s.conflit || raison === 'BROUILLON_MODIFIE') return { cause: 'conflit' };
+  if (s.brouillonRefuse !== undefined) return { cause: 'refus', detail: s.brouillonRefuse };
+  if (s.reseau === 'hors-ligne' || raison === 'RESEAU') return { cause: 'reseau' };
+  if (raison === 'EN_COURS') return { cause: 'enCours' };
+  return { cause: 'inconnue', detail: raison };
+}
+
 /** Pourquoi la saisie du brouillon ouvert n'est pas partie (`raison` : un code de la conservation). */
 export function messageEnAttente(raison?: string): string {
-  const s = store.get().ui;
   const phrases = t.compte.conservation.enAttente;
-  if (s.storage === 'injoignable') return phrases.injoignable;
-  if (s.compte?.session === 'expiree' || raison === 'SESSION') return phrases.session;
-  if (s.conflit === 'supprime') return phrases.supprime;
-  if (s.conflit || raison === 'BROUILLON_MODIFIE') return phrases.conflit;
-  if (s.brouillonRefuse !== undefined) return phrases.refus(s.brouillonRefuse);
-  if (s.reseau === 'hors-ligne' || raison === 'RESEAU') return phrases.reseau;
-  if (raison === 'EN_COURS') return phrases.enCours;
-  return phrases.refus(raison ?? '');
+  const c = causeEnAttente(raison);
+  switch (c.cause) {
+    case 'refus':
+      return phrases.refus(c.detail);
+    case 'inconnue':
+      return phrases.refus(c.detail ?? '');
+    default:
+      return phrases[c.cause];
+  }
 }
 
 /**

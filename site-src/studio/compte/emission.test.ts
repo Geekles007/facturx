@@ -26,7 +26,7 @@ import {
   store,
   updateForm,
 } from '../store.js';
-import { issueInvoice } from '../workflows.js';
+import { issueInvoice, messageEnAttente } from '../workflows.js';
 import { emettreSurServeur, PLAFOND_CORPS } from './emission.js';
 import type { PersistenceCompte } from './persistence.js';
 
@@ -73,6 +73,8 @@ function fausseConservation() {
     lenteurFile: number;
     /** La relecture de l'historique ne répond jamais. */
     historiqueBloque: boolean;
+    /** Lenteur (ms) des recopies locales de `brouillonEmis`. */
+    lenteurEmis: number;
   } = {
     refus: undefined,
     version: 1,
@@ -88,6 +90,7 @@ function fausseConservation() {
     lenteurEcriture: 0,
     lenteurFile: 0,
     historiqueBloque: false,
+    lenteurEmis: 0,
   };
   const attendre = (ms: number) => new Promise((r) => setTimeout(r, ms));
   const memes = (b: Brouillon) =>
@@ -143,6 +146,7 @@ function fausseConservation() {
     },
     async brouillonEmis(id: string) {
       etat.emis.push(id);
+      if (etat.lenteurEmis) await attendre(etat.lenteurEmis);
       if (etat.enFile) etat.dansLaFile.push(`brouillonEmis ${id}`);
       return id === 'b-1';
     },
@@ -713,6 +717,108 @@ describe('emettreSurServeur', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  test('le plafond tombe pendant la relecture, après le départ du brouillon : on va jusqu’au bout', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { p, etat } = fausseConservation();
+      demarrer(p);
+      setForm('buyer.name', 'Lent');
+      // L'enregistrement et la file prennent presque tout le plafond ; la facture part à ~109 s, et
+      // la relecture de l'historique ne répond pas : le plafond (120 s) tombe pendant elle.
+      etat.lenteurEcriture = 59_000;
+      etat.lenteurFile = 50_000;
+      etat.historiqueBloque = true;
+      faux.invoke.mockResolvedValue(succes({ id: 'f-7', numero: 'F-2026-0007' }));
+      const emission = emettreSurServeur();
+      await vi.advanceTimersByTimeAsync(120_500);
+      // Le brouillon est quitté : on n'abandonne plus, l'éditeur reste figé, rien ne se tape.
+      expect(etat.emis).toEqual(['b-1']);
+      expect(store.get().ui.emissionEnCours).toBe(true);
+      setForm('buyer.name', 'Tapé pendant');
+      expect(store.get().form.buyer.name).toBe('Lent');
+      // La relecture est bornée (15 s, partie à ~109 s) : la facture reconstituée s'ouvre à ~124 s,
+      // et le Studio le dit.
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(await emission).toBe(true);
+      const s = store.get();
+      expect(s.ui.emissionEnCours).toBe(false);
+      expect(s.ui.issued).toBe('f-7');
+      expect(texteDuMessage()).toBe(t.compte.emission.emise('F-2026-0007'));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('le plafond tombe pendant les recopies locales de brouillonEmis : on va jusqu’au bout aussi', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { p, etat } = fausseConservation();
+      demarrer(p);
+      const { form, appearance } = store.get();
+      etat.historique = [emise('f-8', 'F-2026-0008', form, appearance)];
+      etat.lenteurEcriture = 59_000;
+      etat.lenteurFile = 59_000;
+      etat.lenteurEmis = 30_000;
+      faux.invoke.mockResolvedValue(succes({ id: 'f-8', numero: 'F-2026-0008' }));
+      const emission = emettreSurServeur();
+      await vi.advanceTimersByTimeAsync(121_000);
+      expect(store.get().ui.emissionEnCours).toBe(true);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(await emission).toBe(true);
+      expect(store.get().ui.issued).toBe('f-8');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('après un abandon en vol, un nouvel essai dit qu’une émission précédente est encore en cours', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { p, etat } = fausseConservation();
+      demarrer(p);
+      etat.lenteurEcriture = 59_000;
+      etat.lenteurFile = 59_000;
+      let repondre: (v: unknown) => void = () => undefined;
+      faux.invoke.mockReturnValue(
+        new Promise((r) => {
+          repondre = r;
+        }),
+      );
+      const premiere = emettreSurServeur();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(await premiere).toBe(false);
+      // L'appel est toujours en vol : un nouveau clic ne fige rien et le dit, sans attendre.
+      etat.lenteurEcriture = 0;
+      etat.lenteurFile = 0;
+      expect(await emettreSurServeur()).toBe(false);
+      expect(texteDuMessage()).toBe(t.compte.emission.precedenteEnCours);
+      expect(faux.invoke).toHaveBeenCalledTimes(1);
+      expect(store.get().ui.emissionEnCours).toBe(false);
+      // Une fois l'appel revenu, on peut réessayer (le serveur rejouerait la même facture).
+      repondre(coupure());
+      await vi.advanceTimersByTimeAsync(60_000);
+      faux.invoke.mockResolvedValue(coupure());
+      await emettreSurServeur();
+      expect(faux.invoke).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('la cause d’un enregistrement manqué suit le même ordre que le changement de document', async () => {
+    const { p, etat } = fausseConservation();
+    demarrer(p);
+    setForm('buyer.name', 'Saisie');
+    etat.refus = 'RESEAU';
+    // Hors ligne et supprimé ailleurs à la fois : « supprimé » d'abord, comme `messageEnAttente`.
+    store.set((s) => ({ ui: { ...s.ui, conflit: 'supprime' } }));
+    expect(await emettreSurServeur()).toBe(false);
+    expect(texteDuMessage()).toBe(
+      `${t.compte.emission.nonEnregistre.supprime} ${t.compte.emission.aucunNumero}`,
+    );
+    expect(messageEnAttente()).toBe(t.compte.conservation.enAttente.supprime);
   });
 
   test('le document change pendant l’enregistrement (autre que la frappe) : on enregistre de nouveau', async () => {
