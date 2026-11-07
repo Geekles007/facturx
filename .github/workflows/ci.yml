@@ -79,10 +79,12 @@ jobs:
         run: |
           docker pull --quiet "$VERAPDF_IMAGE"
           echo "$GITHUB_WORKSPACE/scripts" >> "$GITHUB_PATH"
-      - name: Pile Supabase locale (sans les services inutiles aux tests)
-        run: supabase start -x studio,imgproxy,vector,logflare,supavisor
+      # Avant la pile : `supabase start` lit les fonctions, dont les modules partagés que
+      # `compte:preparer` copie dans supabase/functions/_vendor/ (ignoré par git).
       - name: SDK, Studio et modules partagés des fonctions
         run: pnpm build && pnpm site:build && pnpm compte:preparer
+      - name: Pile Supabase locale (sans les services inutiles aux tests)
+        run: supabase start -x studio,imgproxy,vector,logflare,supavisor
       - name: Outils de mesure de D74 (types)
         # Ils ne servent qu'à la mise en production (docs/compte.md, 1.11) : vérifier leurs types ici
         # garde leurs imports d'accord avec les fonctions. La fonction de mesure se vérifie à la place
