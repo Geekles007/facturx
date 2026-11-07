@@ -45,8 +45,11 @@ export interface MarqueImport {
   brouillonEnAttente?: boolean;
 }
 
-/** La marque vit dans IndexedDB, à côté des données locales, une par compte (entreprise). */
-const cleMarque = (entrepriseId: string): string => `import-local-${entrepriseId}`;
+/**
+ * La marque vit dans IndexedDB, à côté des données locales, une par compte (entreprise). C'est une
+ * donnée du compte dans ce navigateur : la déconnexion l'efface.
+ */
+export const cleMarque = (entrepriseId: string): string => `import-local-${entrepriseId}`;
 
 const texte = (v: unknown): boolean => typeof v === 'string' && v.trim() !== '';
 

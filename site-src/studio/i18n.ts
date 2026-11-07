@@ -589,6 +589,8 @@ const fr = {
     patternHint:
       '{AAAA} année, {AA} année sur deux chiffres, {MM} mois, {NNNN} compteur sur quatre chiffres.',
     nextRank: 'Prochain rang',
+    nextRankTooLow: (minimum: number) =>
+      `${minimum} au moins : la numérotation du compte ne redescend pas, pour ne jamais réattribuer un numéro. Rien n'est envoyé.`,
     yearly: 'Repartir de 1 chaque année',
     nextPreview: 'Prochain numéro',
     numberingWarning:
@@ -641,6 +643,8 @@ const fr = {
         'Ce lien a expiré ou a déjà servi. Connectez-vous ; sinon, demandez un nouveau lien avec « Mot de passe oublié ? ».',
       noSession:
         "Ce lien n'a pas pu ouvrir de session dans ce navigateur : il a sans doute été ouvert ailleurs que là où vous l'aviez demandé, ou il a déjà servi. Si c'était la confirmation de votre adresse, elle est confirmée : connectez-vous. S'il s'agissait d'un nouveau mot de passe, redemandez un lien avec « Mot de passe oublié ? ».",
+      autreAdresse:
+        "Lien accepté. Pour terminer le changement d'adresse, ouvrez aussi le lien envoyé à l'autre adresse : jusque-là, l'adresse du compte ne change pas.",
     },
     errors: {
       credentials: 'Adresse ou mot de passe incorrect.',
@@ -652,6 +656,8 @@ const fr = {
       rateLimit: "Trop de tentatives ou d'e-mails envoyés : réessayez dans quelques minutes.",
       signupClosed: 'Les inscriptions sont fermées pour le moment.',
       network: 'Le serveur est injoignable : vérifiez votre connexion, puis réessayez.',
+      samePassword: "Choisissez un mot de passe différent de l'actuel.",
+      session: 'Votre session a expiré : reconnectez-vous, puis recommencez.',
       other: "L'opération a échoué. Réessayez dans un instant.",
       loadFailed: "Le module de connexion n'a pas pu être chargé : vérifiez votre connexion.",
     },
@@ -743,7 +749,7 @@ const fr = {
       nonConfirme:
         "Confirmez d'abord l'adresse e-mail du compte : ouvrez le lien de l'e-mail de confirmation, puis réessayez.",
       suppression:
-        'La suppression de votre compte est demandée : annulez-la depuis « Mon compte » pour reprendre. Vous pouvez toujours exporter vos données.',
+        "La suppression de votre compte est demandée (peut-être depuis un autre appareil) : rechargez la page, qui vous proposera de l'annuler. Vous pouvez toujours exporter vos données.",
       droits:
         "Ce compte n'a accès à aucune entreprise : reconnectez-vous ; si cela persiste, écrivez-nous.",
       brouillonModifie:
@@ -1191,6 +1197,113 @@ const fr = {
         "L'export n'a pas abouti : réessayez dans un instant. Aucune archive n'a été produite.",
       tropGrand:
         "Le compte dépasse ce qu'une archive zip simple peut contenir (65 535 fichiers, 4 Go, ou quelques centaines de Mo de PDF) : aucune archive n'a été produite. Écrivez-nous pour obtenir vos données.",
+    },
+    /** La page Entreprise (spec § 10) : profil vendeur, logo, numérotation, et le compte. */
+    entreprise: {
+      titre: 'Entreprise',
+      intro:
+        'Votre entreprise telle que vos factures la présentent, la numérotation des prochaines, et votre compte.',
+      profil: 'Profil vendeur',
+      logo: 'Logo',
+      logoIntro:
+        "Le logo de vos prochaines factures : PNG ou JPEG, 1 Mo au plus. Celui de la facture ouverte se change dans l'onglet Apparence.",
+      logoAucun: 'Pas de logo sur vos prochaines factures.',
+      logoChoisir: 'Choisir un logo…',
+      logoRemplacer: 'Remplacer…',
+      logoRetirer: 'Retirer',
+      logoTropGros:
+        "Ce logo pèse plus de 1 Mo : réduisez-le, puis recommencez. Rien n'a été envoyé.",
+      logoType: "Ce fichier n'est ni un PNG ni un JPEG : rien n'a été envoyé.",
+      logoIllisible: "Cette image n'a pas pu être lue : rien n'a été envoyé.",
+      logoEnregistre: 'Logo enregistré pour vos prochaines factures.',
+      logoRetire: 'Logo retiré de vos prochaines factures.',
+      numerotation: 'Numérotation',
+      numerotationIntro:
+        "Le serveur attribue les numéros à l'émission, dans cette suite, en sautant ceux qui sont déjà pris. Le prochain rang peut monter, jamais redescendre.",
+      compte: 'Compte',
+      donnees: 'Vos données',
+      exportIntro:
+        'Une archive zip : vos données, que le Studio sans compte sait restaurer, et le PDF de chaque facture.',
+      exportFait: (heure: string) => `Archive téléchargée à ${heure}.`,
+    },
+    /** Changer d'adresse ou de mot de passe, et le nouveau mot de passe après un lien de réinitialisation. */
+    motDePasse: {
+      adresse: 'Adresse e-mail',
+      confirmee: 'confirmée',
+      nonConfirmee: 'pas encore confirmée',
+      nouvelleAdresse: 'Nouvelle adresse',
+      changerAdresse: "Changer d'adresse",
+      adresseManquante: 'Saisissez la nouvelle adresse.',
+      memeAdresse: "C'est déjà l'adresse du compte.",
+      adresseEnvoyee: (actuelle: string, nouvelle: string) =>
+        `Pour terminer, ouvrez le lien envoyé à ${nouvelle}, puis celui envoyé à ${actuelle}. Jusque-là, l'adresse du compte reste ${actuelle}.`,
+      titre: 'Mot de passe',
+      nouveau: 'Nouveau mot de passe',
+      confirmation: 'Retapez-le',
+      changer: 'Changer le mot de passe',
+      manquant: 'Saisissez le nouveau mot de passe, deux fois.',
+      differents: 'Les deux saisies diffèrent : retapez le nouveau mot de passe.',
+      change: 'Mot de passe changé.',
+      recuperationTitre: 'Choisissez un nouveau mot de passe',
+      recuperationIntro:
+        'Le lien reçu par e-mail vous a connecté : choisissez maintenant le mot de passe que vous utiliserez désormais.',
+      plusTard: 'Plus tard',
+    },
+    /** Supprimer le compte en deux temps, et l'écran d'un compte dont la suppression est demandée (spec § 12). */
+    suppression: {
+      titre: 'Supprimer le compte',
+      intro:
+        "Vos factures doivent être conservées dix ans : cette obligation légale vous incombe, pas à facturx. Avant de supprimer votre compte, exportez vos données : l'archive sera la seule copie qui vous restera.",
+      exportDabord:
+        "Exportez d'abord vos données, ci-dessus : sans cet export, la suppression ne se demande pas.",
+      demander: 'Supprimer mon compte…',
+      confirmerTitre: 'Supprimer votre compte ?',
+      confirmerDelai: (date: string) =>
+        `Le compte sera effacé le ${date}, 30 jours après cette demande. D'ici là, il ne sert plus qu'à exporter vos données ou à annuler la suppression : vous ne pourrez plus émettre, importer ni relancer.`,
+      confirmerEfface:
+        'Seront effacés : vos factures et leurs PDF, les paiements et les relances, les brouillons, les clients, le catalogue, votre entreprise avec sa numérotation, son logo et ses polices, puis le compte lui-même.',
+      confirmerCopie: (heure: string) =>
+        `L'archive exportée à ${heure} sera la seule copie de vos données : gardez-la dix ans, le temps pendant lequel la loi vous oblige à conserver vos factures.`,
+      confirmer: 'Demander la suppression',
+      garder: 'Garder mon compte',
+      ecranTitre: 'Suppression du compte demandée',
+      demandeeLe: (email: string, date: string) =>
+        `La suppression du compte ${email} a été demandée le ${date}.`,
+      purgeLe: (date: string) =>
+        `Le ${date}, tout sera effacé : les factures et leurs PDF, les paiements, les relances, les brouillons, les clients, le catalogue, l'entreprise, puis le compte lui-même.`,
+      jusqueLa:
+        "D'ici là, vous pouvez annuler la suppression : le compte reprend tel qu'il était. Vous pouvez aussi exporter vos données, autant de fois qu'il le faut.",
+      echue:
+        "Le délai de 30 jours est écoulé : l'effacement peut commencer à tout moment, et la suppression ne s'annule plus. Exportez vos données tant que c'est possible.",
+      annuler: 'Annuler la suppression',
+      annulee: 'Suppression annulée : votre compte reprend.',
+      tropTard: (date: string) =>
+        `La suppression demandée le ${date} remonte à plus de 30 jours : elle ne peut plus être annulée, et l'effacement a pu commencer.`,
+      session: 'Votre session a expiré : reconnectez-vous, puis recommencez.',
+      reseau: "Le serveur ne répond pas : rien n'a changé. Réessayez dans un instant.",
+      chargement:
+        "L'écran du compte n'a pas pu être chargé : vérifiez votre connexion, puis rechargez la page.",
+    },
+    /** Se déconnecter sur un poste partagé : ce navigateur ne garde rien du compte. */
+    deconnexion: {
+      nonEnvoye: (elements: string[]) =>
+        `Pas encore enregistré sur le serveur : ${
+          elements.length > 1
+            ? `${elements.slice(0, -1).join(', ')} et ${elements[elements.length - 1]}`
+            : (elements[0] ?? '')
+        }. En vous déconnectant, vous le perdez : ce navigateur ne garde rien du compte après la déconnexion. Se déconnecter quand même ?`,
+      elements: {
+        draft: 'la saisie du brouillon ouvert',
+        company: "l'entreprise",
+        numbering: 'la numérotation',
+        apparence: "l'apparence par défaut",
+        clients: 'des clients',
+        products: 'des articles du catalogue',
+        files: 'des fichiers (logo, polices)',
+        enCours: 'des enregistrements encore en route',
+        autre: "d'autres modifications",
+      },
+      enCours: 'Enregistrement de vos dernières modifications avant la déconnexion…',
     },
   },
 };
@@ -1767,6 +1880,8 @@ const en: Strings = {
     pattern: 'Number pattern',
     patternHint: '{AAAA} year, {AA} two-digit year, {MM} month, {NNNN} four-digit counter.',
     nextRank: 'Next rank',
+    nextRankTooLow: (minimum: number) =>
+      `${minimum} at least: the account's numbering never goes down, so that no number is ever assigned twice. Nothing is sent.`,
     yearly: 'Restart at 1 every year',
     nextPreview: 'Next number',
     numberingWarning:
@@ -1818,6 +1933,8 @@ const en: Strings = {
         'This link has expired or has already been used. Sign in; otherwise, request a new link with “Forgot your password?”.',
       noSession:
         'This link could not open a session in this browser: it was probably opened somewhere other than where you requested it, or it has already been used. If it was to confirm your address, the address is confirmed: sign in. If it was for a new password, request another link with “Forgot your password?”.',
+      autreAdresse:
+        'Link accepted. To finish changing your address, also open the link sent to the other address: until then, the address of the account does not change.',
     },
     errors: {
       credentials: 'Wrong email address or password.',
@@ -1828,6 +1945,8 @@ const en: Strings = {
       rateLimit: 'Too many attempts or emails sent: try again in a few minutes.',
       signupClosed: 'Sign-ups are closed for the moment.',
       network: 'The server cannot be reached: check your connection, then try again.',
+      samePassword: 'Choose a password different from the current one.',
+      session: 'Your session has expired: sign in again, then start over.',
       other: 'The operation failed. Try again in a moment.',
       loadFailed: 'The sign-in module could not be loaded: check your connection.',
     },
@@ -1912,7 +2031,7 @@ const en: Strings = {
       nonConfirme:
         'First confirm the email address of your account: open the link in the confirmation email, then try again.',
       suppression:
-        'Deletion of your account has been requested: cancel it from “My account” to resume. You can still export your data.',
+        'Deletion of your account has been requested (perhaps from another device): reload the page, which will offer to cancel it. You can still export your data.',
       droits:
         'This account has no access to any company: sign in again; if this persists, write to us.',
       brouillonModifie:
@@ -2335,6 +2454,108 @@ const en: Strings = {
       echec: 'The export did not complete: try again in a moment. No archive was produced.',
       tropGrand:
         'The account exceeds what a plain zip archive can hold (65,535 files, 4 GB, or a few hundred MB of PDFs): no archive was produced. Write to us to get your data.',
+    },
+    entreprise: {
+      titre: 'Company',
+      intro:
+        'Your company as your invoices present it, the numbering of the next ones, and your account.',
+      profil: 'Seller profile',
+      logo: 'Logo',
+      logoIntro:
+        'The logo of your next invoices: PNG or JPEG, 1 MB at most. The one of the open invoice is changed in the Appearance tab.',
+      logoAucun: 'No logo on your next invoices.',
+      logoChoisir: 'Choose a logo…',
+      logoRemplacer: 'Replace…',
+      logoRetirer: 'Remove',
+      logoTropGros: 'This logo is larger than 1 MB: shrink it, then try again. Nothing was sent.',
+      logoType: 'This file is neither a PNG nor a JPEG: nothing was sent.',
+      logoIllisible: 'This image could not be read: nothing was sent.',
+      logoEnregistre: 'Logo saved for your next invoices.',
+      logoRetire: 'Logo removed from your next invoices.',
+      numerotation: 'Numbering',
+      numerotationIntro:
+        'The server assigns the numbers on issue, in this sequence, skipping those already taken. The next rank can go up, never down.',
+      compte: 'Account',
+      donnees: 'Your data',
+      exportIntro:
+        'A zip archive: your data, which the Studio without an account can restore, and the PDF of each invoice.',
+      exportFait: (heure: string) => `Archive downloaded at ${heure}.`,
+    },
+    motDePasse: {
+      adresse: 'Email address',
+      confirmee: 'confirmed',
+      nonConfirmee: 'not confirmed yet',
+      nouvelleAdresse: 'New address',
+      changerAdresse: 'Change address',
+      adresseManquante: 'Enter the new address.',
+      memeAdresse: 'This is already the address of the account.',
+      adresseEnvoyee: (actuelle: string, nouvelle: string) =>
+        `To finish, open the link sent to ${nouvelle}, then the one sent to ${actuelle}. Until then, the address of the account remains ${actuelle}.`,
+      titre: 'Password',
+      nouveau: 'New password',
+      confirmation: 'Type it again',
+      changer: 'Change the password',
+      manquant: 'Enter the new password, twice.',
+      differents: 'The two entries differ: type the new password again.',
+      change: 'Password changed.',
+      recuperationTitre: 'Choose a new password',
+      recuperationIntro:
+        'The link you received by email signed you in: now choose the password you will use from now on.',
+      plusTard: 'Later',
+    },
+    suppression: {
+      titre: 'Delete the account',
+      intro:
+        'Your invoices must be kept for ten years: this legal obligation is yours, not facturx’s. Before deleting your account, export your data: the archive will be the only copy you have left.',
+      exportDabord:
+        'First export your data, above: without this export, deletion cannot be requested.',
+      demander: 'Delete my account…',
+      confirmerTitre: 'Delete your account?',
+      confirmerDelai: (date: string) =>
+        `The account will be erased on ${date}, 30 days after this request. Until then, it only serves to export your data or to cancel the deletion: you will no longer be able to issue, import or send reminders.`,
+      confirmerEfface:
+        'What will be erased: your invoices and their PDFs, payments and reminders, drafts, clients, the catalogue, your company with its numbering, logo and fonts, then the account itself.',
+      confirmerCopie: (heure: string) =>
+        `The archive exported at ${heure} will be the only copy of your data: keep it for ten years, the time during which the law requires you to keep your invoices.`,
+      confirmer: 'Request deletion',
+      garder: 'Keep my account',
+      ecranTitre: 'Account deletion requested',
+      demandeeLe: (email: string, date: string) =>
+        `Deletion of the account ${email} was requested on ${date}.`,
+      purgeLe: (date: string) =>
+        `On ${date}, everything will be erased: invoices and their PDFs, payments, reminders, drafts, clients, the catalogue, the company, then the account itself.`,
+      jusqueLa:
+        'Until then, you can cancel the deletion: the account resumes as it was. You can also export your data, as many times as needed.',
+      echue:
+        'The 30-day period is over: erasure may start at any moment, and the deletion can no longer be cancelled. Export your data while you still can.',
+      annuler: 'Cancel the deletion',
+      annulee: 'Deletion cancelled: your account resumes.',
+      tropTard: (date: string) =>
+        `The deletion requested on ${date} is more than 30 days old: it can no longer be cancelled, and erasure may have started.`,
+      session: 'Your session has expired: sign in again, then start over.',
+      reseau: 'The server is not responding: nothing has changed. Try again in a moment.',
+      chargement:
+        'The account screen could not be loaded: check your connection, then reload the page.',
+    },
+    deconnexion: {
+      nonEnvoye: (elements: string[]) =>
+        `Not saved on the server yet: ${
+          elements.length > 1
+            ? `${elements.slice(0, -1).join(', ')} and ${elements[elements.length - 1]}`
+            : (elements[0] ?? '')
+        }. If you sign out, you lose it: this browser keeps nothing of the account after signing out. Sign out anyway?`,
+      elements: {
+        draft: 'what you typed in the open draft',
+        company: 'the company',
+        numbering: 'the numbering',
+        apparence: 'the default appearance',
+        clients: 'clients',
+        products: 'catalogue items',
+        files: 'files (logo, fonts)',
+        enCours: 'saves still on their way',
+        autre: 'other changes',
+      },
+      enCours: 'Saving your latest changes before signing out…',
     },
   },
 };

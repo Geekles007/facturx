@@ -44,6 +44,7 @@ import { toast } from '../store.js';
 import { client } from './client.js';
 import { estPersistenceCompte, estUnPdf, type PersistenceCompte, toutLire } from './persistence.js';
 import { sessionRefusee } from './suivi.js';
+import { retenirExport } from './suppression.js';
 
 /** Les PDF lus en même temps. */
 const LOT_PDF = 4;
@@ -305,22 +306,27 @@ function messageDExport(erreur: unknown): string {
 }
 
 /** L'export en cours : un second clic l'attend, sans en lancer un autre. */
-let enCours: Promise<void> | undefined;
+let enCours: Promise<boolean> | undefined;
 
 /**
  * « Exporter mes données » : construit l'archive et la télécharge (`facturx-export-<date>.zip`),
- * en disant combien de PDF elle contient et combien manquent. Ne lève pas.
+ * en disant combien de PDF elle contient et combien manquent. Vrai si le téléchargement a été lancé
+ * sans erreur : c'est l'export que la suppression du compte exige d'abord (`suppression.ts` le
+ * retient). Ne lève pas.
  */
-export function telechargerExport(): Promise<void> {
+export function telechargerExport(): Promise<boolean> {
   enCours ??= (async () => {
     const phrases = t.compte.export;
     toast(phrases.enCours, 'info', 120_000);
     try {
       const { archive: zip, pdf, pdfManquants } = await construireArchive();
       download(zip, `facturx-export-${isoToday()}.zip`, 'application/zip');
+      retenirExport();
       toast(phrases.fait(pdf, pdfManquants.length), 'ok', 9000);
+      return true;
     } catch (erreur) {
       toast(messageDExport(erreur), 'error', 9000);
+      return false;
     }
   })().finally(() => {
     enCours = undefined;

@@ -27,6 +27,8 @@ const { Navigation, ENTREES } = await import('./navigation.js');
 const { ListeDesRetards, TableauDeBord, relancer } = await import('./tableau.js');
 const { Fiche } = await import('./fiche.js');
 const { DialogueRelance } = await import('./relance.js');
+const { Entreprise } = await import('./entreprise.js');
+const { DialogueRecuperation } = await import('./motdepasse.js');
 const { t } = await import('../i18n.js');
 const { store } = await import('../store.js');
 
@@ -197,15 +199,41 @@ describe('le tableau de bord dans la navigation du compte', () => {
     expect(fiche?.props.relances).toBe(3);
   });
 
-  test('SIREN absent : « Ouvrir la fiche de l’entreprise » ferme la page et ouvre l’entreprise', () => {
+  test('SIREN absent : « Ouvrir la fiche de l’entreprise » ferme la relance et ouvre la page Entreprise', () => {
     store.set((s) => ({ ui: { ...s.ui, relance: 'f-1' } }));
     const arbre = [...parcourir(Navigation({ nouvelleFacture: async () => undefined }))];
     const [page] = etats;
     const dialogue = arbre.find((v) => v.type === DialogueRelance);
     if (!dialogue) throw new Error('dialogue de relance absent');
     (dialogue.props.ouvrirEntreprise as () => void)();
-    expect(page?.set).toHaveBeenCalledWith(undefined);
-    expect(store.get().ui).toMatchObject({ library: 'company', relance: undefined });
+    expect(page?.set).toHaveBeenCalledWith({ vue: 'entreprise' });
+    expect(store.get().ui.relance).toBeUndefined();
+    expect(store.get().ui.library).toBeUndefined();
+  });
+
+  test('l’entrée « Entreprise » ouvre la page Entreprise, et la page la nomme', () => {
+    const arbre = [...parcourir(Navigation({ nouvelleFacture: async () => undefined }))];
+    const menu = arbre.find((v) => Array.isArray(v.props.items));
+    const items = (menu?.props.items ?? []) as { label: string; onSelect: () => void }[];
+    const entreprise = items[ENTREES.indexOf('entreprise')];
+    expect(entreprise?.label).toBe(t.compte.navigation.entreprise);
+    const [page] = etats;
+    entreprise?.onSelect();
+    expect(page?.set).toHaveBeenCalledWith({ vue: 'entreprise' });
+    expect(store.get().ui.library).toBeUndefined();
+
+    const pageDuCompte = arbre.find((v) => nom(v) === 'PageDuCompte');
+    if (!pageDuCompte) throw new Error('page absente');
+    const rendue = rendre(pageDuCompte, { page: { vue: 'entreprise' }, naviguer: vi.fn() });
+    expect(rendue.find((v) => v.type === 'dialog')?.props['aria-label']).toBe(
+      t.compte.entreprise.titre,
+    );
+    expect(rendue.some((v) => v.type === Entreprise)).toBe(true);
+  });
+
+  test('le formulaire du nouveau mot de passe est monté, une fois, avec la navigation', () => {
+    const arbre = [...parcourir(Navigation({ nouvelleFacture: async () => undefined }))];
+    expect(arbre.filter((v) => v.type === DialogueRecuperation)).toHaveLength(1);
   });
 
   test('la page du tableau de bord dit ce que montrent ses chiffres (une devise à la fois)', () => {

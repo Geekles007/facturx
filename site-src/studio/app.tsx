@@ -47,10 +47,10 @@ import {
   Dialog,
   FilePick,
   Icon,
-  IconButton,
   IssuesContext,
   Menu,
   type MenuItem,
+  Toasts,
 } from './ui.js';
 import {
   creditNoteForm,
@@ -459,14 +459,18 @@ function CompteBoutons() {
   );
 }
 
-/** Le bouton de la bibliothèque : le Studio sans compte, ou en attendant la navigation du compte. */
+/**
+ * Le bouton de la bibliothèque : le Studio sans compte, ou en attendant la navigation du compte ;
+ * en mode compte, la bibliothèque n'a plus l'entreprise (elle a sa page), elle s'ouvre sur les clients.
+ */
 function BoutonBibliotheque() {
+  const compte = useStudio((s) => s.ui.compte !== undefined);
   return (
     <Button
       icon="book"
       variant="ghost"
       title={t.app.library}
-      onClick={() => ui({ library: 'company' })}
+      onClick={() => ui({ library: compte ? 'clients' : 'company' })}
     >
       <span class="hide-md">{t.app.library}</span>
     </Button>
@@ -931,37 +935,6 @@ function Banners() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function Toasts() {
-  const toastState = useStudio((s) => s.ui.toast);
-  if (!toastState) return null;
-  return (
-    <div
-      class={`toast ${toastState.kind}`}
-      role={toastState.kind === 'error' ? 'alert' : 'status'}
-      key={toastState.id}
-    >
-      <Icon
-        name={toastState.kind === 'error' ? 'alert' : toastState.kind === 'info' ? 'info' : 'check'}
-      />
-      <span>{toastState.text}</span>
-      {toastState.action && (
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => {
-            const action = toastState.action;
-            ui({ toast: undefined });
-            void action?.run();
-          }}
-        >
-          {toastState.action.label}
-        </Button>
-      )}
-      <IconButton icon="x" label={t.app.close} onClick={() => ui({ toast: undefined })} />
     </div>
   );
 }

@@ -49,17 +49,20 @@ export function oublierSession(): void {
 }
 
 /**
- * Nature du retour d'un lien reçu par e-mail (confirmation, réinitialisation) : `code` quand
- * Supabase renvoie le code du flux PKCE, `erreur` quand le lien est périmé ou invalide, rien pour
- * une adresse ordinaire. Le fragment `#access_token=…` du flux implicite n'en est pas un : le
- * client n'accepte que PKCE, qui lie la session au navigateur de la demande, et un lien
- * fabriqué avec les jetons d'un autre compte ne peut donc pas y ouvrir de session.
+ * Nature du retour d'un lien reçu par e-mail (confirmation, réinitialisation, changement
+ * d'adresse) : `code` quand Supabase renvoie le code du flux PKCE, `erreur` quand le lien est
+ * périmé ou invalide, `message` pour le premier des deux liens d'un changement d'adresse (Supabase
+ * le dit, en anglais, dans `message`), rien pour une adresse ordinaire. Le fragment
+ * `#access_token=…` du flux implicite n'en est pas un : le client n'accepte que PKCE, qui lie la
+ * session au navigateur de la demande, et un lien fabriqué avec les jetons d'un autre compte ne
+ * peut donc pas y ouvrir de session.
  */
-export function retourDeLien(): 'code' | 'erreur' | undefined {
+export function retourDeLien(): 'code' | 'erreur' | 'message' | undefined {
   try {
     const { search, hash } = globalThis.location;
     if (/[?#&]error_(?:code|description)=/.test(search + hash)) return 'erreur';
     if (/[?&]code=/.test(search)) return 'code';
+    if (/[?#&]message=/.test(search + hash)) return 'message';
   } catch {
     // Hors d'un navigateur : aucun lien n'a ramené ici.
   }
@@ -67,7 +70,7 @@ export function retourDeLien(): 'code' | 'erreur' | undefined {
 }
 
 /** Les paramètres que Supabase ajoute à l'adresse de retour. */
-const PARAMETRES_DE_RETOUR = ['code', 'error', 'error_code', 'error_description'];
+const PARAMETRES_DE_RETOUR = ['code', 'error', 'error_code', 'error_description', 'message'];
 
 /**
  * Retire de l'adresse le code ou l'erreur du retour de lien, une fois traités : un rechargement

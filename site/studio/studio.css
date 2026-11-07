@@ -2411,6 +2411,107 @@ input[type="date"].input {
   }
 }
 
+/* ---------- entreprise du compte, et l'écran d'un compte en suppression ---------- */
+
+/* La page Entreprise : des sections l'une sous l'autre, à la largeur d'un formulaire. */
+.page-entreprise {
+  justify-items: stretch;
+}
+.page-entreprise > * {
+  width: 100%;
+  max-width: 760px;
+  justify-self: center;
+}
+.section-entreprise {
+  display: grid;
+  gap: 12px;
+  padding: 16px 0 4px;
+  border-top: 1px solid var(--border);
+}
+.section-entreprise h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.section-entreprise .lib-subhead {
+  margin-bottom: 0;
+}
+.adresse-compte {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  overflow-wrap: anywhere;
+}
+.adresse-compte > span:first-child {
+  color: var(--muted);
+}
+.etat-adresse {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.etat-adresse.ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+/* Ce qui est parti (un lien de confirmation, une archive) se lit comme une réussite. */
+.compte-envoye {
+  color: var(--ok);
+}
+.zone-suppression {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--ko-soft);
+  border-radius: var(--radius);
+  background: var(--ko-soft);
+}
+.zone-suppression .lib-subhead {
+  margin: 0;
+  color: var(--ko);
+}
+.dialog-body .suppression-copie {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* L'écran d'un compte dont la suppression est demandée : une carte au milieu, rien d'autre. */
+.ecran-suppression {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+.ecran-suppression-carte {
+  display: grid;
+  gap: 12px;
+  width: min(620px, 100%);
+  padding: 28px 28px 24px;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--surface);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+.ecran-suppression-carte h1 {
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+.ecran-suppression-carte .row-actions {
+  margin-top: 6px;
+}
+@media (max-width: 560px) {
+  .ecran-suppression {
+    padding: 12px;
+  }
+  .ecran-suppression-carte {
+    padding: 22px 16px 18px;
+  }
+}
+
 /* ---------- notifications, dépôt ---------- */
 
 .toast {

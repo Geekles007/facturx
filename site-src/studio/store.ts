@@ -113,6 +113,11 @@ export interface UiState {
    * connexion (`proposee` : le refuser est retenu), ou demandé depuis « Mon compte ».
    */
   importation: 'proposee' | 'demandee' | undefined;
+  /**
+   * Le lien de réinitialisation du mot de passe vient d'ouvrir la session (mode compte) : le
+   * formulaire du nouveau mot de passe s'ouvre, jusqu'à ce qu'il soit choisi ou remis à plus tard.
+   */
+  recuperation: boolean;
 }
 
 /** Ce que le serveur a refusé d'émettre, et pourquoi (des `Issue` du SDK, et les siennes). */
@@ -201,6 +206,7 @@ const initialUi = (): UiState => ({
   emissionEnCours: false,
   relance: undefined,
   importation: undefined,
+  recuperation: false,
 });
 
 let state: StudioState = {
@@ -409,6 +415,8 @@ interface Suivi {
   enregistrerMaintenant(): Promise<boolean>;
   oublierLeBrouillonRefuse(): void;
   enAttente(cle: string): boolean;
+  nonPassees(): string[];
+  arreter(): void;
 }
 let suivi: Suivi | undefined;
 
@@ -425,6 +433,23 @@ export function estEnAttente(cle: string): boolean {
  */
 export function enregistrerMaintenant(): Promise<boolean> {
   return suivi?.enregistrerMaintenant() ?? Promise.resolve(true);
+}
+
+/**
+ * Les clés dont la dernière écriture n'a pas atteint le serveur (`draft`, `company`, `clients:<uid>`…),
+ * quelle qu'en soit la raison, sans la vue affichée, qui ne vit que dans ce navigateur. Rien sans
+ * compte, ni quand la conservation ne tourne pas.
+ */
+export function ecrituresNonPassees(): string[] {
+  return suivi?.nonPassees() ?? [];
+}
+
+/**
+ * Arrête la conservation : plus rien ne s'écrit, ni sur le serveur ni dans ce navigateur. Pour la
+ * déconnexion, qui efface ensuite de ce navigateur les données du compte : rien ne doit les y remettre.
+ */
+export function arreterLaConservation(): void {
+  suivi?.arreter();
 }
 
 /**
@@ -817,6 +842,8 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
       enEchec.delete('draft');
     },
     enAttente: (cle) => enAttente.has(cle),
+    nonPassees: () => [...enEchec].filter((cle) => cle !== 'vue'),
+    arreter: () => arreter(),
   };
 
   // Une saisie que le serveur n'a pas reçue avant la fermeture : elle repart dès maintenant, et
@@ -826,7 +853,7 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
     void soumettre('draft', { faire: () => storage.set(KEYS.draft, aRejouer), locale: false });
   }
 
-  return () => {
+  function arreter(): void {
     desabonner();
     clearTimeout(timer);
     clearTimeout(timerMiroir);
@@ -834,7 +861,8 @@ export function startPersistence(options: { delai?: number } = {}): () => void {
     globalThis.removeEventListener?.('pagehide', auDepart);
     globalThis.removeEventListener?.('online', auRetour);
     suivi = undefined;
-  };
+  }
+  return arreter;
 }
 
 export const persistKeys = KEYS;

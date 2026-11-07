@@ -3,7 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { t } from '../i18n.js';
 import { indexedDbPersistence, storage, utiliser } from '../storage.js';
 import { store } from '../store.js';
-import { CGU_VERSION, connecter, deconnecter, demarrer, inscrire, reinitialiser } from './index.js';
+import {
+  CGU_VERSION,
+  changerAdresse,
+  changerMotDePasse,
+  connecter,
+  deconnecter,
+  demarrer,
+  inscrire,
+  reinitialiser,
+} from './index.js';
 import { estPersistenceCompte } from './persistence.js';
 
 // Un client Supabase factice : seuls les appels que `compte/index.ts` fait existent.
@@ -22,6 +31,8 @@ const { auth, from, maybeSingle } = vi.hoisted(() => {
       signInWithPassword: vi.fn(),
       resetPasswordForEmail: vi.fn(),
       signOut: vi.fn(),
+      updateUser: vi.fn(),
+      onAuthStateChange: vi.fn(),
     },
   };
 });
@@ -182,6 +193,18 @@ describe('demarrer, au retour d’un lien reçu par e-mail', () => {
     expect(store.get().ui.toast).toBeUndefined();
   });
 
+  it('le premier des deux liens d’un changement d’adresse : ouvrir l’autre, et l’adresse nettoyée', async () => {
+    // Supabase confirme une adresse sur deux, et le dit en anglais dans l'adresse de retour.
+    poserAdresse(
+      '/studio/?message=Confirmation+link+accepted.+Please+proceed+to+confirm+link+sent+to+the+other+email#message=Confirmation+link+accepted&sb=',
+    );
+    auth.getSession.mockResolvedValue({ data: { session: { user: utilisateur } } });
+    maybeSingle.mockResolvedValue(membre);
+    expect((await demarrer())?.email).toBe('a@exemple.test');
+    expect(store.get().ui.toast).toMatchObject({ kind: 'info', text: t.compte.link.autreAdresse });
+    expect(replaceState).toHaveBeenCalledWith(null, '', 'https://exemple.test/studio/');
+  });
+
   it('ne dit rien d’une session déjà ouverte, ni d’une adresse ordinaire', async () => {
     auth.getSession.mockResolvedValue({ data: { session: null } });
     await demarrer();
@@ -313,6 +336,82 @@ describe('reinitialiser', () => {
       redirectTo: 'https://exemple.test/studio/',
     });
     expect(reload).not.toHaveBeenCalled();
+  });
+});
+
+describe('après un lien de réinitialisation', () => {
+  it('l’évènement PASSWORD_RECOVERY ouvre le formulaire du nouveau mot de passe', async () => {
+    store.set((s) => ({ ui: { ...s.ui, recuperation: false } }));
+    auth.getSession.mockResolvedValue({ data: { session: { user: utilisateur } } });
+    maybeSingle.mockResolvedValue({
+      data: { entreprise_id: 'e-1', entreprises: { suppression_demandee_le: null } },
+      error: null,
+    });
+    await demarrer();
+    // L'écoute est posée avant que `supabase-js` n'échange le code du lien.
+    expect(auth.onAuthStateChange).toHaveBeenCalledBefore(auth.getSession);
+    const ecoute = auth.onAuthStateChange.mock.calls[0]?.[0] as (evenement: string) => void;
+    ecoute('SIGNED_IN');
+    expect(store.get().ui.recuperation).toBe(false);
+    ecoute('PASSWORD_RECOVERY');
+    expect(store.get().ui.recuperation).toBe(true);
+  });
+});
+
+describe('changer d’adresse et de mot de passe', () => {
+  beforeEach(() => {
+    store.set((s) => ({
+      ui: {
+        ...s.ui,
+        compte: {
+          email: 'a@exemple.test',
+          confirme: true,
+          entrepriseId: 'e-1',
+          suppressionDemandeeLe: undefined,
+          session: 'active',
+        },
+      },
+    }));
+  });
+
+  it('la nouvelle adresse attend sa confirmation : le lien ramène au Studio, rien ne change avant', async () => {
+    auth.updateUser.mockResolvedValue({ data: { user: utilisateur }, error: null });
+    await changerAdresse('  b@exemple.test ');
+    expect(auth.updateUser).toHaveBeenCalledWith(
+      { email: 'b@exemple.test' },
+      { emailRedirectTo: 'https://exemple.test/studio/' },
+    );
+    expect(store.get().ui.compte?.email).toBe('a@exemple.test');
+  });
+
+  it('la même adresse, ou une adresse déjà prise, est refusée et dite', async () => {
+    await expect(changerAdresse('A@exemple.test')).rejects.toThrow(t.compte.motDePasse.memeAdresse);
+    expect(auth.updateUser).not.toHaveBeenCalled();
+    auth.updateUser.mockResolvedValue({
+      data: { user: null },
+      error: new AuthApiError(
+        'A user with this email address has already been registered',
+        422,
+        'email_exists',
+      ),
+    });
+    await expect(changerAdresse('b@exemple.test')).rejects.toThrow(t.compte.errors.exists);
+  });
+
+  it('le mot de passe change ; un mot de passe identique ou trop faible est dit', async () => {
+    auth.updateUser.mockResolvedValue({ data: { user: utilisateur }, error: null });
+    await changerMotDePasse('un-nouveau-secret');
+    expect(auth.updateUser).toHaveBeenCalledWith({ password: 'un-nouveau-secret' });
+    auth.updateUser.mockResolvedValue({
+      data: { user: null },
+      error: new AuthApiError('New password should be different', 422, 'same_password'),
+    });
+    await expect(changerMotDePasse('le-meme')).rejects.toThrow(t.compte.errors.samePassword);
+    auth.updateUser.mockResolvedValue({
+      data: { user: null },
+      error: new AuthApiError('Password should be at least 6 characters', 422, 'weak_password'),
+    });
+    await expect(changerMotDePasse('1')).rejects.toThrow(t.compte.errors.weak);
   });
 });
 

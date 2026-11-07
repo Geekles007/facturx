@@ -8,11 +8,13 @@
  * qu'elle est ouverte. Une facture s'ouvre depuis la liste ou depuis le tableau de bord, et sa fiche
  * ramène là d'où l'on vient. Ce qui crée un document (Nouvelle facture, et les actions de la fiche)
  * passe par les chemins de la barre d'outils, qui ne quittent le brouillon ouvert qu'une fois sa
- * saisie sur le serveur. Clients, Catalogue et Entreprise ouvrent les onglets de la bibliothèque,
- * Brouillons la liste du compte. « Relancer » (tableau de bord, fiche) ouvre le dialogue de relance,
- * monté ici une fois, au-dessus de la page ; après chaque relance, la fiche ouverte se relit. Le
- * dialogue d'import des données de ce navigateur est monté ici aussi : il se propose de lui-même à
- * la première connexion, et « Mon compte » le rouvre.
+ * saisie sur le serveur. Entreprise ouvre sa page (profil, logo, numérotation, compte), dans la même
+ * page modale ; Clients et Catalogue ouvrent les onglets de la bibliothèque, Brouillons la liste du
+ * compte. « Relancer » (tableau de bord, fiche) ouvre le dialogue de relance, monté ici une fois,
+ * au-dessus de la page ; après chaque relance, la fiche ouverte se relit. Le dialogue d'import des
+ * données de ce navigateur est monté ici aussi : il se propose de lui-même à la première connexion,
+ * et « Mon compte » le rouvre. Le formulaire du nouveau mot de passe, après un lien de
+ * réinitialisation, aussi.
  *
  * Chargé par `import()` depuis app.tsx, avec le reste du compte.
  */
@@ -22,9 +24,11 @@ import { t } from '../i18n.js';
 import { ui } from '../store.js';
 import { Button, type IconName, Menu, type MenuItem } from '../ui.js';
 import { Brouillons } from './brouillons.js';
+import { Entreprise } from './entreprise.js';
 import { Factures } from './factures.js';
 import { Fiche } from './fiche.js';
 import { DialogueImport } from './importation.js';
+import { DialogueRecuperation } from './motdepasse.js';
 import type { TypePeriode } from './periode.js';
 import { DialogueRelance } from './relance.js';
 import type { FiltresSuivi } from './suivi.js';
@@ -61,13 +65,14 @@ const ICONES: Record<Entree, IconName> = {
 };
 
 /**
- * Ce que la page modale montre : le tableau de bord, la liste des factures, ou la fiche de l'une
- * d'elles, ouverte depuis l'un ou l'autre.
+ * Ce que la page modale montre : le tableau de bord, la liste des factures, la fiche de l'une
+ * d'elles, ouverte depuis l'un ou l'autre, ou la page Entreprise.
  */
 export type Page =
   | { vue: 'tableau' }
   | { vue: 'factures' }
-  | { vue: 'fiche'; factureId: string; depuis: 'tableau' | 'factures' };
+  | { vue: 'fiche'; factureId: string; depuis: 'tableau' | 'factures' }
+  | { vue: 'entreprise' };
 
 export function Navigation({ nouvelleFacture }: { nouvelleFacture: () => Promise<void> }) {
   const phrases = t.compte.navigation;
@@ -82,7 +87,7 @@ export function Navigation({ nouvelleFacture }: { nouvelleFacture: () => Promise
     brouillons: () => setBrouillons(true),
     clients: () => ui({ library: 'clients' }),
     catalogue: () => ui({ library: 'products' }),
-    entreprise: () => ui({ library: 'company' }),
+    entreprise: () => setPage({ vue: 'entreprise' }),
   };
   const items = ENTREES.map(
     (entree): MenuItem => ({
@@ -109,11 +114,12 @@ export function Navigation({ nouvelleFacture }: { nouvelleFacture: () => Promise
       <DialogueRelance
         apres={() => setRelances((n) => n + 1)}
         ouvrirEntreprise={() => {
-          setPage(undefined);
-          ui({ library: 'company', relance: undefined });
+          setPage({ vue: 'entreprise' });
+          ui({ relance: undefined });
         }}
       />
       <DialogueImport />
+      <DialogueRecuperation />
     </>
   );
 }
@@ -154,7 +160,9 @@ function PageDuCompte({
           ? t.compte.tableau.titre
           : page?.vue === 'fiche'
             ? t.compte.suivi.fiche.titre
-            : t.compte.suivi.liste.titre
+            : page?.vue === 'entreprise'
+              ? t.compte.entreprise.titre
+              : t.compte.suivi.liste.titre
       }
       onClose={fermer}
       onClick={(event) => {
@@ -189,6 +197,7 @@ function PageDuCompte({
           relances={relances}
         />
       )}
+      {page?.vue === 'entreprise' && <Entreprise fermer={fermer} />}
     </dialog>
   );
 }

@@ -15,7 +15,8 @@
  *   3. le Studio contre les fonctions servies : les émissions réelles de
  *      site-src/studio/compte/emission-pile.test.ts et emission-gel.test.ts, le suivi des factures
  *      émises (suivi.test.ts), les relances réelles, avec le simulateur d'envoi (relances.test.ts),
- *      et l'import réel des données locales (import.test.ts), avec `FACTURX_EMETTRE=1`, par Vitest,
+ *      l'import réel des données locales (import.test.ts), et la demande de suppression du compte,
+ *      puis son annulation (suppression.test.ts), avec `FACTURX_EMETTRE=1`, par Vitest,
  *      pendant que les fonctions sont servies ; un fichier après l'autre, car le plafond
  *      d'emission-gel.test.ts suppose une émission qui ne partage pas le serveur avec d'autres
  *      rendus de PDF. Ailleurs (l'étape « Tests du Studio contre la pile » de la CI), elles sont
@@ -35,8 +36,8 @@ const pgtapDir = join(root, 'supabase/tests');
 const fonctionsDir = join(root, 'supabase/functions');
 const denoDir = join(fonctionsDir, 'tests');
 /**
- * Les émissions, les relances et les imports réels du Studio, qui demandent `emettre`, `relancer` et
- * `importer` servies.
+ * Les émissions, les relances, les imports et la suppression réels du Studio, qui demandent
+ * `emettre`, `relancer`, `importer` et `supprimer-compte` servies.
  */
 const studioEmission = [
   'site-src/studio/compte/emission-pile.test.ts',
@@ -44,6 +45,7 @@ const studioEmission = [
   'site-src/studio/compte/suivi.test.ts',
   'site-src/studio/compte/relances.test.ts',
   'site-src/studio/compte/import.test.ts',
+  'site-src/studio/compte/suppression.test.ts',
 ];
 /** Les variables des fonctions : le fichier local s'il existe, sinon sa copie versionnée. */
 const envFonctions = ['.env', '.env.example']

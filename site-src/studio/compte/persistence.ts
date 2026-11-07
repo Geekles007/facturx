@@ -132,7 +132,25 @@ export interface PersistenceCompte extends Persistence, ConservationDuCompte {
   dansLaFile<T>(operation: () => Promise<T>): Promise<T>;
   /** La facture émise depuis le brouillon `id`, s'il y en a une : une réponse d'émission perdue. */
   factureDuBrouillon(id: string): Promise<{ id: string; numero: string } | undefined>;
+  /**
+   * La numérotation telle que le serveur l'a rendue en dernier (lue, écrite, ou relue après une
+   * émission) ; rien avant la première lecture. Son `next` est le plus bas qu'on puisse y écrire :
+   * la base refuse de faire reculer `prochain`.
+   */
+  numerotationDuServeur(): Numbering | undefined;
 }
+
+/**
+ * Ce que la conservation du compte garde dans ce navigateur pour l'entreprise `E`, sous des clés de
+ * `kv` : l'identifiant du brouillon ouvert, son miroir, la vue affichée, et les valeurs qui n'ont pas
+ * de place sur le serveur. La déconnexion les efface.
+ */
+export const clesDuNavigateur = (E: string) => ({
+  courant: `brouillon-courant-${E}`,
+  miroir: `draft-compte-${E}`,
+  vue: `vue-compte-${E}`,
+  locale: `kv-compte-${E}`,
+});
 
 /**
  * Le formulaire d'une facture émise, sous le numéro que le serveur lui a attribué : le brouillon
@@ -235,6 +253,17 @@ const PLAFONDS = { 'image/png': MIO, 'image/jpeg': MIO, 'font/ttf': 2 * MIO };
 
 function typeDe(octets: Uint8Array): keyof typeof PLAFONDS | undefined {
   return SIGNATURES.find((s) => s.octets.every((o, i) => octets[i] === o))?.type;
+}
+
+/**
+ * Pourquoi `octets` ne peut pas être un logo (spec § 11) : ni PNG ni JPEG d'après leurs premiers
+ * octets (`TYPE` : une police TrueType, que le bucket prend, n'en est pas un), ou plus de 1 Mio
+ * (`TAILLE`). Rien s'il est admis. La page Entreprise le vérifie avant tout envoi.
+ */
+export function refusDuLogo(octets: Uint8Array): 'TYPE' | 'TAILLE' | undefined {
+  const type = typeDe(octets);
+  if (type !== 'image/png' && type !== 'image/jpeg') return 'TYPE';
+  return octets.length > PLAFONDS[type] ? 'TAILLE' : undefined;
 }
 
 /** `%PDF-`, l'en-tête d'un PDF. */
@@ -374,11 +403,13 @@ const documentDu = (m: Miroir): Document => ({
 
 export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): PersistenceCompte {
   const E = entrepriseId;
-  const cleCourant = `brouillon-courant-${E}`;
-  const cleMiroir = `draft-compte-${E}`;
-  const cleVue = `vue-compte-${E}`;
-  /** Les clés de `kv` sans place sur le serveur : un objet, dans ce navigateur. */
-  const cleLocale = `kv-compte-${E}`;
+  const {
+    courant: cleCourant,
+    miroir: cleMiroir,
+    vue: cleVue,
+    /** Les clés de `kv` sans place sur le serveur : un objet, dans ce navigateur. */
+    locale: cleLocale,
+  } = clesDuNavigateur(E);
 
   /** Le document ouvert dans l'éditeur (ou sous la vue affichée). */
   let doc: Document = documentNeuf();
@@ -1088,6 +1119,8 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
     },
 
     pdfDeFacture: (chemin) => telecharger('factures', chemin),
+
+    numerotationDuServeur: () => numerotation,
 
     // ---------- plusieurs brouillons ----------
 

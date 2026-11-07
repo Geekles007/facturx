@@ -1,6 +1,9 @@
 /**
  * La bibliothèque : mon entreprise, clients, catalogue, historique, numérotation, sauvegarde.
  * Tout reste dans ce navigateur ; la sauvegarde est un fichier que l'utilisateur garde où il veut.
+ *
+ * En mode compte, l'entreprise et la numérotation sont dans la page Entreprise (`compte/entreprise.tsx`),
+ * qui reprend leurs formulaires : la bibliothèque n'en garde pas les onglets.
  */
 
 import { useEffect, useState } from 'preact/hooks';
@@ -36,7 +39,8 @@ import {
 import { Button, Dialog, Field, FilePick, IconButton, Input, Select, Toggle } from './ui.js';
 import { balanceForm, creditNoteForm, duplicateForm, openIssued, startDraft } from './workflows.js';
 
-function CompanyTab() {
+/** Le profil vendeur et les préférences des nouvelles factures ; la page Entreprise le reprend. */
+export function CompanyTab() {
   const company = useStudio((s) => s.company);
   const means = company.paymentMeans[0] ?? blankPaymentMeans();
   const set = (path: string, value: unknown) =>
@@ -351,8 +355,32 @@ function HistoryTab() {
   );
 }
 
-function NumberingTab() {
+/**
+ * Le prochain rang saisi : un entier de 1 au moins, comme toujours. Avec `minimum` (le compte : le
+ * rang du serveur, que la base ne laisse pas reculer), un rang plus bas est refusé ici, avant tout
+ * envoi — un champ vidé aussi, le temps de retaper.
+ */
+export function rangSaisi(texte: string, minimum?: number): { rang: number } | { refus: number } {
+  const rang = Math.max(1, Number.parseInt(texte, 10) || 1);
+  return minimum !== undefined && rang < minimum ? { refus: minimum } : { rang };
+}
+
+/** Pose le rang saisi dans la numérotation s'il est admis ; sinon rend le refus, et rien ne change. */
+export function saisirRang(texte: string, minimum?: number): { refus: number } | undefined {
+  const lu = rangSaisi(texte, minimum);
+  if ('refus' in lu) return lu;
+  store.set((s) => ({ numbering: { ...s.numbering, next: lu.rang } }));
+  return undefined;
+}
+
+/**
+ * La numérotation ; la page Entreprise la reprend avec `minimum`, le plus bas rang que le serveur
+ * admet, lu au moment de la frappe. Un rang refusé reste affiché, avec la raison, et la numérotation
+ * garde le dernier rang admis : rien ne part.
+ */
+export function NumberingTab({ minimum }: { minimum?: () => number | undefined }) {
   const numbering = useStudio((s) => s.numbering);
+  const [refuse, setRefuse] = useState<{ texte: string; minimum: number }>();
   const today = isoToday();
   const set = (patch: Partial<typeof numbering>) =>
     store.set((s) => ({ numbering: { ...s.numbering, ...patch } }));
@@ -373,13 +401,22 @@ function NumberingTab() {
           {(id) => (
             <Input
               id={id}
-              value={String(numbering.next)}
+              value={refuse?.texte ?? String(numbering.next)}
               inputMode="numeric"
-              onValue={(v) => set({ next: Math.max(1, Number.parseInt(v, 10) || 1) })}
+              aria-invalid={refuse ? true : undefined}
+              onValue={(v) => {
+                const refus = saisirRang(v, minimum?.());
+                setRefuse(refus ? { texte: v, minimum: refus.refus } : undefined);
+              }}
             />
           )}
         </Field>
       </div>
+      {refuse && (
+        <p class="field-issue" role="alert">
+          {t.library.nextRankTooLow(refuse.minimum)}
+        </p>
+      )}
       <Toggle
         checked={numbering.yearly}
         onValue={(yearly) => set({ yearly })}
@@ -445,6 +482,9 @@ const TABS: LibraryTab[] = ['company', 'clients', 'products', 'history', 'number
 
 export function LibraryPanel() {
   const tab = useStudio((s) => s.ui.library);
+  // En mode compte, l'entreprise et la numérotation ont leur page (la navigation, « Entreprise »).
+  const compte = useStudio((s) => s.ui.compte !== undefined);
+  const onglets = compte ? TABS.filter((id) => id !== 'company' && id !== 'numbering') : TABS;
   useEffect(() => {
     if (!tab) return;
     const onKey = (event: KeyboardEvent) => {
@@ -468,7 +508,7 @@ export function LibraryPanel() {
           <IconButton icon="x" label={t.app.close} onClick={() => ui({ library: undefined })} />
         </header>
         <nav class="drawer-tabs" aria-label={t.library.title}>
-          {TABS.map((id) => (
+          {onglets.map((id) => (
             <button
               type="button"
               key={id}

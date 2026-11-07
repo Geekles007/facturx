@@ -94,6 +94,13 @@ describe('retourDeLien', () => {
     expect(retourDeLien()).toBe('erreur');
   });
 
+  it('reconnaît le premier des deux liens d’un changement d’adresse', () => {
+    poserAdresse(
+      'https://exemple.test/studio/?message=Confirmation+link+accepted#message=Confirmation+link+accepted&sb=',
+    );
+    expect(retourDeLien()).toBe('message');
+  });
+
   it('ignore le fragment du flux implicite : un lien fabriqué n’ouvre aucune session', () => {
     poserAdresse(
       'https://exemple.test/studio/#access_token=celui-de-l-attaquant&refresh_token=r&type=signup',
@@ -137,6 +144,15 @@ describe('effacerRetourDeLien', () => {
   it('retire les paramètres d’erreur, y compris ceux du fragment', () => {
     poserAdresse(
       'https://exemple.test/studio/?error_code=otp_expired&error_description=x#error=access_denied&error_code=otp_expired',
+    );
+    vi.stubGlobal('history', { state: null, replaceState });
+    effacerRetourDeLien();
+    expect(replaceState).toHaveBeenCalledWith(null, '', 'https://exemple.test/studio/');
+  });
+
+  it('retire le message d’un changement d’adresse, et son fragment', () => {
+    poserAdresse(
+      'https://exemple.test/studio/?message=Confirmation+link+accepted#message=Confirmation+link+accepted&sb=',
     );
     vi.stubGlobal('history', { state: null, replaceState });
     effacerRetourDeLien();

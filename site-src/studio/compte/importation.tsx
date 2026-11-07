@@ -75,7 +75,10 @@ function inventaireEnMots(i: Inventaire): string {
 export function DialogueImport() {
   const phrases = t.compte.importation;
   const demande = useStudio((s) => s.ui.importation);
-  const pret = useStudio((s) => s.ui.storage === 'ok' && s.ui.compte?.session === 'active');
+  // Après un lien de réinitialisation, le nouveau mot de passe passe d'abord : la proposition attend.
+  const pret = useStudio(
+    (s) => s.ui.storage === 'ok' && s.ui.compte?.session === 'active' && !s.ui.recuperation,
+  );
   const [etat, setEtat] = useState<Etat>({ kind: 'lecture' });
   const verifiee = useRef(false);
   // Un double clic n'importe qu'une fois.
