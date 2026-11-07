@@ -10,7 +10,9 @@
  * passe par les chemins de la barre d'outils, qui ne quittent le brouillon ouvert qu'une fois sa
  * saisie sur le serveur. Clients, Catalogue et Entreprise ouvrent les onglets de la bibliothèque,
  * Brouillons la liste du compte. « Relancer » (tableau de bord, fiche) ouvre le dialogue de relance,
- * monté ici une fois, au-dessus de la page ; après chaque relance, la fiche ouverte se relit.
+ * monté ici une fois, au-dessus de la page ; après chaque relance, la fiche ouverte se relit. Le
+ * dialogue d'import des données de ce navigateur est monté ici aussi : il se propose de lui-même à
+ * la première connexion, et « Mon compte » le rouvre.
  *
  * Chargé par `import()` depuis app.tsx, avec le reste du compte.
  */
@@ -22,6 +24,7 @@ import { Button, type IconName, Menu, type MenuItem } from '../ui.js';
 import { Brouillons } from './brouillons.js';
 import { Factures } from './factures.js';
 import { Fiche } from './fiche.js';
+import { DialogueImport } from './importation.js';
 import type { TypePeriode } from './periode.js';
 import { DialogueRelance } from './relance.js';
 import type { FiltresSuivi } from './suivi.js';
@@ -110,6 +113,7 @@ export function Navigation({ nouvelleFacture }: { nouvelleFacture: () => Promise
           ui({ library: 'company', relance: undefined });
         }}
       />
+      <DialogueImport />
     </>
   );
 }

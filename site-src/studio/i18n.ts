@@ -1065,6 +1065,109 @@ const fr = {
       confirmationRenvoyee: (email: string) =>
         `Un nouvel e-mail de confirmation est parti vers ${email} : ouvrez le lien qu'il contient, puis relancez.`,
     },
+    /** Importer dans le compte ce que le Studio a gardé dans ce navigateur, sans compte. */
+    importation: {
+      menu: 'Importer les données de ce navigateur',
+      titre: 'Importer les données de ce navigateur',
+      lecture: 'Lecture des données de ce navigateur…',
+      aucune:
+        "Ce navigateur ne garde aucune donnée du Studio utilisé sans compte : il n'y a rien à importer.",
+      trouve: (elements: string) =>
+        `Ce navigateur garde des données du Studio utilisé sans compte : ${elements}.`,
+      trouves: {
+        entreprise: 'votre entreprise',
+        clients: (n: number) => `${n} client${n > 1 ? 's' : ''}`,
+        produits: (n: number) => `${n} article${n > 1 ? 's' : ''} du catalogue`,
+        factures: (n: number) => `${n} facture${n > 1 ? 's' : ''} émise${n > 1 ? 's' : ''}`,
+        brouillon: 'un brouillon en cours',
+      },
+      /** « a, b et c ». */
+      liste: (parties: string[]) =>
+        parties.length > 1
+          ? `${parties.slice(0, -1).join(', ')} et ${parties[parties.length - 1]}`
+          : (parties[0] ?? ''),
+      reprise:
+        "Un import précédent n'est pas allé au bout : reprenez-le. Ce qui est déjà dans le compte n'y est pas importé deux fois.",
+      explication:
+        "Importer les copie dans votre compte : votre entreprise et votre apparence par défaut remplacent celles du compte, vos clients et votre catalogue s'y ajoutent, chaque facture est relue dans son PDF Factur-X et garde son numéro, la numérotation reprend au plus haut rang connu, et le brouillon en cours devient un brouillon du compte. Rien n'est effacé de ce navigateur.",
+      plusTard: 'Vous pourrez aussi le faire plus tard, depuis « Mon compte ».',
+      importer: 'Importer dans mon compte',
+      pasMaintenant: 'Pas maintenant',
+      enCours: 'Import en cours : gardez cette page ouverte.',
+      bibliotheque: 'Entreprise, apparence, clients et catalogue…',
+      progression: (n: number, total: number) => `Facture ${n} sur ${total}…`,
+      termine: 'Import terminé.',
+      arrete: "L'import s'est arrêté avant la fin.",
+      bilan: {
+        factures: (n: number) =>
+          n === 0
+            ? 'Aucune nouvelle facture importée.'
+            : `${n} facture${n > 1 ? 's' : ''} importée${n > 1 ? 's' : ''}.`,
+        bibliotheque: (clients: number, produits: number) =>
+          `${clients} client${clients > 1 ? 's' : ''} et ${produits} article${produits > 1 ? 's' : ''} du catalogue repris.`,
+        doublons: (numeros: string[]) =>
+          `Déjà dans le compte, laissées telles quelles : ${numeros.join(', ')}.`,
+        refusees: 'Non importées :',
+        echecs: 'Non repris :',
+        enAttente: (n: number) => `${n} facture${n > 1 ? 's' : ''} en attente :`,
+        numerotation: (rang: number) => `Numérotation reprise : prochain rang ${rang}.`,
+      },
+      reprendra:
+        'Il reprendra de lui-même à cette heure-là si vous laissez ce dialogue ouvert ; sinon, reprenez-le plus tard depuis « Mon compte ».',
+      reprendre: "Reprendre l'import",
+      brouillon: {
+        repris: "Votre brouillon en cours est ouvert : c'est désormais un brouillon du compte.",
+        nonRepris:
+          "Votre brouillon en cours n'a pas pu devenir un brouillon du compte : il reste dans ce navigateur, et l'import peut être repris.",
+        dejaRepris: 'Votre brouillon en cours est déjà un brouillon du compte.',
+      },
+      /** Ce qui n'a pas pu être repris, dans le bilan. */
+      elements: {
+        entreprise: "l'entreprise",
+        apparence: "l'apparence par défaut",
+        fichier: (nom: string) => `le fichier ${nom}`,
+        client: (nom: string) => `le client ${nom}`,
+        produit: (nom: string) => `l'article ${nom}`,
+        numerotation: 'la numérotation',
+      },
+      /** Pourquoi une facture n'est pas importée, ou un élément pas repris. */
+      raisons: {
+        pdfAbsent: 'son PDF ne se trouve pas dans ce navigateur',
+        pdfIllisible: "son PDF n'est pas lisible",
+        facturx: (detail: string | undefined) =>
+          `le serveur n'y lit pas de facture Factur-X${detail ? ` (${detail})` : ''}`,
+        tropLourde: 'elle dépasse 10 Mo, le plus que le serveur accepte',
+        refus: 'refusé par le serveur',
+      },
+      /** Pourquoi l'import s'arrête : ce qui reste attend une reprise. */
+      arrets: {
+        limite: (moment: string | undefined) =>
+          moment
+            ? `Le serveur accepte 500 imports par heure : l'import pourra reprendre après ${moment}.`
+            : "Le serveur accepte 500 imports par heure : reprenez l'import dans une heure.",
+        session: "Votre session a expiré : reconnectez-vous, puis reprenez l'import.",
+        reseau:
+          "Le serveur ne répond pas : reprenez l'import plus tard. Ce qui est déjà dans le compte n'y sera pas importé deux fois.",
+      },
+      erreur:
+        "L'import n'a pas pu commencer : les données de ce navigateur ne se lisent pas, ou le compte n'est pas prêt. Rechargez la page, puis réessayez.",
+    },
+    /** Exporter les données du compte : une archive zip. */
+    export: {
+      menu: 'Exporter mes données',
+      chargement:
+        "Le module d'export n'a pas pu être chargé : vérifiez votre connexion, puis rechargez la page.",
+      enCours: "Préparation de l'archive : vos données et le PDF de chaque facture…",
+      fait: (pdf: number, manquants: number) =>
+        `Archive téléchargée : vos données et ${pdf} PDF.${manquants > 0 ? ` ${manquants} PDF manquant${manquants > 1 ? 's sont listés' : ' est listé'} dans donnees.json.` : ''}`,
+      sansCompte: 'Connectez-vous pour exporter les données du compte.',
+      session:
+        "Votre session a expiré : reconnectez-vous, puis exportez de nouveau. Aucune archive n'a été produite.",
+      reseau:
+        "Le serveur ne répond pas : réessayez dans un instant. Aucune archive n'a été produite.",
+      echec:
+        "L'export n'a pas abouti : réessayez dans un instant. Aucune archive n'a été produite.",
+    },
   },
 };
 
@@ -2092,6 +2195,99 @@ const en: Strings = {
       renvoyer: 'Resend the confirmation email',
       confirmationRenvoyee: (email: string) =>
         `A new confirmation email was sent to ${email}: open the link it contains, then send the reminder again.`,
+    },
+    importation: {
+      menu: 'Import the data from this browser',
+      titre: 'Import the data from this browser',
+      lecture: 'Reading the data kept in this browser…',
+      aucune:
+        'This browser keeps no data from the Studio used without an account: there is nothing to import.',
+      trouve: (elements: string) =>
+        `This browser keeps data from the Studio used without an account: ${elements}.`,
+      trouves: {
+        entreprise: 'your company',
+        clients: (n: number) => `${n} client${n === 1 ? '' : 's'}`,
+        produits: (n: number) => `${n} catalogue item${n === 1 ? '' : 's'}`,
+        factures: (n: number) => `${n} issued invoice${n === 1 ? '' : 's'}`,
+        brouillon: 'a draft in progress',
+      },
+      liste: (parties: string[]) =>
+        parties.length > 1
+          ? `${parties.slice(0, -1).join(', ')} and ${parties[parties.length - 1]}`
+          : (parties[0] ?? ''),
+      reprise:
+        'A previous import did not finish: resume it. Nothing already in the account is imported twice.',
+      explication:
+        "Importing copies them into your account: your company and default appearance replace the account's, your clients and catalogue are added, each invoice is read again from its Factur-X PDF and keeps its number, numbering resumes at the highest known rank, and the draft in progress becomes an account draft. Nothing is erased from this browser.",
+      plusTard: 'You can also do it later, from “My account”.',
+      importer: 'Import into my account',
+      pasMaintenant: 'Not now',
+      enCours: 'Import in progress: keep this page open.',
+      bibliotheque: 'Company, appearance, clients and catalogue…',
+      progression: (n: number, total: number) => `Invoice ${n} of ${total}…`,
+      termine: 'Import complete.',
+      arrete: 'The import stopped before the end.',
+      bilan: {
+        factures: (n: number) =>
+          n === 0 ? 'No new invoice imported.' : `${n} invoice${n === 1 ? '' : 's'} imported.`,
+        bibliotheque: (clients: number, produits: number) =>
+          `${clients} client${clients === 1 ? '' : 's'} and ${produits} catalogue item${produits === 1 ? '' : 's'} carried over.`,
+        doublons: (numeros: string[]) =>
+          `Already in the account, left as they are: ${numeros.join(', ')}.`,
+        refusees: 'Not imported:',
+        echecs: 'Not carried over:',
+        enAttente: (n: number) => `${n} invoice${n === 1 ? '' : 's'} waiting:`,
+        numerotation: (rang: number) => `Numbering carried over: next rank ${rang}.`,
+      },
+      reprendra:
+        'It will resume by itself at that time if you leave this dialog open; otherwise, resume it later from “My account”.',
+      reprendre: 'Resume the import',
+      brouillon: {
+        repris: 'Your draft in progress is open: it is now an account draft.',
+        nonRepris:
+          'Your draft in progress could not become an account draft: it stays in this browser, and the import can be resumed.',
+        dejaRepris: 'Your draft in progress is already an account draft.',
+      },
+      elements: {
+        entreprise: 'the company',
+        apparence: 'the default appearance',
+        fichier: (nom: string) => `the file ${nom}`,
+        client: (nom: string) => `the client ${nom}`,
+        produit: (nom: string) => `the item ${nom}`,
+        numerotation: 'the numbering',
+      },
+      raisons: {
+        pdfAbsent: 'its PDF is not in this browser',
+        pdfIllisible: 'its PDF cannot be read',
+        facturx: (detail: string | undefined) =>
+          `the server finds no Factur-X invoice in it${detail ? ` (${detail})` : ''}`,
+        tropLourde: 'it exceeds 10 MB, the most the server accepts',
+        refus: 'refused by the server',
+      },
+      arrets: {
+        limite: (moment: string | undefined) =>
+          moment
+            ? `The server accepts 500 imports per hour: the import can resume after ${moment}.`
+            : 'The server accepts 500 imports per hour: resume the import in an hour.',
+        session: 'Your session has expired: sign in again, then resume the import.',
+        reseau:
+          'The server is not responding: resume the import later. Nothing already in the account will be imported twice.',
+      },
+      erreur:
+        'The import could not start: the data in this browser cannot be read, or the account is not ready. Reload the page, then try again.',
+    },
+    export: {
+      menu: 'Export my data',
+      chargement:
+        'The export module could not be loaded: check your connection, then reload the page.',
+      enCours: 'Preparing the archive: your data and the PDF of each invoice…',
+      fait: (pdf: number, manquants: number) =>
+        `Archive downloaded: your data and ${pdf} PDF${pdf === 1 ? '' : 's'}.${manquants > 0 ? ` ${manquants} missing PDF${manquants === 1 ? ' is' : 's are'} listed in donnees.json.` : ''}`,
+      sansCompte: 'Sign in to export the account data.',
+      session:
+        'Your session has expired: sign in again, then export again. No archive was produced.',
+      reseau: 'The server is not responding: try again in a moment. No archive was produced.',
+      echec: 'The export did not complete: try again in a moment. No archive was produced.',
     },
   },
 };

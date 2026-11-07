@@ -42,7 +42,16 @@ import { fragmentNonCharge, rechargerLaPage } from './rechargement.js';
 import { sampleForm } from './sample.js';
 import { storage } from './storage.js';
 import { persistKeys, store, type Tab, toast, ui, useStudio } from './store.js';
-import { Button, Dialog, FilePick, Icon, IconButton, IssuesContext, Menu } from './ui.js';
+import {
+  Button,
+  Dialog,
+  FilePick,
+  Icon,
+  IconButton,
+  IssuesContext,
+  Menu,
+  type MenuItem,
+} from './ui.js';
 import {
   creditNoteForm,
   duplicateForm,
@@ -386,10 +395,21 @@ async function seDeconnecter(): Promise<void> {
   }
 }
 
+/** « Exporter mes données » : le module d'export (et fflate) ne se charge qu'à la demande. */
+async function exporterMesDonnees(): Promise<void> {
+  const module = await import('./compte/export.js').catch(() => undefined);
+  if (!module) {
+    fragmentNonCharge(t.compte.export.chargement);
+    return;
+  }
+  await module.telechargerExport();
+}
+
 /**
  * « Se connecter » et « Créer un compte gratuit », ou le menu du compte connecté (les brouillons
- * sont dans la navigation du compte). Rien de tout cela n'existe dans un site construit sans projet
- * Supabase.
+ * sont dans la navigation du compte) : importer les données de ce navigateur (pas pendant une
+ * suppression demandée), exporter les siennes, se déconnecter. Rien de tout cela n'existe dans un
+ * site construit sans projet Supabase.
  */
 function CompteBoutons() {
   const compte = useStudio((s) => s.ui.compte);
@@ -405,6 +425,17 @@ function CompteBoutons() {
         )}
         items={[
           { label: compte.email, icon: 'user', disabled: true, onSelect: () => undefined },
+          'separator',
+          ...(compte.suppressionDemandeeLe
+            ? []
+            : [
+                {
+                  label: t.compte.importation.menu,
+                  icon: 'upload',
+                  onSelect: () => ui({ importation: 'demandee' }),
+                } satisfies MenuItem,
+              ]),
+          { label: t.compte.export.menu, icon: 'download', onSelect: exporterMesDonnees },
           'separator',
           { label: t.compte.signOut, icon: 'lock', onSelect: seDeconnecter },
         ]}

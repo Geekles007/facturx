@@ -123,6 +123,8 @@ export async function insererFacture(
   entrepriseId: string,
   options: {
     prefixe: string;
+    /** Le numéro, s'il doit être celui-là ; sinon un numéro unique tiré du préfixe. */
+    numero?: string;
     typeCode?: string;
     ht?: number;
     ttc?: number;
@@ -146,7 +148,7 @@ export async function insererFacture(
   const { error } = await admin.from('factures').insert({
     id,
     entreprise_id: entrepriseId,
-    numero: `${options.prefixe}-SUIVI-${id.slice(0, 8)}`,
+    numero: options.numero ?? `${options.prefixe}-SUIVI-${id.slice(0, 8)}`,
     type_code: options.typeCode ?? '380',
     date_emission: options.emission ?? aujourdhuiParis(),
     date_echeance: options.echeance ?? null,

@@ -397,7 +397,7 @@ function BackupTab() {
   const products = useStudio((s) => s.products.length);
   const invoices = useStudio((s) => s.history.length);
   // Avec un compte, restaurer une sauvegarde locale écrirait par-dessus le serveur, clé par clé :
-  // l'import des données locales (tâche 20) s'en chargera.
+  // « Importer les données de ce navigateur », dans le menu du compte, en tient lieu.
   const compte = useStudio((s) => s.ui.compte !== undefined);
   const exportAll = async () => {
     const dump = await storage.dump().catch(() => undefined);

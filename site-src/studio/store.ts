@@ -108,6 +108,11 @@ export interface UiState {
    * lit. Rien d'autre ne s'en sert.
    */
   relance: string | undefined;
+  /**
+   * Le dialogue d'import des données de ce navigateur (mode compte) : proposé à la première
+   * connexion (`proposee` : le refuser est retenu), ou demandé depuis « Mon compte ».
+   */
+  importation: 'proposee' | 'demandee' | undefined;
 }
 
 /** Ce que le serveur a refusé d'émettre, et pourquoi (des `Issue` du SDK, et les siennes). */
@@ -195,6 +200,7 @@ const initialUi = (): UiState => ({
   refusServeur: undefined,
   emissionEnCours: false,
   relance: undefined,
+  importation: undefined,
 });
 
 let state: StudioState = {

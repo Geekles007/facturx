@@ -53,7 +53,7 @@ export function buildXml(invoice: Invoice, pretty = true): string {
 }
 
 /** Télécharge des octets sous un nom de fichier, sans rien envoyer nulle part. */
-export function download(bytes: Uint8Array | string, filename: string, type: string): void {
+export function download(bytes: Uint8Array | string | Blob, filename: string, type: string): void {
   const blob = new Blob([bytes as BlobPart], { type });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');

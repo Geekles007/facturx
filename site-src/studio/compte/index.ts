@@ -1,6 +1,7 @@
 /**
  * Le compte, côté navigateur : restaurer la session au démarrage, créer un compte, se connecter,
- * réinitialiser le mot de passe, se déconnecter.
+ * réinitialiser le mot de passe, se déconnecter ; et, à la première connexion, proposer d'importer
+ * ce que le Studio a gardé dans ce navigateur sans compte (spec § 10).
  *
  * Ce module et `client.ts` sont les seuls à tirer `supabase-js` : on n'y arrive que par `import()`
  * (main.tsx quand une session est probable, le dialogue de connexion sinon). Les erreurs de
@@ -12,8 +13,9 @@
 
 import { type AuthError, isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { type Strings, t } from '../i18n.js';
-import { utiliser } from '../storage.js';
-import { type CompteUi, store, toast, ui } from '../store.js';
+import type { CompanyProfile } from '../library.js';
+import { indexedDbPersistence as local, utiliser } from '../storage.js';
+import { type CompteUi, type Loaded, store, toast, ui } from '../store.js';
 import { client } from './client.js';
 import { supabasePersistence } from './persistence.js';
 import { effacerRetourDeLien, oublierSession, retourDeLien } from './session.js';
@@ -221,4 +223,121 @@ export async function deconnecter(): Promise<void> {
     oublierSession();
     location.reload();
   }
+}
+
+// ---------- import des données locales : la proposition ----------
+
+/** Ce que ce navigateur garde du Studio utilisé sans compte, compté pour la proposition d'import. */
+export interface Inventaire {
+  entreprise: boolean;
+  clients: number;
+  produits: number;
+  factures: number;
+  brouillon: boolean;
+  /** Un import précédent de ce navigateur dans ce compte n'est pas allé au bout. */
+  reprise: boolean;
+}
+
+/**
+ * Ce que ce navigateur retient de la proposition, pour un compte : refusée (elle ne revient qu'à la
+ * demande, depuis « Mon compte »), faite, ou inachevée (elle revient, comme une reprise). Et
+ * l'empreinte du brouillon local déjà devenu un brouillon du compte : il ne le redevient pas.
+ */
+export interface MarqueImport {
+  etat: 'refuse' | 'partiel' | 'fait';
+  le: string;
+  brouillon?: string;
+}
+
+/** La marque vit dans IndexedDB, à côté des données locales, une par compte (entreprise). */
+const cleMarque = (entrepriseId: string): string => `import-local-${entrepriseId}`;
+
+/** Une entreprise saisie, et non celle par défaut, vide : seule une telle entreprise s'importe. */
+export function entrepriseRenseignee(profil: unknown): profil is CompanyProfile {
+  const nom = (profil as { seller?: { name?: unknown } } | undefined)?.seller?.name;
+  return typeof nom === 'string' && nom.trim() !== '';
+}
+
+/** Une saisie en cours : ni l'exemple, ni une facture émise affichée (des vues). */
+export function brouillonSaisi(valeur: unknown): valeur is NonNullable<Loaded['draft']> {
+  const b = valeur as Loaded['draft'] | null;
+  return (
+    typeof b === 'object' &&
+    b !== null &&
+    typeof b.form === 'object' &&
+    b.form !== null &&
+    b.sample !== true &&
+    b.issued === undefined
+  );
+}
+
+/** Vrai s'il y a quelque chose à importer. */
+export const aDesDonnees = (i: Inventaire): boolean =>
+  i.entreprise || i.clients > 0 || i.produits > 0 || i.factures > 0 || i.brouillon;
+
+/** La marque de ce navigateur pour le compte connecté. */
+export async function lireMarqueImport(): Promise<MarqueImport | undefined> {
+  const entrepriseId = store.get().ui.compte?.entrepriseId;
+  if (!entrepriseId) return undefined;
+  return local.get<MarqueImport>(cleMarque(entrepriseId));
+}
+
+/**
+ * Retient l'issue de la proposition pour le compte connecté, dans ce navigateur. L'empreinte d'un
+ * brouillon déjà repris est gardée d'une marque à l'autre. Ne lève pas : au pire, la proposition
+ * reviendra.
+ */
+export async function retenirImport(etat: MarqueImport['etat'], brouillon?: string): Promise<void> {
+  const entrepriseId = store.get().ui.compte?.entrepriseId;
+  if (!entrepriseId) return;
+  const avant = await lireMarqueImport().catch(() => undefined);
+  const marque: MarqueImport = { etat, le: new Date().toISOString() };
+  const empreinte = brouillon ?? avant?.brouillon;
+  if (empreinte) marque.brouillon = empreinte;
+  await local.set(cleMarque(entrepriseId), marque).catch(() => undefined);
+}
+
+/**
+ * Ce que ce navigateur garde du Studio sans compte, lu dans IndexedDB (jamais le serveur), sans les
+ * PDF : de quoi le dire avant d'importer. Rien si IndexedDB ne répond pas.
+ */
+export async function inventaireLocal(): Promise<Inventaire | undefined> {
+  try {
+    const [entreprise, brouillon, factures, clients, produits, marque] = await Promise.all([
+      local.get('company'),
+      local.get('draft'),
+      local.list('invoices'),
+      local.list('clients'),
+      local.list('products'),
+      lireMarqueImport(),
+    ]);
+    return {
+      entreprise: entrepriseRenseignee(entreprise),
+      clients: clients.length,
+      produits: produits.length,
+      factures: factures.length,
+      brouillon: brouillonSaisi(brouillon),
+      reprise: marque?.etat === 'partiel',
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * À la première connexion (spec § 10) : ce que ce navigateur garde, s'il faut proposer de
+ * l'importer. Rien — et rien n'est proposé — si ce navigateur n'a pas de données du Studio sans
+ * compte, si la proposition a déjà été refusée ou faite pour ce compte, si la session n'est pas
+ * active, si le serveur n'a pas répondu au démarrage, ou si la suppression du compte est demandée.
+ * La proposition n'est jamais imposée : elle s'ouvre, et l'utilisateur choisit.
+ */
+export async function importAProposer(): Promise<Inventaire | undefined> {
+  const { compte, storage: etat } = store.get().ui;
+  if (compte?.session !== 'active' || compte.suppressionDemandeeLe || etat !== 'ok') {
+    return undefined;
+  }
+  const marque = await lireMarqueImport().catch(() => undefined);
+  if (marque && marque.etat !== 'partiel') return undefined;
+  const inventaire = await inventaireLocal();
+  return inventaire && aDesDonnees(inventaire) ? inventaire : undefined;
 }

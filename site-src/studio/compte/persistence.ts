@@ -100,6 +100,13 @@ export interface PersistenceCompte extends Persistence, ConservationDuCompte {
   rechargerBrouillon(): Promise<Brouillon | undefined>;
   /** Après un conflit : `b` remplace la version du serveur, relue juste avant. */
   imposerBrouillon(b: Brouillon): Promise<void>;
+  /** Les fichiers de l'utilisateur (logos, polices), sous leur clé : pour la sauvegarde et l'export. */
+  fichiers(): Promise<Record<string, Uint8Array>>;
+  /**
+   * Le PDF d'une facture, au chemin enregistré avec elle (`pdf_chemin`, dans le bucket `factures`) ;
+   * rien s'il n'est pas déposé. Pour l'export.
+   */
+  pdfDeFacture(chemin: string): Promise<Uint8Array | undefined>;
   /**
    * Le brouillon ouvert, prêt à émettre, si l'écran (`affiche`, tel que le magasin l'enregistre)
    * montre exactement ce que le serveur en a — les objets mêmes qu'il a confirmés, ou le même
@@ -230,6 +237,22 @@ function typeDe(octets: Uint8Array): keyof typeof PLAFONDS | undefined {
   return SIGNATURES.find((s) => s.octets.every((o, i) => octets[i] === o))?.type;
 }
 
+/** `%PDF-`, l'en-tête d'un PDF. */
+const EN_TETE_PDF = [0x25, 0x50, 0x44, 0x46, 0x2d];
+
+/**
+ * Un PDF, d'après ses octets : l'en-tête `%PDF-` dans les 1 024 premiers, où les lecteurs le
+ * cherchent (un PDF peut être précédé de quelques octets). Pour l'import et l'export, qui ne
+ * déposent ni ne rangent comme PDF ce qui n'en est pas un.
+ */
+export function estUnPdf(octets: Uint8Array): boolean {
+  const debut = octets.subarray(0, 1024);
+  for (let i = 0; i + EN_TETE_PDF.length <= debut.length; i++) {
+    if (EN_TETE_PDF.every((o, n) => debut[i + n] === o)) return true;
+  }
+  return false;
+}
+
 // ---------- lignes ----------
 
 interface LigneBrouillon {
@@ -277,7 +300,8 @@ const modifieLe = (texte: unknown): string | undefined =>
 /** PostgREST rend 1 000 lignes au plus par requête (`max_rows`) : on lit page par page. */
 const PAGE = 1000;
 
-async function toutLire<T>(
+/** Toutes les lignes d'une requête, page par page ; un échec devient une `ErreurConservation`. */
+export async function toutLire<T>(
   page: (
     debut: number,
     fin: number,
@@ -793,6 +817,19 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
     return new ErreurConservation('REFUS', e.message);
   }
 
+  /** Les octets d'un objet du Storage ; rien s'il n'existe pas. */
+  async function telecharger(
+    bucket: 'factures' | 'fichiers',
+    chemin: string,
+  ): Promise<Uint8Array | undefined> {
+    const { data, error } = await sb.storage.from(bucket).download(chemin);
+    if (error) {
+      if (absent(error)) return undefined;
+      throw await echecStockage(error);
+    }
+    return new Uint8Array(await data.arrayBuffer());
+  }
+
   /** Tous les fichiers de l'entreprise (logos, polices), sous-dossiers compris. */
   async function listerFichiers(dossier: string): Promise<string[]> {
     const chemins: string[] = [];
@@ -996,12 +1033,7 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
 
     async getFile(key: string): Promise<Uint8Array | undefined> {
       const { bucket, chemin } = emplacement(key);
-      const { data, error } = await sb.storage.from(bucket).download(chemin);
-      if (error) {
-        if (absent(error)) return undefined;
-        throw await echecStockage(error);
-      }
-      return new Uint8Array(await data.arrayBuffer());
+      return telecharger(bucket, chemin);
     },
 
     /**
@@ -1041,14 +1073,21 @@ export function supabasePersistence(sb: SupabaseClient, entrepriseId: string): P
       if (entreprise.apparence_defaut !== null)
         kv['appearance-default'] = depuisPortable(entreprise.apparence_defaut);
       if (draft) kv.draft = draft;
+      const files = await persistance.fichiers();
+      return { invoices, clients, products, kv, files };
+    },
+
+    async fichiers(): Promise<Record<string, Uint8Array>> {
       const files: Record<string, Uint8Array> = {};
       for (const chemin of await listerFichiers(E)) {
         const cle = chemin.slice(E.length + 1);
         const octets = await persistance.getFile(cle);
         if (octets) files[cle] = octets;
       }
-      return { invoices, clients, products, kv, files };
+      return files;
     },
+
+    pdfDeFacture: (chemin) => telecharger('factures', chemin),
 
     // ---------- plusieurs brouillons ----------
 

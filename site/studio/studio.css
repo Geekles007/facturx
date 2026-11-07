@@ -1958,6 +1958,22 @@ input[type="date"].input {
   justify-items: start;
   gap: 8px;
 }
+/* Import des données de ce navigateur : ce qui a été trouvé, l'issue, les listes du bilan. */
+.compte-form .import-trouve,
+.compte-form .import-termine,
+.compte-form .import-arrete {
+  color: var(--fg);
+  font-weight: 600;
+}
+.compte-form .import-termine {
+  color: var(--ok);
+}
+.import-liste {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
 
 /* ---------- dialogue ---------- */
 

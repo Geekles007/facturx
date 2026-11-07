@@ -41,6 +41,7 @@
     "esbuild": "^0.28.2",
     "facturx-sdk": "workspace:*",
     "fake-indexeddb": "^6.2.7",
+    "fflate": "0.8.3",
     "geist": "^1.7.2",
     "pdf-lib": "^1.17.1",
     "preact": "^10.29.8",
