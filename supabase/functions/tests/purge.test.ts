@@ -752,6 +752,47 @@ essai(
   },
 );
 
+/**
+ * Les entrées du journal d'audit d'Auth (`auth.audit_log_entries`) qui désignent l'utilisateur, par
+ * son identifiant (`actor_id`, ou `traits.user_id` pour une action du service), et celles qui citent
+ * son adresse e-mail, où que ce soit dans l'entrée.
+ */
+function tracesDAuth(compte: Compte): Promise<{ parId: number; parAdresse: number }> {
+  return base(async (sql) => {
+    const [n] = await sql<{ parId: number; parAdresse: number }[]>`
+      select count(*) filter (
+               where payload ->> 'actor_id' = ${compte.userId}
+                  or payload -> 'traits' ->> 'user_id' = ${compte.userId})::int as "parId",
+             count(*) filter (where strpos(payload::text, ${compte.email}) > 0)::int as "parAdresse"
+        from auth.audit_log_entries`;
+    return n;
+  });
+}
+
+essai(
+  'purger : les traces du compte dans le journal d’audit d’Auth s’effacent avec lui ; celles des autres restent',
+  async () => {
+    const echue = await creerCompte();
+    const voisine = await creerCompte();
+    // L'inscription et la connexion de `creerCompte` y ont laissé l'adresse et l'identifiant.
+    const avant = await tracesDAuth(echue);
+    assert(avant.parId > 0 && avant.parAdresse > 0, JSON.stringify(avant));
+    const avantVoisine = await tracesDAuth(voisine);
+    assert(avantVoisine.parId > 0, JSON.stringify(avantVoisine));
+
+    assertEquals((await supprimerCompte(echue, 'demander')).status, 200);
+    await antidater(echue.entrepriseId, 31);
+    const { status, corps } = await purger(echue);
+    assertEquals(status, 200, JSON.stringify(corps));
+    assertEquals(corps.comptes, 1);
+    assertEquals(await utilisateurExiste(echue.userId), false);
+
+    // Plus rien qui le désigne, pas même l'entrée de sa suppression ; la voisine garde les siennes.
+    assertEquals(await tracesDAuth(echue), { parId: 0, parAdresse: 0 });
+    assertEquals(await tracesDAuth(voisine), avantVoisine);
+  },
+);
+
 essai(
   'purger : repassée aussitôt, elle ne trouve plus rien ({ orphelins: 0, comptes: 0 })',
   async () => {

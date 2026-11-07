@@ -19,6 +19,14 @@
  *    b. ses utilisateurs, dans Supabase Auth ;
  *    c. ses lignes, par un seul `delete from entreprises` dans une transaction de purge
  *       (`facturx.purge`, spec § 6), qui descend en cascade dans toutes ses tables.
+ * 3. Les traces d'Auth. Le serveur d'authentification journalise dans `auth.audit_log_entries`
+ *    l'inscription, chaque connexion, chaque renouvellement de session et la suppression elle-même
+ *    (`user_deleted`), avec l'identifiant et l'adresse e-mail de l'utilisateur (et, pour certains
+ *    évènements, l'adresse IP) : `auth.admin.deleteUser` ne les efface pas, et en ajoute une. Les
+ *    entrées de chaque utilisateur supprimé — une entrée `user_deleted` le nomme, et il n'est plus
+ *    dans `auth.users` — sont effacées, celle de la suppression comprise. C'est elle qui désigne
+ *    l'utilisateur à la passe suivante si celle-ci échoue : l'étape se rejoue comme les autres. Elle
+ *    vaut pour tout utilisateur supprimé, y compris à la main depuis le tableau de bord.
  *
  * L'ordre (Storage, Auth, base) n'est pas celui de la spec § 12 (base, puis Auth) : il donne le même
  * résultat, mais une passe interrompue se rejoue. La suppression de l'entreprise est la dernière étape,
@@ -102,6 +110,34 @@ async function purgerOrphelins(): Promise<{ effaces: number; echec: boolean }> {
   } catch (e) {
     journaliser('PDF orphelins non effacés, repris à la prochaine passe', e);
     return { effaces, echec: true };
+  }
+}
+
+/**
+ * Les traces d'Auth des utilisateurs supprimés (voir l'en-tête, étape 3) ; rend combien d'entrées sont
+ * effacées, et si l'étape a échoué. Deux requêtes : la liste des supprimés (une lecture du journal),
+ * puis, s'il y en a, l'effacement, la liste passée comme un seul tableau. Le rôle `postgres` a le droit
+ * d'effacer dans ce journal ; s'il le perdait, l'échec serait journalisé, et la passe finirait en 500.
+ */
+async function effacerTracesDAuth(): Promise<{ effacees: number; echec: boolean }> {
+  try {
+    const supprimes = await sql<{ id: string }[]>`
+      select distinct a.payload -> 'traits' ->> 'user_id' as id
+        from auth.audit_log_entries a
+       where a.payload ->> 'action' = 'user_deleted'
+         and a.payload -> 'traits' ->> 'user_id' is not null
+         and not exists (
+           select 1 from auth.users u where u.id::text = a.payload -> 'traits' ->> 'user_id')`;
+    const ids = supprimes.map((l) => l.id);
+    if (ids.length === 0) return { effacees: 0, echec: false };
+    const effacees = await sql`
+      delete from auth.audit_log_entries
+       where payload ->> 'actor_id' = any(${ids}::text[])
+          or payload -> 'traits' ->> 'user_id' = any(${ids}::text[])`;
+    return { effacees: effacees.count, echec: false };
+  } catch (e) {
+    journaliser('traces d’Auth non effacées, reprises à la prochaine passe', e);
+    return { effacees: 0, echec: true };
   }
 }
 
@@ -208,6 +244,8 @@ Deno.serve(
         journaliser('entreprise non purgée, reprise à la prochaine passe', e, id);
       }
     }
+    // Après les comptes : les traces de leurs utilisateurs, supprimés à l'instant, partent cette nuit.
+    if ((await effacerTracesDAuth()).echec) echecs++;
 
     const bilan = { orphelins: orphelins.effaces, comptes };
     if (echecs > 0) {

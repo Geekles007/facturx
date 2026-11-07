@@ -103,6 +103,7 @@ Dans le tableau de bord du projet. **Ne jamais lancer `supabase config push`** a
 3. *Authentication → Sign In / Providers → Email* : **Confirm email** activé (`emettre`, `importer` et `relancer` refusent un compte non confirmé) ; **Secure email change** activé (`double_confirm_changes = true` en local).
 4. *Authentication → Rate Limits* : la limite d'envoi d'e-mails par heure, que Supabase règle bas par défaut, sous le plafond quotidien de Brevo (300 par jour : 12 par heure tiennent dans la journée).
 5. Facultatif : *Authentication → Emails → Templates*, les gabarits sont en anglais par défaut.
+6. *Authentication → Configuration → Audit Logs* : **Write audit logs to the database** peut rester activé. Le serveur d'authentification y écrit (`auth.audit_log_entries`) l'inscription, chaque connexion et la suppression de chaque utilisateur, avec son adresse e-mail et son identifiant ; `auth.admin.deleteUser` ne les efface pas, et la purge de nuit le fait (`purger`, étape 3), à condition que le rôle `postgres` ait le droit d'effacer dans cette table : la vérification est en 1.8. **S'il ne l'a pas**, désactiver ce réglage : sans lui, le journal d'audit ne va plus que dans les journaux de la plateforme (*Logs → Auth*), conservés 7 jours sur le plan Pro, ce que la politique de confidentialité (§ 5) dit déjà ; la passe de `purger` resterait sinon en échec (500) chaque nuit.
 
 Ce qu'on doit voir : à l'étape 1.10, l'e-mail de confirmation arrive, de `compte@facturx.ibird.dev`, et ses en-têtes disent `spf=pass`, `dkim=pass` et `dmarc=pass` (Gmail : *Afficher l'original*).
 
@@ -186,9 +187,10 @@ Ce qu'on doit voir, dans l'éditeur SQL (aucune de ces requêtes ne lit de secre
 select name from vault.secrets where name in ('purger_url', 'purger_secret');   -- 2 lignes
 select jobname, schedule, active from cron.job;                -- purger-chaque-nuit | 17 3 * * * | t
 select has_table_privilege('postgres', 'storage.objects', 'SELECT');           -- t
+select has_table_privilege('postgres', 'auth.audit_log_entries', 'DELETE');   -- t
 ```
 
-La troisième vérifie le droit dont la purge dépend : elle lit `storage.objects` par sa connexion `postgres` (les PDF orphelins, les dossiers d'un compte supprimé). Puis lancer la tâche une fois sans attendre la nuit : copier sa commande (`select command from cron.job where jobname = 'purger-chaque-nuit';`), l'exécuter telle quelle dans l'éditeur, et lire la réponse quelques secondes plus tard :
+Les deux dernières vérifient les droits dont la purge dépend : elle lit `storage.objects` par sa connexion `postgres` (les PDF orphelins, les dossiers d'un compte supprimé), et efface les entrées du journal d'audit d'Auth des utilisateurs supprimés. Un `f` à la dernière : désactiver l'écriture du journal d'audit en base (1.4, 6), sans quoi chaque passe finit en 500 (« traces d'Auth non effacées » dans les journaux de `purger`). Puis lancer la tâche une fois sans attendre la nuit : copier sa commande (`select command from cron.job where jobname = 'purger-chaque-nuit';`), l'exécuter telle quelle dans l'éditeur, et lire la réponse quelques secondes plus tard :
 
 ```sql
 select status_code, content::text from net._http_response order by created desc limit 1;

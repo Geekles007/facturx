@@ -246,8 +246,8 @@ Le Studio affiche « envoyée » et jamais « reçue » : le fournisseur a accep
 **À la suppression du compte.** L'obligation de conserver les factures dix ans pèse sur l'utilisateur, pas sur facturx ; en fin de contrat, facturx doit lui rendre ses données ou les effacer.
 
 1. Le Studio impose de passer par l'export, et avertit que la conservation des factures est une obligation légale de l'utilisateur.
-2. L'Edge Function `supprimer-compte` renseigne `suppression_demandee_le`. Dès lors, `emettre` et `relancer` refusent (403 `SUPPRESSION`), et le Studio, à la connexion, n'offre plus que l'export et « Annuler la suppression ».
-3. Au bout de 30 jours, l'Edge Function `purger`, dans sa passe de chaque nuit, efface tout : PDF et fichiers par l'API Storage, puis les lignes de l'entreprise dans une transaction de purge (§ 6), puis l'utilisateur dans Supabase Auth.
+2. L'Edge Function `supprimer-compte` renseigne `suppression_demandee_le`. Dès lors, `emettre`, `importer` et `relancer` refusent (403 `SUPPRESSION`), et le Studio, à la connexion, n'offre plus que l'export, « Annuler la suppression » et « Se déconnecter ».
+3. Au bout de 30 jours, l'Edge Function `purger`, dans sa passe de chaque nuit, efface tout, dans cet ordre : PDF et fichiers par l'API Storage, puis l'utilisateur dans Supabase Auth, puis les lignes de l'entreprise dans une transaction de purge (§ 6) ; enfin les entrées du journal d'audit d'Auth (`auth.audit_log_entries`) des utilisateurs supprimés, que `auth.admin.deleteUser` laisse (adresse e-mail, identifiant). La suppression de l'entreprise vient la dernière : c'est elle qui la retire de la liste des comptes à purger, et une passe interrompue avant elle reprend tout la nuit suivante (Storage et Auth sont idempotents). Restent les sauvegardes, jusqu'à leur renouvellement, et les journaux de la plateforme Supabase (7 jours sur le plan Pro).
 
 **Textes à rédiger avant l'ouverture** : CGU, politique de confidentialité, accord de sous-traitance, en français et en anglais. Ils disent franchement que Supabase est une société américaine. Une relecture par un juriste est souhaitable.
 
