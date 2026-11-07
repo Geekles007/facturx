@@ -26,6 +26,8 @@ site/npm-downloads.json
 # variables locales des fonctions (supabase/functions/.env.example est la copie versionnée)
 supabase/functions/_vendor/
 supabase/functions/.env
+# la copie temporaire de la fonction de mesure de D74 (docs/compte.md, 1.11), qui vit dans supabase/mesure-rendu/
+supabase/functions/mesure-rendu/
 supabase/.temp/
 supabase/.branches/
 

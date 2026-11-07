@@ -150,8 +150,11 @@ migrations=$("$PSQL" "$SAUVEGARDE_DB_URL" -X -A -t -v ON_ERROR_STOP=1 \
 objets=''
 for bucket in "${BUCKETS[@]}"; do
   echo "sauvegarde : bucket $bucket"
+  # Sur un bucket vide, l'AWS CLI n'écrit en général rien : `jq -s` lit alors un tableau vide et
+  # donne 0 (sans `-s`, jq ne sortirait rien).
   attendus=$(supabase_s3 s3api list-objects-v2 --bucket "$bucket" --output json |
-    jq '(.Contents // []) | length')
+    jq -s '(.[0].Contents // []) | length')
+  [[ "$attendus" =~ ^[0-9]+$ ]] || echec "bucket $bucket : liste illisible."
   mkdir -p "$clair/stockage/$bucket"
   supabase_s3 s3 sync "s3://$bucket" "$clair/stockage/$bucket" --only-show-errors --no-progress
   recus=$(find "$clair/stockage/$bucket" -type f | wc -l | tr -d ' ')
@@ -207,7 +210,7 @@ s=$(($(date -u +%s) - RETENTION_JOURS * 86400))
 limite=$(date -u -d "@$s" +%F 2>/dev/null || date -u -r "$s" +%F)
 anciennes=$(scaleway_s3 s3api list-objects-v2 --bucket "$SCALEWAY_S3_BUCKET" --prefix "$PREFIXE" \
   --output json |
-  jq -r --arg limite "$limite" '(.Contents // [])[]
+  jq -rs --arg limite "$limite" '(.[0].Contents // [])[]
     | select((.Key | endswith(".tar.age")) and .LastModified[0:10] < $limite) | .Key')
 effacees=0
 while IFS= read -r ancienne; do

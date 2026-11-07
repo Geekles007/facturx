@@ -112,8 +112,14 @@ cible_s3() {
 cible_sql() {
   psql "$RESTAURATION_DB_URL" -X -A -t -q -v ON_ERROR_STOP=1 "$@"
 }
+# Le nombre d'objets du bucket. Sur un bucket vide, l'AWS CLI n'écrit en général rien : `jq -s` lit
+# alors un tableau vide et donne 0 (sans `-s`, jq ne sortirait rien).
 nombre_objets() {
-  cible_s3 s3api list-objects-v2 --bucket "$1" --output json | jq '(.Contents // []) | length'
+  local n
+  n=$(cible_s3 s3api list-objects-v2 --bucket "$1" --output json |
+    jq -s '(.[0].Contents // []) | length')
+  [[ "$n" =~ ^[0-9]+$ ]] || echec "bucket $1 : liste illisible."
+  echo "$n"
 }
 # La section [titre] du manifeste, sans lignes vides.
 section() {
@@ -141,8 +147,8 @@ occupee=$(cible_sql -c 'select (select count(*) from auth.users) + (select count
 [[ "$occupee" == 0 ]] ||
   echec 'la cible a déjà des comptes ou des entreprises : restaurez dans une base vide (supabase db reset, ou un projet neuf).'
 for bucket in factures fichiers; do
-  [[ "$(nombre_objets "$bucket")" == 0 ]] ||
-    echec "le bucket $bucket de la cible n'est pas vide : rien n'a été écrit."
+  n=$(nombre_objets "$bucket")
+  [[ "$n" == 0 ]] || echec "le bucket $bucket de la cible n'est pas vide : rien n'a été écrit."
 done
 
 # --- 3. Les données, en une transaction, déclencheurs suspendus.

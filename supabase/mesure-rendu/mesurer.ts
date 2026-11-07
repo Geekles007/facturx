@@ -1,8 +1,11 @@
 /**
  * Les mesures de la confirmation de D74 contre le projet déployé (docs/compte.md, « Confirmer D74 »).
- * Depuis la racine du dépôt, après `pnpm build && pnpm compte:preparer` :
+ * Rangé sous `supabase/` (AGPL-3.0-or-later) : il importe le code des fonctions. Hors de
+ * `supabase/functions/` et de `config.toml`, rien ne le déploie. Depuis la racine du dépôt, après
+ * `pnpm build && pnpm compte:preparer` :
  *
- *   deno run -A --no-lock --config supabase/functions/deno.json scripts/mesure-rendu/mesurer.ts <commande>
+ *   deno run -A --no-lock --config supabase/functions/deno.json \
+ *     supabase/mesure-rendu/mesurer.ts <commande>
  *
  * Commandes :
  *   logo <sortie.png> [--grand]
@@ -36,13 +39,9 @@ import {
   PLAFOND_CORPS,
   PROFONDEUR_MAX,
   VIRGULES_MAX,
-} from '../../supabase/functions/_shared/corps.ts';
-import { toBase64, toPortableJson } from '../../supabase/functions/_vendor/shared/portable.ts';
-import {
-  apparenceDeTest,
-  factureDeTest,
-  NUMERO_PROPOSE,
-} from '../../supabase/functions/tests/aide.ts';
+} from '../functions/_shared/corps.ts';
+import { toBase64, toPortableJson } from '../functions/_vendor/shared/portable.ts';
+import { apparenceDeTest, factureDeTest, NUMERO_PROPOSE } from '../functions/tests/aide.ts';
 
 /** Le budget de D74 : la moitié des 2 s de CPU d'une requête. */
 const SEUIL_MS = 1000;

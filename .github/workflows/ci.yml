@@ -75,6 +75,16 @@ jobs:
         run: supabase start -x studio,imgproxy,vector,logflare,supavisor
       - name: SDK, Studio et modules partagés des fonctions
         run: pnpm build && pnpm site:build && pnpm compte:preparer
+      - name: Outils de mesure de D74 (types)
+        # Ils ne servent qu'à la mise en production (docs/compte.md, 1.11) : vérifier leurs types ici
+        # garde leurs imports d'accord avec les fonctions. La fonction de mesure se vérifie à la place
+        # où on la copie pour la déployer (dossier ignoré), puis la copie est retirée.
+        run: |
+          mkdir -p supabase/functions/mesure-rendu
+          cp supabase/mesure-rendu/fonction/index.ts supabase/functions/mesure-rendu/index.ts
+          deno check --config supabase/functions/deno.json supabase/mesure-rendu/mesurer.ts \
+            supabase/functions/mesure-rendu/index.ts
+          rm -r supabase/functions/mesure-rendu
       - name: Tests du Studio contre la pile (persistance du compte)
         # L'adresse et les clés de la pile viennent de `supabase status`, masquées avant tout usage :
         # aucune n'apparaît dans le journal. Sans elles, les tests seraient sautés : l'étape échoue.

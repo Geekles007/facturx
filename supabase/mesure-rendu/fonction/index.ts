@@ -1,9 +1,11 @@
 /**
  * MESURE JETABLE (D74, docs/compte.md, « Confirmer D74 ») : le rendu PDF + l'embarquement Factur-X,
- * chronométrés dans le runtime des Edge Functions. Ce fichier n'est jamais déployé tel quel : on le
- * copie en `supabase/functions/mesure-rendu/index.ts` le temps de la mesure, on déploie, on mesure,
- * puis on supprime la fonction du projet et le dossier. Hors de `supabase/functions/` et absent de
- * `config.toml`, il n'est déployé ni par `compte-deploy.yml` ni par un `functions deploy` sans nom.
+ * chronométrés dans le runtime des Edge Functions. Ce fichier n'est jamais déployé d'ici : on le
+ * copie en `supabase/functions/mesure-rendu/index.ts` (dossier non versionné) le temps de la mesure,
+ * on déploie, on mesure, puis on supprime la fonction du projet et le dossier. Rangé dans
+ * `supabase/mesure-rendu/` (AGPL-3.0-or-later, comme le code qu'il importe), hors de
+ * `supabase/functions/` et absent de `config.toml`, il n'est déployé ni par `compte-deploy.yml` ni
+ * par un `functions deploy`.
  *
  * C'est la fonction de la mesure locale (tâche 2), avec trois ajouts : le logo, le temps de démarrage
  * du worker et d'import des modules (`modules_ms`), et les mêmes modules que `emettre`, importés pour

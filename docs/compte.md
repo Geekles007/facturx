@@ -136,7 +136,7 @@ Ce qu'on doit voir : `supabase secrets list` donne les quatre noms (avec une emp
 
 ### 1.6 Les secrets du déploiement
 
-Les deux workflows ne se lancent que depuis la branche par défaut (`main`) : GitHub n'offre `workflow_dispatch` et ne planifie un workflow que s'il y est. Ils ne tournent pas dans une copie du dépôt (`if: github.repository == 'Geekles007/facturx'`).
+Les deux workflows ne se lancent que depuis la branche par défaut (`main`) : GitHub n'offre `workflow_dispatch` et ne planifie un workflow que s'il y est. Ils ne tournent pas dans une copie du dépôt (`if: github.repository == 'Geekles007/facturx'`), et le déploiement refuse en plus toute autre branche que `main` (`github.ref == 'refs/heads/main'`) : lancé depuis une autre, son job est sauté, sans rien déployer. Ses secrets ne sont donnés qu'aux étapes qui parlent au projet (lier, vérifier les secrets, migrer, déployer, déposer les polices, contrôler), jamais à l'installation des dépendances ni aux constructions.
 
 ```sh
 gh secret set SUPABASE_ACCESS_TOKEN     # le jeton de 1.2 ; gh le demande sans l'afficher
@@ -164,20 +164,21 @@ Le premier `db push` est la première application des migrations sur une base vi
 
 La migration `20261104000600_purge.sql` a créé la tâche `pg_cron` `purger-chaque-nuit` (`17 3 * * *`, en UTC : 4 h 17 ou 5 h 17 à Paris). Elle lit l'adresse de la fonction et son secret dans le Vault, à chaque passage. Sans eux, elle échoue en le disant dans `cron.job_run_details`.
 
-L'adresse de connexion : *Connect → Session pooler* (`postgresql://postgres.<ref>:<mot de passe>@<hôte du pooler>:5432/postgres`), à laquelle on ajoute `?sslmode=require`. C'est aussi `SAUVEGARDE_DB_URL` (1.12). Le secret passe par une variable de psql, jamais par l'éditeur SQL du tableau de bord, qui garde l'historique de ses requêtes :
+L'adresse de connexion : *Connect → Session pooler* (`postgresql://postgres.<ref>:<mot de passe>@<hôte du pooler>:5432/postgres`), à laquelle on ajoute `?sslmode=require`. C'est aussi `SAUVEGARDE_DB_URL` (1.12). Le secret passe par l'environnement, que psql lit (`\getenv`, psql 15 ou plus) : il n'apparaît ni dans les arguments d'une commande, que la liste des processus montre, ni dans l'éditeur SQL du tableau de bord, qui garde l'historique de ses requêtes. Le mot de passe de la base passe de même par `PGPASSWORD`, hors de l'adresse :
 
 ```sh
-read -rs URL_BASE        # coller l'adresse ; rien ne s'affiche
-read -rs PURGE_SECRET    # coller la valeur de PURGE_SECRET (1.5)
-psql "$URL_BASE" -X -v ON_ERROR_STOP=1 -v secret="$PURGE_SECRET" <<'SQL'
+read -rs PGPASSWORD && export PGPASSWORD        # le mot de passe de la base ; rien ne s'affiche
+read -rs PURGE_SECRET && export PURGE_SECRET    # la valeur de PURGE_SECRET (1.5)
+psql 'postgresql://postgres.<ref>@<hôte du pooler>:5432/postgres?sslmode=require' -X -v ON_ERROR_STOP=1 <<'SQL'
+\getenv secret PURGE_SECRET
 select vault.create_secret('https://<ref>.supabase.co/functions/v1/purger', 'purger_url',
   'Adresse de la fonction purger (purge de nuit)');
 select vault.create_secret(:'secret', 'purger_secret', 'Secret de la purge de nuit (= PURGE_SECRET)');
 SQL
-unset PURGE_SECRET
+unset PGPASSWORD PURGE_SECRET
 ```
 
-Pour changer plus tard l'un des deux : `select vault.update_secret((select id from vault.secrets where name = 'purger_secret'), :'secret');`, de la même façon, et `supabase secrets set PURGE_SECRET=…` avec la même valeur.
+Pour changer plus tard le secret : de la même façon, `\getenv secret PURGE_SECRET` puis `select vault.update_secret((select id from vault.secrets where name = 'purger_secret'), :'secret');`, et `supabase secrets set PURGE_SECRET=…` avec la même valeur (par `--env-file`, comme en 1.5).
 
 Ce qu'on doit voir, dans l'éditeur SQL (aucune de ces requêtes ne lit de secret) :
 
@@ -220,9 +221,9 @@ Avec un **compte d'essai** (une adresse que vous lisez, par exemple un alias `+e
 
 D74 (`docs/decisions.md`) a décidé, sur une mesure **locale**, que l'émission rend le PDF dans sa requête (tâche 8) plutôt qu'en différé (tâche 9). Elle est provisoire jusqu'à cette confirmation, **à faire avant d'ouvrir les comptes** : si elle échoue, la tâche 9 s'applique, et l'émission change.
 
-Les outils sont dans `scripts/mesure-rendu/` :
+Les outils sont dans `supabase/mesure-rendu/`, sous la licence AGPL de `supabase/`, comme le code des fonctions qu'ils importent ; le CI (job `compte`) en vérifie les types à chaque passage :
 
-- `fonction/index.ts`, la fonction jetable `mesure-rendu` : celle de la mesure locale, plus le logo, le temps de démarrage du worker et d'import des modules (`modules_ms`), et les mêmes modules que `emettre`. Elle vit hors de `supabase/functions/` et n'est pas dans `config.toml` : rien ne la déploie par mégarde ;
+- `fonction/index.ts`, la fonction jetable `mesure-rendu` : celle de la mesure locale, plus le logo, le temps de démarrage du worker et d'import des modules (`modules_ms`), et les mêmes modules que `emettre`. Elle vit hors de `supabase/functions/` et n'est pas dans `config.toml` : rien ne la déploie par mégarde. Sa copie temporaire de l'étape 1, `supabase/functions/mesure-rendu/`, est ignorée par git ;
 - `mesurer.ts`, qui l'appelle selon le protocole, garde chaque réponse brute dans un fichier JSONL, en fait le bilan selon la règle de D74, et mène aussi la rafale et l'essai mémoire contre les vraies fonctions.
 
 **Le protocole** (celui de la mesure locale ; pas 20 rendus dans une requête, qui dépassent le budget par construction) :
@@ -245,7 +246,7 @@ Un essai natif sur la machine de développement (Deno 2.9, hors du runtime des f
    ```sh
    pnpm build && pnpm site:build && pnpm compte:preparer
    mkdir -p supabase/functions/mesure-rendu
-   cp scripts/mesure-rendu/fonction/index.ts supabase/functions/mesure-rendu/index.ts
+   cp supabase/mesure-rendu/fonction/index.ts supabase/functions/mesure-rendu/index.ts
    supabase functions deploy mesure-rendu --import-map supabase/functions/deno.json --yes
    ```
 
@@ -258,7 +259,7 @@ Un essai natif sur la machine de développement (Deno 2.9, hors du runtime des f
    export MESURE_CLE_PUBLIQUE=<la clé publique du projet>
    export MESURE_EMAIL=<l'adresse du compte d'essai>
    read -rs MESURE_MOT_DE_PASSE && export MESURE_MOT_DE_PASSE
-   m() { deno run -A --no-lock --config supabase/functions/deno.json scripts/mesure-rendu/mesurer.ts "$@"; }
+   m() { deno run -A --no-lock --config supabase/functions/deno.json supabase/mesure-rendu/mesurer.ts "$@"; }
    D=$HOME/facturx-d74 && mkdir -p $D
    m logo $D/logo-1mo.png
    m logo $D/logo-grand.png --grand
@@ -291,7 +292,7 @@ Un essai natif sur la machine de développement (Deno 2.9, hors du runtime des f
    m rafale --police $D/police-2mo.ttf --logo $D/logo-1mo.png
    ```
 
-   Ce qu'on doit voir : cinq `HTTP 201`, puis `RAFALE : tenue — numéros …, consécutifs et sans doublon.` Chaque rafale émet cinq factures sur le compte d'essai.
+   Ce qu'on doit voir : cinq `HTTP 201`, puis `RAFALE : tenue — numéros …, consécutifs et sans doublon.` Chaque rafale émet cinq factures sur le compte d'essai. **Après chaque rafale**, lire les journaux d'`emettre` (*Edge Functions → emettre → Logs*), comme à l'étape 5 : aucun `CPU time exceeded`, `Memory limit exceeded` ni 546, même quand les cinq réponses sont des 201 (un worker coupé après sa réponse ne se voit que là).
 7. L'essai mémoire : `m memoire`. Ce qu'on doit voir : `importer : HTTP 422 ANOMALIES`, `emettre : HTTP 422 ANOMALIES`, puis `MÉMOIRE : tenue`. Rien n'est importé ni émis (les deux corps sont refusés après avoir été lus jusqu'au bout).
 8. Ranger :
 
@@ -308,6 +309,8 @@ Un essai natif sur la machine de développement (Deno 2.9, hors du runtime des f
 En plus des sauvegardes quotidiennes du plan Pro (*Database → Backups*, sur le même hébergeur), une archive chiffrée chaque semaine chez un autre hébergeur européen (spec § 11). Ce que fait `scripts/sauvegarde.sh` est à la section 3.
 
 1. **Scaleway** : dans un projet dédié (par exemple `facturx-sauvegardes`), *Object Storage → Create bucket* : région **Paris** (`fr-par`), visibilité **privée**, un nom unique, par exemple `facturx-sauvegardes-<suffixe>`. Puis *IAM → Applications* : une application `facturx-sauvegarde`, une politique qui lui donne `ObjectStorageFullAccess` sur ce seul projet, et une clé d'API pour elle (*Generate API key*, projet Object Storage préféré : celui du bucket). La clé d'accès (`SCW…`) et la clé secrète vont dans les secrets GitHub et le gestionnaire de mots de passe : il faut aussi les avoir pour restaurer.
+
+   **Cette clé peut effacer les sauvegardes** : la rétention (section 3) les efface avec elle. Quiconque la vole (une fuite des secrets GitHub, un workflow modifié) peut donc vider le bucket. Pour s'en garder sans rien changer au script, activer à la création du bucket le **versionnement**, ou mieux le **verrouillage d'objets** (*Object Lock*, qui suppose le versionnement et ne s'active qu'à la création) : un effacement n'y pose qu'un marqueur, et la version effacée reste récupérable (en mode *compliance*, personne ne peut l'effacer avant la fin de sa durée de rétention, par exemple 12 semaines). Le prix : les versions effacées occupent de la place jusqu'à ce qu'une règle de cycle de vie les expire ; vérifier dans la documentation de Scaleway la règle qui expire les versions non courantes, et la poser (par exemple à 30 jours), sans quoi la facture de stockage grossit chaque semaine.
 2. **La paire de clés age**, sur votre machine :
 
    ```sh
@@ -369,7 +372,7 @@ Le site se redéploie par Coolify, comme avant. Une version qui change le Studio
 1. **La base** : `pg_dump --data-only` du schéma `public` entier et, dans `auth`, des seules tables `users` et `identities` (les comptes et leurs mots de passe hachés). Le schéma se reconstruit par les migrations, les sessions se rouvrent, et les secrets du Vault ne se déchiffrent que dans leur projet. Le `pg_dump` est celui de la version majeure du serveur (`PG_MAJEURE`), pris au dépôt apt de PostgreSQL.
 2. **Les buckets privés** `factures` et `fichiers`, par l'API S3 de Supabase Storage ; tout objet listé doit être arrivé. Le bucket public `polices` se redépose par `pnpm compte:polices`.
 3. **Une archive `tar`** (`manifeste.txt`, `donnees.sql`, `stockage/`), chiffrée par `age -r $AGE_RECIPIENT`. Le manifeste dit la date, les versions, les migrations appliquées, le nombre de lignes de chaque table et d'objets de chaque bucket : la restauration s'y compare. Le clair ne vit que dans un dossier temporaire privé, effacé dès l'archive chiffrée.
-4. **Le dépôt chez Scaleway** (`fr-par`), sous `facturx/facturx-<date UTC>.tar.age`, vérifié par sa taille ; puis la **rétention** : les archives `facturx/*.tar.age` de plus de 12 semaines (84 jours) sont effacées, et seulement après le dépôt réussi d'une nouvelle. Une semaine en échec n'efface donc rien.
+4. **Le dépôt chez Scaleway** (`fr-par`), sous `facturx/facturx-<date UTC>.tar.age`, vérifié par sa taille ; puis la **rétention** : les archives `facturx/*.tar.age` de plus de 12 semaines (84 jours) sont effacées, et seulement après le dépôt réussi d'une nouvelle. Une semaine en échec n'efface donc rien. La clé qui efface ainsi pourrait tout effacer : d'où le versionnement ou le verrouillage d'objets recommandés en 1.12.
 
 Le script échoue à la première étape qui échoue. Il n'écrit dans le journal, public, ni secret, ni nombre de comptes ou de factures, ni nom de fichier.
 
@@ -431,7 +434,7 @@ Le script échoue à la première étape qui échoue. Il n'écrit dans le journa
 
 ## Annexe : la mesure locale de D74 (tâche 2, 6 novembre 2026)
 
-Les chiffres sont dans D74. Voici les sorties brutes auxquelles elle renvoie. La fonction de mesure de la tâche 2 chronométrait le même rendu que `scripts/mesure-rendu/fonction/index.ts`, qui la reprend (avec, en plus, le logo, `modules_ms` et les modules de `emettre`) ; elle était servie par `supabase functions serve` (CLI 3.0.0, edge runtime 1.77.9, Docker sur un Mac), avec les polices Geist en base64 dans le corps.
+Les chiffres sont dans D74. Voici les sorties brutes auxquelles elle renvoie. La fonction de mesure de la tâche 2 chronométrait le même rendu que `supabase/mesure-rendu/fonction/index.ts`, qui la reprend (avec, en plus, le logo, `modules_ms` et les modules de `emettre`) ; elle était servie par `supabase functions serve` (CLI 3.0.0, edge runtime 1.77.9, Docker sur un Mac), avec les polices Geist en base64 dans le corps.
 
 Les deux essais préliminaires, avant la forme finale de la fonction (seuls `premier` et les statistiques existaient). Le tout premier appel après la création du conteneur, un rendu de 50 lignes :
 
