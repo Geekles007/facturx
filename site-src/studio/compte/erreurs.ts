@@ -11,7 +11,7 @@
  */
 
 import type { Issue as IssueDuSdk } from 'facturx-sdk';
-import { t } from '../i18n.js';
+import { formatDate, t } from '../i18n.js';
 
 /**
  * Une anomalie au format des `Issue` du SDK, que le serveur rend dans `details` (422) ; il y ajoute
@@ -54,15 +54,24 @@ function anomalies(details: unknown): Issue[] {
   );
 }
 
-/** L'heure de la fin d'attente (`reessayerApres`, ISO), dans la langue de l'interface. */
-function heure(details: unknown): string | undefined {
+/**
+ * La fin de l'attente (`reessayerApres`, ISO), à l'heure de ce navigateur et dans la langue de
+ * l'interface : l'heure seule si c'est aujourd'hui, sinon la date et l'heure (une relance attend
+ * jusqu'à trois jours ; l'heure seule se lirait comme celle d'aujourd'hui). Rien si elle est illisible.
+ */
+export function finDAttente(details: unknown, maintenant = new Date()): string | undefined {
   const iso = texteDe(details, 'reessayerApres');
   const date = iso ? new Date(iso) : undefined;
   if (!date || Number.isNaN(date.getTime())) return undefined;
-  return date.toLocaleTimeString(t.lang === 'fr' ? 'fr-FR' : 'en-GB', {
+  const heure = date.toLocaleTimeString(t.lang === 'fr' ? 'fr-FR' : 'en-GB', {
     hour: '2-digit',
     minute: '2-digit',
   });
+  if (date.toDateString() === maintenant.toDateString()) return heure;
+  const jour = [date.getFullYear(), date.getMonth() + 1, date.getDate()]
+    .map((n) => String(n).padStart(2, '0'))
+    .join('-');
+  return t.compte.erreurs.dateEtHeure(formatDate(jour), heure);
 }
 
 /** La réaction du Studio au refus `corps`, de statut `statut`. Ne lève jamais. */
@@ -105,7 +114,7 @@ export function reaction(
         : { kind: 'controle', issues };
     }
     case 'LIMITE':
-      return message(phrases.limite(heure(details)));
+      return message(phrases.limite(finDAttente(details)));
     case 'ENVOI':
       return message(phrases.envoi);
     case 'INTERNE':

@@ -756,6 +756,8 @@ const fr = {
         heure
           ? `Trop de demandes en peu de temps : réessayez après ${heure}.`
           : 'Trop de demandes en peu de temps : réessayez dans quelques minutes.',
+      /** La fin d'une attente qui n'est pas aujourd'hui (« réessayez après le … à … »). */
+      dateEtHeure: (date: string, heure: string) => `le ${date} à ${heure}`,
       envoi: "Le service d'envoi a refusé l'e-mail : il n'est pas parti. Réessayez dans un moment.",
       interne: (requete: string | undefined) =>
         requete
@@ -955,8 +957,11 @@ const fr = {
         aucuneRelance: 'Aucune relance envoyée.',
         niveau: (n: number) => `Relance de niveau ${n}`,
         envoyee: (date: string, destinataire: string) => `envoyée le ${date} à ${destinataire}`,
+        incertaine: (date: string, destinataire: string) =>
+          `peut-être partie le ${date} vers ${destinataire} : le service d'envoi n'a pas répondu à temps ; elle compte dans la limite`,
         refusee: (date: string, destinataire: string) =>
           `refusée par le service d'envoi le ${date} (${destinataire}) : elle n'est pas partie`,
+        relancer: 'Relancer',
         dupliquer: 'Dupliquer',
         avoir: 'Faire un avoir',
         solde: 'Facturer le solde',
@@ -990,6 +995,61 @@ const fr = {
       aujourdhui: "échéance aujourd'hui",
       chargement: 'Chargement…',
       retour: 'Tableau de bord',
+    },
+    /** La relance d'une facture en retard (spec § 9) : le dialogue qui la prépare et l'envoie. */
+    relance: {
+      titre: (numero: string) => `Relancer la facture ${numero}`,
+      titreSansNumero: 'Relancer une facture',
+      chargement: 'Préparation de la relance…',
+      niveaux: { 1: 'rappel courtois', 2: 'rappel ferme', 3: 'dernier rappel' },
+      langues: { fr: 'en français', en: 'en anglais' },
+      presentation: (niveau: number, nom: string, langue: string) =>
+        `Relance de niveau ${niveau}, ${nom}, rédigée ${langue}, la langue de la facture. Relisez-la et modifiez-la librement : le PDF de la facture est joint à l'e-mail.`,
+      pasEnRetard:
+        "Cette facture n'est pas en retard (son échéance n'est pas passée, ou rien n'est dû) : le serveur refusera la relance.",
+      destinataire: 'Destinataire',
+      destinataireVide:
+        "La facture ne porte pas d'adresse e-mail pour ce client : saisissez celle à qui écrire.",
+      destinataireInvalide:
+        'Une seule adresse e-mail, sans espace, virgule, point-virgule ni retour à la ligne.',
+      objet: 'Objet',
+      corps: 'Message',
+      corpsAide:
+        "Texte brut, 10 000 caractères au plus : il part tel que vous l'écrivez, mis en page par le serveur.",
+      envoyer: 'Envoyer la relance',
+      envoi: 'Envoi en cours…',
+      envoyee: (niveau: number, destinataire: string) =>
+        `Relance de niveau ${niveau} envoyée à ${destinataire}.`,
+      envoyeeAide:
+        "« Envoyée » : le service d'envoi a accepté l'e-mail, rien ne dit qu'il a été lu. La relance figure dans la fiche de la facture.",
+      incertaine:
+        'La relance est peut-être partie ; elle compte dans la limite. Vérifiez avant de relancer.',
+      sansReponse:
+        "La réponse du serveur n'est pas arrivée : la relance est peut-être partie. Vérifiez les relances de la fiche avant de relancer.",
+      aucuneEnvoyee: "Aucune relance n'est partie.",
+      /** Les refus de `relancer` que la réaction commune (`erreurs.ts`) ne dit pas pour une relance. */
+      refus: {
+        session: 'Votre session a expiré : reconnectez-vous, puis relancez.',
+        droits: "Cette facture n'est pas accessible depuis ce compte.",
+        siren:
+          "Le SIREN de votre entreprise n'est pas renseigné : complétez la fiche de l'entreprise, puis relancez.",
+        pasDeRetard:
+          "Cette facture n'est plus en retard : son échéance n'est pas passée, ou rien n'est dû.",
+        destinataire:
+          'Le serveur refuse cette adresse : une seule adresse e-mail est attendue, sans espace, virgule, point-virgule ni retour à la ligne.',
+        objet: "L'objet est vide, ou contient un caractère que le serveur refuse.",
+        corps:
+          'Le message est vide, dépasse 10 000 caractères, ou contient un caractère que le serveur refuse.',
+        illisible: 'Le serveur ne lit pas cette demande : rechargez la page, puis recommencez.',
+        limite: (moment: string | undefined) =>
+          moment
+            ? `Limite des relances atteinte (une par facture tous les trois jours, vingt par jour) : réessayez après ${moment}.`
+            : 'Limite des relances atteinte (une par facture tous les trois jours, vingt par jour) : réessayez plus tard.',
+      },
+      ouvrirEntreprise: "Ouvrir la fiche de l'entreprise",
+      renvoyer: "Renvoyer l'e-mail de confirmation",
+      confirmationRenvoyee: (email: string) =>
+        `Un nouvel e-mail de confirmation est parti vers ${email} : ouvrez le lien qu'il contient, puis relancez.`,
     },
   },
 };
@@ -1724,6 +1784,7 @@ const en: Strings = {
         heure
           ? `Too many requests in a short time: try again after ${heure}.`
           : 'Too many requests in a short time: try again in a few minutes.',
+      dateEtHeure: (date: string, heure: string) => `${date} at ${heure}`,
       envoi: 'The sending service refused the email: it was not sent. Try again in a while.',
       interne: (requete: string | undefined) =>
         requete
@@ -1915,8 +1976,11 @@ const en: Strings = {
         aucuneRelance: 'No reminder sent.',
         niveau: (n: number) => `Level ${n} reminder`,
         envoyee: (date: string, destinataire: string) => `sent ${date} to ${destinataire}`,
+        incertaine: (date: string, destinataire: string) =>
+          `possibly sent ${date} to ${destinataire}: the sending service did not answer in time; it counts towards the limit`,
         refusee: (date: string, destinataire: string) =>
           `refused by the sending service on ${date} (${destinataire}): it was not sent`,
+        relancer: 'Send a reminder',
         dupliquer: 'Duplicate',
         avoir: 'Issue a credit note',
         solde: 'Invoice the balance',
@@ -1949,6 +2013,59 @@ const en: Strings = {
       aujourdhui: 'due today',
       chargement: 'Loading…',
       retour: 'Dashboard',
+    },
+    relance: {
+      titre: (numero: string) => `Send a reminder for invoice ${numero}`,
+      titreSansNumero: 'Send a reminder',
+      chargement: 'Preparing the reminder…',
+      niveaux: { 1: 'polite reminder', 2: 'firm reminder', 3: 'final reminder' },
+      langues: { fr: 'in French', en: 'in English' },
+      presentation: (niveau: number, nom: string, langue: string) =>
+        `Level ${niveau} reminder, ${nom}, written ${langue}, the language of the invoice. Read it over and edit it freely: the invoice PDF is attached to the email.`,
+      pasEnRetard:
+        'This invoice is not overdue (its due date has not passed, or nothing is owed): the server will refuse the reminder.',
+      destinataire: 'Recipient',
+      destinataireVide:
+        'The invoice has no email address for this client: enter the one to write to.',
+      destinataireInvalide:
+        'A single email address, without spaces, commas, semicolons or line breaks.',
+      objet: 'Subject',
+      corps: 'Message',
+      corpsAide:
+        'Plain text, 10,000 characters at most: it is sent as you write it, laid out by the server.',
+      envoyer: 'Send the reminder',
+      envoi: 'Sending…',
+      envoyee: (niveau: number, destinataire: string) =>
+        `Level ${niveau} reminder sent to ${destinataire}.`,
+      envoyeeAide:
+        '“Sent”: the sending service accepted the email; nothing says it has been read. The reminder is listed on the invoice record.',
+      incertaine:
+        'The reminder may have been sent; it counts towards the limit. Check before sending another.',
+      sansReponse:
+        "The server's answer did not arrive: the reminder may have been sent. Check the record's reminders before sending another.",
+      aucuneEnvoyee: 'No reminder was sent.',
+      refus: {
+        session: 'Your session has expired: sign in again, then send the reminder.',
+        droits: 'This invoice is not accessible from this account.',
+        siren:
+          'The SIREN of your company is missing: complete the company record, then send the reminder.',
+        pasDeRetard:
+          'This invoice is no longer overdue: its due date has not passed, or nothing is owed.',
+        destinataire:
+          'The server refuses this address: a single email address is expected, without spaces, commas, semicolons or line breaks.',
+        objet: 'The subject is empty, or contains a character the server refuses.',
+        corps:
+          'The message is empty, exceeds 10,000 characters, or contains a character the server refuses.',
+        illisible: 'The server cannot read this request: reload the page, then start again.',
+        limite: (moment: string | undefined) =>
+          moment
+            ? `Reminder limit reached (one per invoice every three days, twenty per day): try again after ${moment}.`
+            : 'Reminder limit reached (one per invoice every three days, twenty per day): try again later.',
+      },
+      ouvrirEntreprise: 'Open the company record',
+      renvoyer: 'Resend the confirmation email',
+      confirmationRenvoyee: (email: string) =>
+        `A new confirmation email was sent to ${email}: open the link it contains, then send the reminder again.`,
     },
   },
 };

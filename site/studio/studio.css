@@ -1948,6 +1948,16 @@ input[type="date"].input {
 .compte-form .field-hint {
   color: var(--faint);
 }
+/* Relance : « envoyée » se lit comme une réussite ; le refus et son action, l'un sous l'autre. */
+.compte-form .relance-envoyee {
+  color: var(--ok);
+  font-weight: 600;
+}
+.relance-refus {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
 
 /* ---------- dialogue ---------- */
 

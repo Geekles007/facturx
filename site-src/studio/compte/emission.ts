@@ -460,6 +460,19 @@ export async function relireHistorique(p: PersistenceCompte): Promise<SavedInvoi
 }
 
 /**
+ * La facture émise telle que l'historique la garde (formulaire et apparence) : celle du magasin,
+ * ou, si elle n'y est pas encore (émise ailleurs), celle de l'historique relu. Rien si elle n'est
+ * nulle part, ou sans la conservation du compte.
+ */
+export async function factureEnregistree(id: string): Promise<SavedInvoice | undefined> {
+  const connue = store.get().history.find((h) => h.uid === id);
+  if (connue) return connue;
+  if (!estPersistenceCompte(storage)) return undefined;
+  const relue = await relireHistorique(storage).catch(() => undefined);
+  return relue?.find((h) => h.uid === id);
+}
+
+/**
  * La facture est émise : ce que le magasin attendait encore du brouillon émis (conflit, écriture en
  * échec) ne vaut plus s'il était l'ouvert ; l'historique et la numérotation sont relus, et la
  * facture émise s'ouvre. Relire peut échouer sans rien défaire : la facture est alors reconstituée

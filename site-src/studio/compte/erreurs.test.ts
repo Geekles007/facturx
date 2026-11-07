@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { t } from '../i18n.js';
-import { reaction } from './erreurs.js';
+import { formatDate, t } from '../i18n.js';
+import { finDAttente, reaction } from './erreurs.js';
 
 /** Le tableau du § 13 de la spec : chaque statut et chaque code donne sa réaction. */
 describe('reaction', () => {
@@ -147,6 +147,38 @@ describe('reaction', () => {
     expect(
       reaction(429, { code: 'LIMITE', message: '', details: { reessayerApres: 'x' } }),
     ).toEqual({ kind: 'message', texte: t.compte.erreurs.limite(undefined) });
+  });
+
+  test('la fin d’attente : l’heure seule aujourd’hui, la date en plus un autre jour', () => {
+    const maintenant = new Date(2026, 10, 7, 10, 0);
+    const heure = (d: Date) =>
+      d.toLocaleTimeString(t.lang === 'fr' ? 'fr-FR' : 'en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    const plusTard = new Date(2026, 10, 7, 14, 7);
+    expect(finDAttente({ reessayerApres: plusTard.toISOString() }, maintenant)).toBe(
+      heure(plusTard),
+    );
+    // Une relance attend jusqu'à trois jours : l'heure seule se lirait comme celle d'aujourd'hui.
+    const dansTroisJours = new Date(2026, 10, 10, 9, 30);
+    expect(finDAttente({ reessayerApres: dansTroisJours.toISOString() }, maintenant)).toBe(
+      t.compte.erreurs.dateEtHeure(formatDate('2026-11-10'), heure(dansTroisJours)),
+    );
+    for (const details of [undefined, {}, { reessayerApres: 'x' }, { reessayerApres: 3 }]) {
+      expect(finDAttente(details, maintenant)).toBeUndefined();
+    }
+    // L'émission a la même phrase, avec la date quand l'attente passe minuit.
+    expect(
+      reaction(429, {
+        code: 'LIMITE',
+        message: '',
+        details: { reessayerApres: dansTroisJours.toISOString() },
+      }),
+    ).toEqual({
+      kind: 'message',
+      texte: t.compte.erreurs.limite(finDAttente({ reessayerApres: dansTroisJours.toISOString() })),
+    });
   });
 
   test('un code inconnu : le message générique, pas le texte du serveur', () => {

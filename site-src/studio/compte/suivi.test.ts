@@ -37,7 +37,7 @@ import {
   tableauDeBord,
   urlPdf,
 } from './suivi.js';
-import { adminDeTest, compteDeTest } from './test-aide.js';
+import { adminDeTest, compteDeTest, insererFacture } from './test-aide.js';
 
 /**
  * Le suivi des factures : sans pile, les phrases des refus, la lecture des montants et les filtres ;
@@ -652,59 +652,6 @@ async function factureEmise(modifier?: (f: InvoiceForm) => void) {
   return { sb: sb as SupabaseClient, entrepriseId, facture, ligne, form };
 }
 
-/**
- * Une facture insérée comme `emettre` l'enregistre (sans PDF : ces essais n'en lisent pas), par la
- * clé de service. Rend son identifiant.
- *
- * Son numéro est unique sur toute la pile : ces lignes y restent (une facture ne se supprime pas), à
- * côté des jeux de données des tests de la base (supabase/tests/), qui numérotent les leurs `F-1`,
- * `A-1`… (03-suivi.test.sql les retrouve par entreprise, et s'assure que des factures d'une autre
- * entreprise aux mêmes numéros ne le gênent pas).
- */
-async function insererFacture(
-  entrepriseId: string,
-  options: {
-    prefixe: string;
-    typeCode?: string;
-    ht?: number;
-    ttc?: number;
-    devise?: string;
-    /** Dates `AAAA-MM-JJ` : émise aujourd'hui (à Paris) et sans échéance, sauf mention contraire. */
-    emission?: string;
-    echeance?: string;
-    origine?: string;
-    pdfChemin?: (id: string) => string;
-  },
-): Promise<string> {
-  const admin = adminDeTest();
-  const membre = await admin.from('membres').select('user_id').eq('entreprise_id', entrepriseId);
-  const id = crypto.randomUUID();
-  const ttc = options.ttc ?? 12000;
-  const { error } = await admin.from('factures').insert({
-    id,
-    entreprise_id: entrepriseId,
-    numero: `${options.prefixe}-SUIVI-${id.slice(0, 8)}`,
-    type_code: options.typeCode ?? '380',
-    date_emission: options.emission ?? aujourdhuiParis(),
-    date_echeance: options.echeance ?? null,
-    client_nom: 'Client',
-    devise: options.devise ?? 'EUR',
-    ht: options.ht ?? 10000,
-    ttc,
-    net_a_payer: ttc,
-    invoice: {},
-    form: {},
-    appearance: defaultAppearance(),
-    pdf_chemin: options.pdfChemin?.(id) ?? `${entrepriseId}/${id}.pdf`,
-    sdk_version: 'essai',
-    origine: 'emise',
-    facture_origine_id: options.origine ?? null,
-    emise_par: membre.data?.[0]?.user_id,
-  });
-  if (error) throw new Error(`facture : ${error.message}`);
-  return id;
-}
-
 describe.skipIf(!process.env.SUPABASE_URL)('le suivi contre la pile, factures insérées', () => {
   test('un avoir ne se paie pas (`PAIEMENT_AVOIR`) ; son TTC réduit le reste dû', async () => {
     const { sb, entrepriseId } = await compteDeTest();
@@ -815,11 +762,16 @@ describe.skipIf(!process.env.SUPABASE_URL)('le suivi contre la pile, factures in
     await expect(urlPdf(facture)).rejects.toThrow(phrases.erreurs.introuvable);
   }, 60_000);
 
-  test('les relances de la facture, la plus récente d’abord, envoyées ou refusées', async () => {
+  test('les relances de la facture, la plus récente d’abord, envoyées, incertaines ou refusées', async () => {
     const { sb, entrepriseId } = await compteDeTest();
     connecter(sb, entrepriseId);
     const facture = await insererFacture(entrepriseId, { prefixe: 'F' });
-    const relance = (niveau: number, envoyeeLe: string, etat: string) => ({
+    const relance = (
+      niveau: number,
+      envoyeeLe: string,
+      etat: string,
+      messageId: string | null,
+    ) => ({
       entreprise_id: entrepriseId,
       facture_id: facture,
       niveau,
@@ -827,19 +779,24 @@ describe.skipIf(!process.env.SUPABASE_URL)('le suivi contre la pile, factures in
       destinataire: 'compta@client-demo.fr',
       objet: `Relance ${niveau}`,
       corps: 'Bonjour',
-      message_id: etat === 'envoyee' ? `<m-${niveau}@essai>` : null,
+      message_id: messageId,
       etat,
     });
     const { error } = await adminDeTest()
       .from('relances')
       .insert([
-        relance(1, '2026-11-01T09:00:00Z', 'envoyee'),
-        relance(2, '2026-11-04T09:00:00Z', 'refusee'),
+        relance(1, '2026-11-01T09:00:00Z', 'envoyee', '<m-1@essai>'),
+        relance(2, '2026-11-04T09:00:00Z', 'refusee', null),
+        // Consignée `envoyee` sans identifiant : le service d'envoi n'a pas répondu à temps.
+        relance(2, '2026-11-05T09:00:00Z', 'envoyee', null),
       ]);
     if (error) throw new Error(error.message);
-    expect((await relancesDe(facture)).map((r) => [r.niveau, r.etat, r.objet])).toEqual([
-      [2, 'refusee', 'Relance 2'],
-      [1, 'envoyee', 'Relance 1'],
+    expect(
+      (await relancesDe(facture)).map((r) => [r.niveau, r.etat, r.incertaine, r.objet]),
+    ).toEqual([
+      [2, 'envoyee', true, 'Relance 2'],
+      [2, 'refusee', false, 'Relance 2'],
+      [1, 'envoyee', false, 'Relance 1'],
     ]);
   }, 60_000);
 

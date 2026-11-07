@@ -244,6 +244,8 @@ interface TextAreaProps {
   rows?: number;
   placeholder?: string;
   invalid?: boolean;
+  maxLength?: number;
+  disabled?: boolean;
 }
 
 export function TextArea({
@@ -254,6 +256,8 @@ export function TextArea({
   rows = 3,
   placeholder,
   invalid,
+  maxLength,
+  disabled,
 }: TextAreaProps) {
   return (
     <textarea
@@ -263,6 +267,8 @@ export function TextArea({
       value={value}
       data-path={path}
       placeholder={placeholder}
+      maxLength={maxLength}
+      disabled={disabled}
       aria-invalid={invalid || undefined}
       onInput={(event) => onValue((event.currentTarget as HTMLTextAreaElement).value)}
     />

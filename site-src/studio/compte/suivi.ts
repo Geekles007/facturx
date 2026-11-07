@@ -90,6 +90,11 @@ export interface Relance {
   objet: string;
   /** `envoyee` : le service d'envoi l'a acceptée (rien ne dit qu'elle a été lue). */
   etat: 'envoyee' | 'refusee';
+  /**
+   * Consignée `envoyee` sans identifiant de message : le service d'envoi n'a pas répondu à temps.
+   * Elle est peut-être partie, et elle compte dans les limites comme une relance envoyée.
+   */
+  incertaine: boolean;
 }
 
 export interface FiltresSuivi {
@@ -155,9 +160,9 @@ export function messageDErreur(echec: Echec | null | undefined, statut: number):
 
 /**
  * La session est refusée (401) : comme pour l'émission, le Studio la dit expirée et ouvre la
- * connexion ; la saisie en cours reste où elle est.
+ * connexion ; la saisie en cours reste où elle est. Sert aussi à la relance.
  */
-function sessionRefusee(statut: number): void {
+export function sessionRefusee(statut: number): void {
   if (statut !== 401) return;
   const compte = store.get().ui.compte;
   if (compte) ui({ compte: { ...compte, session: 'expiree' }, connexion: 'connexion' });
@@ -389,6 +394,7 @@ interface LigneRelance {
   envoyee_le: string;
   destinataire: string;
   objet: string;
+  message_id: string | null;
   etat: 'envoyee' | 'refusee';
 }
 
@@ -397,7 +403,7 @@ export async function relancesDe(factureId: string): Promise<Relance[]> {
   const { sb, E } = contexte();
   const r = await sb
     .from('relances')
-    .select('id, facture_id, niveau, envoyee_le, destinataire, objet, etat')
+    .select('id, facture_id, niveau, envoyee_le, destinataire, objet, message_id, etat')
     .eq('entreprise_id', E)
     .eq('facture_id', factureId)
     .order('envoyee_le', { ascending: false });
@@ -410,6 +416,7 @@ export async function relancesDe(factureId: string): Promise<Relance[]> {
     destinataire: l.destinataire,
     objet: l.objet,
     etat: l.etat,
+    incertaine: l.etat === 'envoyee' && l.message_id === null,
   }));
 }
 

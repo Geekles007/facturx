@@ -26,6 +26,7 @@ vi.mock('preact/hooks', () => ({
 const { Navigation, ENTREES } = await import('./navigation.js');
 const { ListeDesRetards, TableauDeBord, relancer } = await import('./tableau.js');
 const { Fiche } = await import('./fiche.js');
+const { DialogueRelance } = await import('./relance.js');
 const { t } = await import('../i18n.js');
 const { store } = await import('../store.js');
 
@@ -171,6 +172,40 @@ describe('le tableau de bord dans la navigation du compte', () => {
     expect(store.get().ui.relance).toBe('f-1');
     // « Relancer » n'ouvre pas la fiche.
     expect(ouvrir).not.toHaveBeenCalled();
+  });
+
+  test('le dialogue de relance : un seul, et la fiche ouverte est relue après chaque relance', () => {
+    const arbre = [...parcourir(Navigation({ nouvelleFacture: async () => undefined }))];
+    const dialogues = arbre.filter((v) => v.type === DialogueRelance);
+    const [dialogue] = dialogues;
+    if (!dialogue || dialogues.length !== 1) throw new Error('un dialogue de relance attendu');
+    // Le troisième état de la navigation compte les relances faites depuis le dialogue.
+    const compteur = etats[2];
+    (dialogue.props.apres as () => void)();
+    const suivant = compteur?.set.mock.calls[0]?.[0] as (n: number) => number;
+    expect(suivant(4)).toBe(5);
+
+    // La fiche reçoit ce compte : elle se relit quand il change.
+    const page = arbre.find((v) => nom(v) === 'PageDuCompte');
+    if (!page) throw new Error('page absente');
+    expect(page.props.relances).toBe(compteur?.valeur);
+    const fiche = rendre(page, {
+      page: { vue: 'fiche', factureId: 'f-1', depuis: 'tableau' },
+      naviguer: vi.fn(),
+      relances: 3,
+    }).find((v) => v.type === Fiche);
+    expect(fiche?.props.relances).toBe(3);
+  });
+
+  test('SIREN absent : « Ouvrir la fiche de l’entreprise » ferme la page et ouvre l’entreprise', () => {
+    store.set((s) => ({ ui: { ...s.ui, relance: 'f-1' } }));
+    const arbre = [...parcourir(Navigation({ nouvelleFacture: async () => undefined }))];
+    const [page] = etats;
+    const dialogue = arbre.find((v) => v.type === DialogueRelance);
+    if (!dialogue) throw new Error('dialogue de relance absent');
+    (dialogue.props.ouvrirEntreprise as () => void)();
+    expect(page?.set).toHaveBeenCalledWith(undefined);
+    expect(store.get().ui).toMatchObject({ library: 'company', relance: undefined });
   });
 
   test('la page du tableau de bord dit ce que montrent ses chiffres (une devise à la fois)', () => {

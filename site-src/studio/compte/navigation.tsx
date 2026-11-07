@@ -9,7 +9,8 @@
  * ramène là d'où l'on vient. Ce qui crée un document (Nouvelle facture, et les actions de la fiche)
  * passe par les chemins de la barre d'outils, qui ne quittent le brouillon ouvert qu'une fois sa
  * saisie sur le serveur. Clients, Catalogue et Entreprise ouvrent les onglets de la bibliothèque,
- * Brouillons la liste du compte.
+ * Brouillons la liste du compte. « Relancer » (tableau de bord, fiche) ouvre le dialogue de relance,
+ * monté ici une fois, au-dessus de la page ; après chaque relance, la fiche ouverte se relit.
  *
  * Chargé par `import()` depuis app.tsx, avec le reste du compte.
  */
@@ -22,6 +23,7 @@ import { Brouillons } from './brouillons.js';
 import { Factures } from './factures.js';
 import { Fiche } from './fiche.js';
 import type { TypePeriode } from './periode.js';
+import { DialogueRelance } from './relance.js';
 import type { FiltresSuivi } from './suivi.js';
 import { TableauDeBord } from './tableau.js';
 
@@ -68,6 +70,8 @@ export function Navigation({ nouvelleFacture }: { nouvelleFacture: () => Promise
   const phrases = t.compte.navigation;
   const [page, setPage] = useState<Page>();
   const [brouillons, setBrouillons] = useState(false);
+  // Les relances faites depuis le dialogue : la fiche ouverte se relit à chacune.
+  const [relances, setRelances] = useState(0);
   const actions: Record<Entree, () => void> = {
     tableau: () => setPage({ vue: 'tableau' }),
     factures: () => setPage({ vue: 'factures' }),
@@ -97,7 +101,15 @@ export function Navigation({ nouvelleFacture }: { nouvelleFacture: () => Promise
         items={items}
       />
       <Brouillons open={brouillons} onClose={() => setBrouillons(false)} />
-      <PageDuCompte page={page} naviguer={setPage} />
+      <PageDuCompte page={page} naviguer={setPage} relances={relances} />
+      {/* Au-dessus de la page : ouvert après elle, il passe devant. */}
+      <DialogueRelance
+        apres={() => setRelances((n) => n + 1)}
+        ouvrirEntreprise={() => {
+          setPage(undefined);
+          ui({ library: 'company', relance: undefined });
+        }}
+      />
     </>
   );
 }
@@ -110,9 +122,12 @@ export function Navigation({ nouvelleFacture }: { nouvelleFacture: () => Promise
 function PageDuCompte({
   page,
   naviguer,
+  relances,
 }: {
   page: Page | undefined;
   naviguer: (page: Page | undefined) => void;
+  /** Le nombre de relances faites : la fiche se relit quand il change. */
+  relances: number;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [filtres, setFiltres] = useState<FiltresSuivi>({});
@@ -167,6 +182,7 @@ function PageDuCompte({
             page.depuis === 'tableau' ? t.compte.tableau.retour : t.compte.suivi.fiche.retour
           }
           fermer={fermer}
+          relances={relances}
         />
       )}
     </dialog>

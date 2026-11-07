@@ -1,13 +1,15 @@
 /**
  * La fiche d'une facture émise : son PDF, son suivi (statut, net à payer, encaissé, avoirs, reste
  * dû), ses paiements (actifs, puis annulés et barrés) et ses relances, avec les actions
- * « Enregistrer un paiement », « Marquer comme payée », « Annuler ce paiement », « Dupliquer »,
- * « Faire un avoir » et « Facturer le solde ».
+ * « Enregistrer un paiement », « Marquer comme payée », « Relancer » (en retard seulement : elle
+ * pose la facture à relancer, que le dialogue de relance lit), « Annuler ce paiement »,
+ * « Dupliquer », « Faire un avoir » et « Facturer le solde ».
  *
- * Statuts et montants viennent de la base : après chaque écriture, réussie ou non, la fiche relit
- * sa ligne de suivi, ses paiements et ses relances, sans rien recalculer. Les refus s'affichent dans
- * la fiche, qui est au-dessus des messages du Studio. Le PDF est lu par son URL signée de 60
- * secondes, puis affiché depuis une URL `blob:`, libérée quand on quitte la fiche.
+ * Statuts et montants viennent de la base : après chaque écriture, réussie ou non, et après chaque
+ * relance, la fiche relit sa ligne de suivi, ses paiements et ses relances, sans rien recalculer.
+ * Une relance dont l'issue est inconnue se dit « peut-être partie », jamais « envoyée ». Les refus
+ * s'affichent dans la fiche, qui est au-dessus des messages du Studio. Le PDF est lu par son URL
+ * signée de 60 secondes, puis affiché depuis une URL `blob:`, libérée quand on quitte la fiche.
  *
  * Dupliquer, Faire un avoir et Facturer le solde créent un nouveau brouillon par le chemin de la
  * barre d'outils (`startDraft`, avec `duplicateForm`, `creditNoteForm` ou `balanceForm`) : le
@@ -24,8 +26,7 @@ import type { SavedInvoice } from '../library.js';
 import type { InvoiceForm } from '../model.js';
 import { ErreurConservation } from '../persistence.js';
 import { download, fileStem } from '../pipeline.js';
-import { storage } from '../storage.js';
-import { store, toast } from '../store.js';
+import { toast } from '../store.js';
 import { Button, Field, IconButton, Input, Select } from '../ui.js';
 import {
   balanceForm,
@@ -34,9 +35,8 @@ import {
   messageEnAttente,
   startDraft,
 } from '../workflows.js';
-import { relireHistorique } from './emission.js';
+import { factureEnregistree } from './emission.js';
 import { echeanceDe, PastilleStatut } from './factures.js';
-import { estPersistenceCompte } from './persistence.js';
 import {
   annulerPaiement,
   aujourdhuiParis,
@@ -57,6 +57,7 @@ import {
   type Resultat,
   relancesDe,
 } from './suivi.js';
+import { relancer } from './tableau.js';
 
 /** Ce que la base dit de la facture. */
 interface Suivi {
@@ -97,29 +98,20 @@ function echecDuBrouillon(erreur: unknown): string {
   return messageDe(erreur);
 }
 
-/**
- * La facture émise telle que l'historique la garde (formulaire et apparence) : celle du magasin,
- * ou, si elle n'y est pas encore (émise ailleurs), celle de l'historique relu.
- */
-async function factureEnregistree(id: string): Promise<SavedInvoice | undefined> {
-  const connue = store.get().history.find((h) => h.uid === id);
-  if (connue) return connue;
-  if (!estPersistenceCompte(storage)) return undefined;
-  const relue = await relireHistorique(storage).catch(() => undefined);
-  return relue?.find((h) => h.uid === id);
-}
-
 export function Fiche({
   factureId,
   retour,
   libelleRetour = t.compte.suivi.fiche.retour,
   fermer,
+  relances = 0,
 }: {
   factureId: string;
   retour: () => void;
   /** Où mène `retour` : la liste des factures, ou le tableau de bord. */
   libelleRetour?: string;
   fermer: () => void;
+  /** Le nombre de relances faites depuis le dialogue de relance : la fiche se relit quand il change. */
+  relances?: number;
 }) {
   const phrases = t.compte.suivi.fiche;
   const [suivi, setSuivi] = useState<Suivi>();
@@ -151,9 +143,10 @@ export function Fiche({
     }
   };
 
+  // Relue à l'ouverture, et après chaque relance (son niveau, son état, son incertitude).
   useEffect(() => {
     void relire();
-  }, [factureId]);
+  }, [factureId, relances]);
 
   // Le PDF, depuis une URL `blob:` que l'on libère en quittant la fiche (ou avant un nouvel essai).
   // Sans lecteur intégré, pas d'URL : le PDF ne sert qu'au téléchargement.
@@ -364,6 +357,12 @@ export function Fiche({
                   <Button icon="check" disabled={occupe} onClick={() => marquer(ligne)}>
                     {phrases.marquer}
                   </Button>
+                  {/* En retard, comme le serveur l'entend (échéance passée, reste dû positif). */}
+                  {ligne.statut === 'en_retard' && (
+                    <Button icon="note" disabled={occupe} onClick={() => relancer(factureId)}>
+                      {phrases.relancer}
+                    </Button>
+                  )}
                 </div>
               )}
 
@@ -504,9 +503,11 @@ export function Fiche({
                         <div class="lib-main">
                           <strong>{phrases.niveau(r.niveau)}</strong>
                           <span>
-                            {r.etat === 'envoyee'
-                              ? phrases.envoyee(jourDe(r.envoyeeLe), r.destinataire)
-                              : phrases.refusee(jourDe(r.envoyeeLe), r.destinataire)}
+                            {r.etat === 'refusee'
+                              ? phrases.refusee(jourDe(r.envoyeeLe), r.destinataire)
+                              : r.incertaine
+                                ? phrases.incertaine(jourDe(r.envoyeeLe), r.destinataire)
+                                : phrases.envoyee(jourDe(r.envoyeeLe), r.destinataire)}
                           </span>
                           <span>{r.objet}</span>
                         </div>

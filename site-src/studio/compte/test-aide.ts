@@ -1,6 +1,6 @@
 /**
  * Aides des tests du compte contre la pile Supabase locale : un compte neuf, le client de service,
- * un jeton que le serveur refuse.
+ * un jeton que le serveur refuse, une facture insérée comme `emettre` l'enregistre.
  *
  * Les variables sont celles de `supabase status -o env`, que le job CI `compte` pose sans les
  * afficher : `SUPABASE_URL` (`API_URL`), `SUPABASE_ANON_KEY` et `SUPABASE_SERVICE_ROLE_KEY`. Chaque
@@ -11,6 +11,8 @@
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { defaultAppearance } from '../library.js';
+import { aujourdhuiParis } from './suivi.js';
 
 function variable(nom: string): string {
   const valeur = process.env[nom];
@@ -101,4 +103,72 @@ export function perimerJeton(sb: SupabaseClient): () => void {
   session.access_token = `${entete}.${encoder(perime)}.${signature}`;
   memoire.set(CLE_SESSION, JSON.stringify(session));
   return () => memoire.set(CLE_SESSION, texte);
+}
+
+/** Un PDF de test : `relancer` le joint tel quel, et le simulateur d'envoi vérifie seulement `%PDF`. */
+const PDF_DE_TEST = new TextEncoder().encode('%PDF-1.7\n% essai\n%%EOF\n');
+
+/**
+ * Une facture insérée comme `emettre` l'enregistre, par la clé de service. Rend son identifiant.
+ * Sans PDF, sauf `pdf` (déposé au chemin de la facture : la relance le joint à son e-mail).
+ *
+ * Son numéro est unique sur toute la pile : ces lignes y restent (une facture ne se supprime pas), à
+ * côté des jeux de données des tests de la base (supabase/tests/), qui numérotent les leurs `F-1`,
+ * `A-1`… (03-suivi.test.sql les retrouve par entreprise, et s'assure que des factures d'une autre
+ * entreprise aux mêmes numéros ne le gênent pas).
+ */
+export async function insererFacture(
+  entrepriseId: string,
+  options: {
+    prefixe: string;
+    typeCode?: string;
+    ht?: number;
+    ttc?: number;
+    devise?: string;
+    /** Dates `AAAA-MM-JJ` : émise aujourd'hui (à Paris) et sans échéance, sauf mention contraire. */
+    emission?: string;
+    echeance?: string;
+    origine?: string;
+    pdfChemin?: (id: string) => string;
+    clientEmail?: string;
+    form?: unknown;
+    appearance?: unknown;
+    pdf?: boolean;
+  },
+): Promise<string> {
+  const admin = adminDeTest();
+  const membre = await admin.from('membres').select('user_id').eq('entreprise_id', entrepriseId);
+  const id = crypto.randomUUID();
+  const ttc = options.ttc ?? 12000;
+  const pdfChemin = options.pdfChemin?.(id) ?? `${entrepriseId}/${id}.pdf`;
+  const { error } = await admin.from('factures').insert({
+    id,
+    entreprise_id: entrepriseId,
+    numero: `${options.prefixe}-SUIVI-${id.slice(0, 8)}`,
+    type_code: options.typeCode ?? '380',
+    date_emission: options.emission ?? aujourdhuiParis(),
+    date_echeance: options.echeance ?? null,
+    client_nom: 'Client',
+    client_email: options.clientEmail ?? null,
+    devise: options.devise ?? 'EUR',
+    ht: options.ht ?? 10000,
+    ttc,
+    net_a_payer: ttc,
+    invoice: {},
+    form: options.form ?? {},
+    appearance: options.appearance ?? defaultAppearance(),
+    pdf_chemin: pdfChemin,
+    sdk_version: 'essai',
+    origine: 'emise',
+    facture_origine_id: options.origine ?? null,
+    emise_par: membre.data?.[0]?.user_id,
+  });
+  if (error) throw new Error(`facture : ${error.message}`);
+  if (options.pdf) {
+    const depot = await admin.storage
+      .from('factures')
+      .upload(pdfChemin, PDF_DE_TEST, { contentType: 'application/pdf' });
+    if (depot.error) throw new Error(`PDF de test : ${depot.error.message}`);
+  }
+  return id;
 }
