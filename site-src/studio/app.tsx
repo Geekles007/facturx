@@ -386,37 +386,28 @@ async function seDeconnecter(): Promise<void> {
 }
 
 /**
- * « Se connecter » et « Créer un compte gratuit », ou le menu du compte connecté. Rien de tout
- * cela n'existe dans un site construit sans projet Supabase.
+ * « Se connecter » et « Créer un compte gratuit », ou le menu du compte connecté (les brouillons
+ * sont dans la navigation du compte). Rien de tout cela n'existe dans un site construit sans projet
+ * Supabase.
  */
 function CompteBoutons() {
   const compte = useStudio((s) => s.ui.compte);
-  const [brouillons, setBrouillons] = useState(false);
   if (compte) {
     return (
-      <>
-        <Menu
-          label={t.compte.menu}
-          align="right"
-          trigger={(props) => (
-            <Button icon="user" variant="ghost" title={compte.email} {...props}>
-              <span class="hide-lg compte-email">{compte.email}</span>
-            </Button>
-          )}
-          items={[
-            { label: compte.email, icon: 'user', disabled: true, onSelect: () => undefined },
-            'separator',
-            {
-              label: t.compte.brouillons.titre,
-              icon: 'folder',
-              onSelect: () => setBrouillons(true),
-            },
-            'separator',
-            { label: t.compte.signOut, icon: 'lock', onSelect: seDeconnecter },
-          ]}
-        />
-        <BrouillonsALaDemande open={brouillons} onClose={() => setBrouillons(false)} />
-      </>
+      <Menu
+        label={t.compte.menu}
+        align="right"
+        trigger={(props) => (
+          <Button icon="user" variant="ghost" title={compte.email} {...props}>
+            <span class="hide-lg compte-email">{compte.email}</span>
+          </Button>
+        )}
+        items={[
+          { label: compte.email, icon: 'user', disabled: true, onSelect: () => undefined },
+          'separator',
+          { label: t.compte.signOut, icon: 'lock', onSelect: seDeconnecter },
+        ]}
+      />
     );
   }
   return (
@@ -436,17 +427,35 @@ function CompteBoutons() {
   );
 }
 
-/** La liste des brouillons du compte, chargée à sa première ouverture. */
-function BrouillonsALaDemande({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [Liste, setListe] = useState<ComponentType<{ open: boolean; onClose: () => void }>>();
+/** Le bouton de la bibliothèque : le Studio sans compte, ou en attendant la navigation du compte. */
+function BoutonBibliotheque() {
+  return (
+    <Button
+      icon="book"
+      variant="ghost"
+      title={t.app.library}
+      onClick={() => ui({ library: 'company' })}
+    >
+      <span class="hide-md">{t.app.library}</span>
+    </Button>
+  );
+}
+
+/**
+ * La navigation du compte (spec § 10), chargée à la connexion avec le reste du compte ; elle prend
+ * la place du bouton de la bibliothèque, qui reste affiché tant qu'elle n'est pas chargée.
+ */
+function NavigationALaDemande() {
+  const [Navigation, setNavigation] =
+    useState<ComponentType<{ nouvelleFacture: () => Promise<void> }>>();
   useEffect(() => {
-    if (!open || Liste) return;
-    void moduleBrouillons().then((m) => {
-      if (m) setListe(() => m.Brouillons);
-      else onClose();
-    });
-  }, [open, Liste, onClose]);
-  return Liste ? <Liste open={open} onClose={onClose} /> : null;
+    if (Navigation) return;
+    import('./compte/navigation.js').then(
+      (m) => setNavigation(() => m.Navigation),
+      () => toast(t.compte.navigation.chargement, 'error'),
+    );
+  }, [Navigation]);
+  return Navigation ? <Navigation nouvelleFacture={newBlank} /> : <BoutonBibliotheque />;
 }
 
 /** Charge le dialogue de connexion, et avec lui `supabase-js`, à la première ouverture. */
@@ -472,6 +481,8 @@ function TopBar({ derived, onIssue }: { derived: Derived; onIssue: () => void })
   const issued = useStudio((s) => s.ui.issued);
   // Pendant une émission, rien ne change de document ni ne s'ouvre par-dessus.
   const emission = useStudio((s) => s.ui.emissionEnCours);
+  // Connecté, la navigation du compte remplace le bouton de la bibliothèque.
+  const compte = useStudio((s) => s.ui.compte !== undefined);
   const ok = derived.issues.length === 0;
   const title = form.id.trim() || t.app.untitled;
   return (
@@ -553,14 +564,7 @@ function TopBar({ derived, onIssue }: { derived: Derived; onIssue: () => void })
         >
           <span class="hide-md">{t.app.open}</span>
         </FilePick>
-        <Button
-          icon="book"
-          variant="ghost"
-          title={t.app.library}
-          onClick={() => ui({ library: 'company' })}
-        >
-          <span class="hide-md">{t.app.library}</span>
-        </Button>
+        {compte ? <NavigationALaDemande /> : <BoutonBibliotheque />}
         {compteActif() && <CompteBoutons />}
         <div class="split">
           <Button

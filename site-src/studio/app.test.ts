@@ -34,6 +34,7 @@ vi.mock('./workflows.js', async (importOriginal) => ({
 
 const { App } = await import('./app.js');
 const { store, ui } = await import('./store.js');
+const { t } = await import('./i18n.js');
 
 type VNode = { type: unknown; props: Record<string, unknown> & { children?: unknown } };
 
@@ -103,6 +104,52 @@ describe('un fichier déposé pendant l’émission', () => {
       preventDefault: vi.fn(),
     });
     await vi.waitFor(() => expect(lire).toHaveBeenCalled());
+  });
+});
+
+describe('la navigation du compte remplace le bouton Bibliothèque', () => {
+  /** La barre du haut, rendue. */
+  function barre(): VNode[] {
+    for (const v of parcourir(App())) {
+      if (typeof v.type === 'function' && (v.type as { name: string }).name === 'TopBar')
+        return [...parcourir((v.type as (p: unknown) => unknown)(v.props))];
+    }
+    throw new Error('TopBar absente');
+  }
+  const nom = (v: VNode) => (typeof v.type === 'function' ? (v.type as { name: string }).name : '');
+  const bibliotheque = (noeuds: VNode[]) => noeuds.filter((v) => nom(v) === 'BoutonBibliotheque');
+  const navigation = (noeuds: VNode[]) => noeuds.filter((v) => nom(v) === 'NavigationALaDemande');
+  /** Le composant `v`, rendu. */
+  const rendre = (v: VNode | undefined): VNode[] =>
+    v ? [...parcourir((v.type as (p: unknown) => unknown)(v.props))] : [];
+
+  test('sans compte : le bouton Bibliothèque, comme toujours, et aucune navigation', () => {
+    ui({ compte: undefined });
+    const noeuds = barre();
+    expect(bibliotheque(noeuds)).toHaveLength(1);
+    expect(navigation(noeuds)).toHaveLength(0);
+    const [bouton] = rendre(bibliotheque(noeuds)[0]);
+    if (!bouton) throw new Error('bouton absent');
+    expect(bouton.props.title).toBe(t.app.library);
+    (bouton.props.onClick as () => void)();
+    expect(store.get().ui.library).toBe('company');
+  });
+
+  test('connecté : la navigation à sa place ; la bibliothèque, le temps de la charger', () => {
+    ui({
+      compte: {
+        email: 'essai@facturx.test',
+        confirme: true,
+        entrepriseId: 'e-1',
+        suppressionDemandeeLe: undefined,
+        session: 'active',
+      },
+    });
+    const noeuds = barre();
+    expect(navigation(noeuds)).toHaveLength(1);
+    expect(bibliotheque(noeuds)).toHaveLength(0);
+    // Avant que son module ne soit chargé, la navigation laisse la bibliothèque à sa place.
+    expect(bibliotheque(rendre(navigation(noeuds)[0]))).toHaveLength(1);
   });
 });
 
