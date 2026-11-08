@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Sauvegarde chiffrée du compte (spec § 11 : en plus des sauvegardes quotidiennes du plan Pro, un dump
-# hebdomadaire chiffré, déposé chez un autre hébergeur européen). Lancée chaque dimanche par
+# Sauvegarde chiffrée du compte (spec § 11, D75 : le plan Free de Supabase n'en fait pas, c'est donc
+# la seule ; un dump chiffré, déposé chez un autre hébergeur européen). Lancée chaque nuit par
 # .github/workflows/sauvegarde.yml ; on peut la lancer à la main, ou en local (docs/compte.md).
 #
 #   scripts/sauvegarde.sh                  dépose l'archive chez Scaleway (fr-par) et applique la rétention
@@ -20,7 +20,7 @@
 # Variables (secrets du dépôt GitHub, voir docs/compte.md) :
 #   SAUVEGARDE_DB_URL                URL Postgres du projet (pooler en mode session, sslmode=require)
 #   SUPABASE_S3_ENDPOINT             https://<ref>.storage.supabase.co/storage/v1/s3
-#   SUPABASE_S3_REGION               la région du projet (eu-west-3)
+#   SUPABASE_S3_REGION               la région du projet (eu-central-1)
 #   SUPABASE_S3_ACCESS_KEY_ID, SUPABASE_S3_SECRET_ACCESS_KEY    clés S3 du stockage Supabase
 #   SCALEWAY_S3_BUCKET               le bucket des sauvegardes (sans --dossier)
 #   SCALEWAY_S3_ACCESS_KEY_ID, SCALEWAY_S3_SECRET_ACCESS_KEY    clés Scaleway (sans --dossier)

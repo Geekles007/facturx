@@ -2,9 +2,9 @@
 
 Le guide d'exploitation du compte (spec `docs/superpowers/specs/2026-11-03-comptes-et-suivi-design.md`) : mettre en service le projet Supabase, les e-mails et les sauvegardes, confirmer la mesure D74 sur le projet déployé, déployer chaque nouvelle version, restaurer une sauvegarde.
 
-Les services : **Supabase** (projet en `eu-west-3`, Paris, plan Pro), **Brevo** (e-mails de l'authentification par SMTP, relances par API), **Scaleway Object Storage** (`fr-par`, les sauvegardes chiffrées), **GitHub Actions** (deux workflows : [`compte-deploy.yml`](../.github/workflows/compte-deploy.yml), à la main ; [`sauvegarde.yml`](../.github/workflows/sauvegarde.yml), chaque dimanche), **Coolify** (le site, comme aujourd'hui).
+Les services : **Supabase** (projet en `eu-central-1`, Francfort, plan Free : 1.2 et D75), **Brevo** (e-mails de l'authentification par SMTP, relances par API), **Scaleway Object Storage** (`fr-par`, les sauvegardes chiffrées), **GitHub Actions** (deux workflows : [`compte-deploy.yml`](../.github/workflows/compte-deploy.yml), à la main ; [`sauvegarde.yml`](../.github/workflows/sauvegarde.yml), chaque nuit), **Coolify** (le site, comme aujourd'hui).
 
-Conventions de ce guide : `<ref>` est l'identifiant du projet Supabase (20 lettres minuscules, dans l'adresse du tableau de bord : `supabase.com/dashboard/project/<ref>`) ; le site est `https://facturx.ibird.dev` ; le domaine d'envoi des e-mails est `facturx.ibird.dev` (voir 1.3 s'il faut en prendre un autre). Les commandes se lancent depuis la racine du dépôt.
+Conventions de ce guide : `<ref>` est l'identifiant du projet Supabase (20 lettres minuscules, dans l'adresse du tableau de bord : `supabase.com/dashboard/project/<ref>`) ; le site est `https://facturx.ibird.dev` ; le domaine d'envoi des e-mails est `ibird.dev` (1.3). Les commandes se lancent depuis la racine du dépôt.
 
 **Le dépôt est public, et les journaux de ses Actions aussi.** Aucun secret ne s'écrit dans un fichier du dépôt, une issue, une commande partagée ou un journal. Les valeurs secrètes vont dans un gestionnaire de mots de passe, puis dans Supabase ou dans les secrets GitHub.
 
@@ -48,10 +48,19 @@ Chaque étape dit ce qu'on doit voir. Si ce n'est pas ce qu'on voit, s'arrêter 
 
 ### 1.2 Le projet Supabase
 
-1. Dans une organisation au **plan Pro** : *New project*, région **West EU (Paris)** (`eu-west-3`), un mot de passe de base généré, gardé dans le gestionnaire de mots de passe. Noter `<ref>`.
+1. Le projet est `facturx`, dans une organisation au **plan Free** (D75), région **Central EU (Frankfurt)** (`eu-central-1`). Son mot de passe de base est dans le gestionnaire de mots de passe ; s'il manque, en générer un autre dans les réglages de la base du tableau de bord. Noter `<ref>`. Un projet neuf se crée de même (*New project*) ; le palier gratuit n'admet que deux projets actifs par compte.
 2. *Project Settings → Infrastructure* : la version de Postgres doit être **17** (celle de `config.toml`, `major_version = 17`, et de `PG_MAJEURE` dans `sauvegarde.yml`). Si le projet est créé dans une autre version majeure, changer les deux avant d'aller plus loin.
 3. Un jeton d'accès personnel : *Account → Access Tokens → Generate new token*, nommé `facturx-deploiement`. Il ouvre **tous** les projets du compte : il ne va que dans le secret GitHub `SUPABASE_ACCESS_TOKEN` et le gestionnaire de mots de passe.
-4. Sur la machine : `supabase login` (navigateur), puis `supabase link --project-ref <ref>` (le CLI demande le mot de passe de la base, ou le lit dans `SUPABASE_DB_PASSWORD`). Le CLI confirme le lien, que `supabase/.temp/` (non versionné) garde.
+4. Sur la machine : `supabase login` (navigateur), puis `supabase link --project-ref <ref>` (le CLI demande le mot de passe de la base, ou le lit dans `SUPABASE_DB_PASSWORD`). Le CLI confirme le lien, que `supabase/.temp/` (non versionné) garde. Puis `supabase migration list --remote` : la colonne *Remote* ne doit montrer que des migrations du dépôt, ou aucune, sans quoi `db push --remote` refusera. Un projet qui porte le schéma d'une autre application se vide d'abord : ses tables, son historique de migrations (`supabase_migrations.schema_migrations`) et ses fonctions.
+
+**Ce que le plan Free impose** (D75 ; supabase.com/pricing, lu le 8 novembre 2026) :
+
+- **Aucune sauvegarde chez Supabase.** La seule est l'archive chiffrée de chaque nuit chez Scaleway (1.12 et section 3) : la mettre en service avant d'ouvrir les comptes, et traiter un échec le jour même.
+- **La pause.** Un projet Free trop peu actif sur 7 jours est mis en pause, après un courriel d'avertissement au propriétaire. Le Studio ne joint plus alors le serveur, et la purge de nuit ne passe plus. *Resume project*, dans le tableau de bord, le rétablit tel quel, jusqu'à 90 jours après la pause. Ouvrir le tableau de bord, ou quelques requêtes par jour, suffit à l'éviter.
+- **Les quotas** : 500 Mo de base par projet ; pour toute l'organisation, 1 Go de fichiers et 5 Go de trafic sortant par mois. L'usage des autres projets de l'organisation compte aussi, et au-delà, après un courriel et un délai de grâce, Supabase restreint l'organisation entière (base en lecture seule, ou réponses 402). Les suivre dans *Organization → Usage*.
+- **Pas de contrôle des mots de passe divulgués** (HaveIBeenPwned) : il est réservé au plan Pro. L'avertissement *Leaked Password Protection Disabled* du *Security Advisor* est donc attendu.
+- **Les journaux de la plateforme ne durent qu'un jour** (la politique de confidentialité le dit, § 5) : une erreur se lit dans les journaux le jour même.
+- **Passer en Pro**, sans migration ni changement d'adresse : transférer le projet vers une organisation au plan Pro (*Project Settings → General*), ou passer l'organisation en Pro. Reviennent les sauvegardes quotidiennes de Supabase, le contrôle des mots de passe et 7 jours de journaux : reprendre alors la politique de confidentialité (§ 5 et 7) et l'accord de sous-traitance, qui ne parlent que de la copie chez Scaleway.
 
 ### 1.3 Brevo et le domaine d'envoi
 
@@ -104,7 +113,7 @@ Dans le tableau de bord du projet. **Ne jamais lancer `supabase config push`** a
 3. *Authentication → Sign In / Providers → Email* : **Confirm email** activé (`emettre`, `importer` et `relancer` refusent un compte non confirmé) ; **Secure email change** activé (`double_confirm_changes = true` en local).
 4. *Authentication → Rate Limits* : la limite d'envoi d'e-mails par heure, que Supabase règle bas par défaut, sous le plafond quotidien de Brevo (300 par jour : 12 par heure tiennent dans la journée).
 5. Facultatif : *Authentication → Emails → Templates*, les gabarits sont en anglais par défaut.
-6. *Authentication → Configuration → Audit Logs* : **Write audit logs to the database** peut rester activé. Le serveur d'authentification y écrit (`auth.audit_log_entries`) l'inscription, chaque connexion et la suppression de chaque utilisateur, avec son adresse e-mail et son identifiant ; `auth.admin.deleteUser` ne les efface pas, et la purge de nuit le fait (`purger`, étape 3), à condition que le rôle `postgres` ait le droit d'effacer dans cette table : la vérification est en 1.8. **S'il ne l'a pas**, désactiver ce réglage : sans lui, le journal d'audit ne va plus que dans les journaux de la plateforme (*Logs → Auth*), conservés 7 jours sur le plan Pro, ce que la politique de confidentialité (§ 5) dit déjà ; la passe de `purger` resterait sinon en échec (500) chaque nuit.
+6. *Authentication → Configuration → Audit Logs* : **Write audit logs to the database** peut rester activé. Le serveur d'authentification y écrit (`auth.audit_log_entries`) l'inscription, chaque connexion et la suppression de chaque utilisateur, avec son adresse e-mail et son identifiant ; `auth.admin.deleteUser` ne les efface pas, et la purge de nuit le fait (`purger`, étape 3), à condition que le rôle `postgres` ait le droit d'effacer dans cette table : la vérification est en 1.8. **S'il ne l'a pas**, désactiver ce réglage : sans lui, le journal d'audit ne va plus que dans les journaux de la plateforme (*Logs → Auth*), conservés un jour sur le plan Free (7 sur le plan Pro), ce que la politique de confidentialité (§ 5) dit déjà ; la passe de `purger` resterait sinon en échec (500) chaque nuit.
 
 Ce qu'on doit voir : à l'étape 1.10, l'e-mail de confirmation arrive, de `compte@ibird.dev`, et ses en-têtes disent `spf=pass`, `dkim=pass` et `dmarc=pass` (Gmail : *Afficher l'original*).
 
@@ -309,11 +318,11 @@ Un essai natif sur la machine de développement (Deno 2.9, hors du runtime des f
 
 ### 1.12 Les sauvegardes
 
-En plus des sauvegardes quotidiennes du plan Pro (*Database → Backups*, sur le même hébergeur), une archive chiffrée chaque semaine chez un autre hébergeur européen (spec § 11). Ce que fait `scripts/sauvegarde.sh` est à la section 3.
+Le plan Free n'a pas de sauvegarde chez Supabase : la seule est une archive chiffrée, chaque nuit, chez un autre hébergeur européen (spec § 11, D75). Ce que fait `scripts/sauvegarde.sh` est à la section 3.
 
 1. **Scaleway** : dans un projet dédié (par exemple `facturx-sauvegardes`), *Object Storage → Create bucket* : région **Paris** (`fr-par`), visibilité **privée**, un nom unique, par exemple `facturx-sauvegardes-<suffixe>`. Puis *IAM → Applications* : une application `facturx-sauvegarde`, une politique qui lui donne `ObjectStorageFullAccess` sur ce seul projet, et une clé d'API pour elle (*Generate API key*, projet Object Storage préféré : celui du bucket). La clé d'accès (`SCW…`) et la clé secrète vont dans les secrets GitHub et le gestionnaire de mots de passe : il faut aussi les avoir pour restaurer.
 
-   **Cette clé peut effacer les sauvegardes** : la rétention (section 3) les efface avec elle. Quiconque la vole (une fuite des secrets GitHub, un workflow modifié) peut donc vider le bucket. Pour s'en garder sans rien changer au script, activer à la création du bucket le **versionnement**, ou mieux le **verrouillage d'objets** (*Object Lock*, qui suppose le versionnement et ne s'active qu'à la création) : un effacement n'y pose qu'un marqueur, et la version effacée reste récupérable (en mode *compliance*, personne ne peut l'effacer avant la fin de sa durée de rétention, par exemple 12 semaines). Le prix : les versions effacées occupent de la place jusqu'à ce qu'une règle de cycle de vie les expire ; vérifier dans la documentation de Scaleway la règle qui expire les versions non courantes, et la poser à 30 jours au plus (la politique de confidentialité, § 5, promet 4 mois au plus pour une copie : 12 semaines, plus ce délai), sans quoi la facture de stockage grossit chaque semaine.
+   **Cette clé peut effacer les sauvegardes** : la rétention (section 3) les efface avec elle. Quiconque la vole (une fuite des secrets GitHub, un workflow modifié) peut donc vider le bucket. Pour s'en garder sans rien changer au script, activer à la création du bucket le **versionnement**, ou mieux le **verrouillage d'objets** (*Object Lock*, qui suppose le versionnement et ne s'active qu'à la création) : un effacement n'y pose qu'un marqueur, et la version effacée reste récupérable (en mode *compliance*, personne ne peut l'effacer avant la fin de sa durée de rétention, par exemple 12 semaines). Le prix : les versions effacées occupent de la place jusqu'à ce qu'une règle de cycle de vie les expire ; vérifier dans la documentation de Scaleway la règle qui expire les versions non courantes, et la poser à 30 jours au plus (la politique de confidentialité, § 5, promet 4 mois au plus pour une copie : 12 semaines, plus ce délai), sans quoi la facture de stockage grossit chaque jour.
 2. **La paire de clés age**, sur votre machine :
 
    ```sh
@@ -321,7 +330,7 @@ En plus des sauvegardes quotidiennes du plan Pro (*Database → Backups*, sur le
    ```
 
    La commande affiche `Public key: age1…` : c'est `AGE_RECIPIENT`. **La clé privée** (le fichier `sauvegarde.key`, qui commence par `AGE-SECRET-KEY-`) ne va ni dans le dépôt, ni dans GitHub, ni chez Scaleway : dans le gestionnaire de mots de passe, plus une copie hors ligne. Sans elle, aucune archive ne se relit. `AGE_RECIPIENT` admet plusieurs clés publiques, séparées par des espaces (une seconde clé gardée ailleurs, par exemple) ; le script refuse une clé privée collée là par erreur.
-3. **Les clés S3 de Supabase** : *Project Settings → Storage → S3 Connection* : noter l'**Endpoint** (`https://<ref>.storage.supabase.co/storage/v1/s3`) et la **Region** (`eu-west-3`), puis *New access key* : l'identifiant et le secret (affiché une seule fois). Ces clés lisent et écrivent tous les buckets, comme la clé de service.
+3. **Les clés S3 de Supabase** : *Project Settings → Storage → S3 Connection* : noter l'**Endpoint** (`https://<ref>.storage.supabase.co/storage/v1/s3`) et la **Region** (`eu-central-1`), puis *New access key* : l'identifiant et le secret (affiché une seule fois). Ces clés lisent et écrivent tous les buckets, comme la clé de service.
 4. **L'adresse de la base** : celle de 1.8 (*Session pooler*, avec `?sslmode=require`). Les machines de GitHub Actions n'ont pas d'IPv6, et la connexion directe d'un projet Supabase n'est joignable qu'en IPv6 (sans l'option IPv4 payante) : le pooler en mode session, lui, l'est en IPv4 et admet `pg_dump`.
 5. **Les secrets GitHub** :
 
@@ -338,7 +347,7 @@ En plus des sauvegardes quotidiennes du plan Pro (*Database → Backups*, sur le
    gh variable set SAUVEGARDE_ACTIVE --body true
    ```
 
-   La variable `SAUVEGARDE_ACTIVE` (*Settings → Secrets and variables → Actions → Variables*) met le workflow en service : sans elle, ni le passage du dimanche ni un lancement à la main ne font rien (le job est sauté), pour ne pas échouer chaque semaine tant que les secrets manquent. La poser une fois les neuf secrets en place.
+   La variable `SAUVEGARDE_ACTIVE` (*Settings → Secrets and variables → Actions → Variables*) met le workflow en service : sans elle, ni le passage de la nuit ni un lancement à la main ne font rien (le job est sauté), pour ne pas échouer chaque nuit tant que les secrets manquent. La poser une fois les neuf secrets en place.
 
 6. **Le premier passage, à la main** : *Actions → Sauvegarde → Run workflow* (ou `gh workflow run sauvegarde.yml --ref main`). Ce qu'on doit voir dans le journal : `sauvegarde : base (pg_dump (PostgreSQL) 17.…)` ; un avertissement de `pg_dump` sur des « contraintes de clés étrangères circulaires » de `factures` (un avoir cite sa facture : attendu, la restauration suspend ces contrôles) ; `sauvegarde : bucket factures`, `bucket fichiers` ; `sauvegarde : facturx/facturx-<date>.tar.age (<n> octets) déposée et vérifiée` ; `rétention de 84 jours, 0 archive(s) antérieure(s) … effacée(s)`. Chez Scaleway, l'objet est dans `facturx/`.
 7. **La restauration d'essai**, une fois au moins avant l'ouverture (spec § 11) : section 4, dans la pile locale. On doit y retrouver la facture émise en 1.10 et son PDF.
@@ -349,7 +358,7 @@ Les pages du site ne parlent du compte que sur une image construite avec `FACTUR
 
 - D74 confirmée, ou la décision qui la remplace prise et faite (1.11).
 - La restauration d'essai réussie (1.12, 7).
-- Les pages légales à jour : `site/cgu/`, `site/confidentialite/`, `site/sous-traitance/` et leurs versions `site/en/…`. Elles nomment l'éditeur (Ibird, particulier, sans SIREN), l'hébergeur du site (Hetzner), la sauvegarde (Scaleway) et les durées de conservation, pour la version `2026-11`, en vigueur depuis le 8 novembre 2026. À reprendre si l'un de ces points change : une entreprise créée (raison sociale, adresse, SIREN), un autre hébergeur, d'autres durées.
+- Les pages légales à jour : `site/cgu/`, `site/confidentialite/`, `site/sous-traitance/` et leurs versions `site/en/…`. Elles nomment l'éditeur (Ibird, particulier, sans SIREN), l'hébergeur du site (Hetzner), la région de Supabase (Francfort), la sauvegarde (Scaleway, chaque nuit) et les durées de conservation, pour la version `2026-11`, en vigueur depuis le 8 novembre 2026. À reprendre si l'un de ces points change : une entreprise créée (raison sociale, adresse, SIREN), un autre hébergeur ou une autre région, d'autres durées, le passage au plan Pro (1.2).
 - **Une relecture de ces textes par un juriste.**
 - Le compte d'essai supprimé (1.11, 8).
 
@@ -375,16 +384,16 @@ Le site se redéploie par Coolify, comme avant. Une version qui change le Studio
 
 ## 3. Les sauvegardes
 
-`sauvegarde.yml` lance `scripts/sauvegarde.sh` chaque dimanche à 2 h 23 UTC (`23 2 * * 0`), et à la main.
+`sauvegarde.yml` lance `scripts/sauvegarde.sh` chaque nuit à 2 h 23 UTC (`23 2 * * *`), et à la main.
 
 1. **La base** : `pg_dump --data-only` du schéma `public` entier et, dans `auth`, des seules tables `users` et `identities` (les comptes et leurs mots de passe hachés). Le schéma se reconstruit par les migrations, les sessions se rouvrent, et les secrets du Vault ne se déchiffrent que dans leur projet. Le `pg_dump` est celui de la version majeure du serveur (`PG_MAJEURE`), pris au dépôt apt de PostgreSQL.
 2. **Les buckets privés** `factures` et `fichiers`, par l'API S3 de Supabase Storage ; tout objet listé doit être arrivé. Le bucket public `polices` se redépose par `pnpm compte:polices`.
 3. **Une archive `tar`** (`manifeste.txt`, `donnees.sql`, `stockage/`), chiffrée par `age -r $AGE_RECIPIENT`. Le manifeste dit la date, les versions, les migrations appliquées, le nombre de lignes de chaque table et d'objets de chaque bucket : la restauration s'y compare. Le clair ne vit que dans un dossier temporaire privé, effacé dès l'archive chiffrée.
-4. **Le dépôt chez Scaleway** (`fr-par`), sous `facturx/facturx-<date UTC>.tar.age`, vérifié par sa taille ; puis la **rétention** : les archives `facturx/*.tar.age` de plus de 12 semaines (84 jours) sont effacées, et seulement après le dépôt réussi d'une nouvelle. Une semaine en échec n'efface donc rien. La clé qui efface ainsi pourrait tout effacer : d'où le versionnement ou le verrouillage d'objets recommandés en 1.12.
+4. **Le dépôt chez Scaleway** (`fr-par`), sous `facturx/facturx-<date UTC>.tar.age`, vérifié par sa taille ; puis la **rétention** : les archives `facturx/*.tar.age` de plus de 12 semaines (84 jours) sont effacées, et seulement après le dépôt réussi d'une nouvelle. Une nuit en échec n'efface donc rien. La clé qui efface ainsi pourrait tout effacer : d'où le versionnement ou le verrouillage d'objets recommandés en 1.12.
 
 Le script échoue à la première étape qui échoue. Il n'écrit dans le journal, public, ni secret, ni nombre de comptes ou de factures, ni nom de fichier.
 
-**Surveiller.** GitHub envoie un courriel quand un passage planifié échoue (à la personne qui a modifié en dernier la ligne `cron`). Dans un dépôt public, il **suspend un workflow planifié après 60 jours sans activité** sur le dépôt, et l'annonce par courriel : *Actions → Sauvegarde → Enable workflow* le rétablit. Une fois par mois, regarder la liste des archives chez Scaleway (une par semaine, douze au plus).
+**Surveiller.** GitHub envoie un courriel quand un passage planifié échoue (à la personne qui a modifié en dernier la ligne `cron`). Dans un dépôt public, il **suspend un workflow planifié après 60 jours sans activité** sur le dépôt, et l'annonce par courriel : *Actions → Sauvegarde → Enable workflow* le rétablit. Une fois par mois, regarder la liste des archives chez Scaleway (une par nuit, sur 12 semaines). Sur le plan Free, c'est la seule sauvegarde : un échec se traite le jour même.
 
 **Essayer le script en local**, contre la pile locale : `scripts/sauvegarde.sh --dossier <dossier>` écrit l'archive, chiffrée de même, dans ce dossier au lieu de Scaleway (les variables `SCALEWAY_S3_*` ne sont alors pas demandées). L'adresse de la base et les clés S3 sont celles de `supabase status -o env` (`DB_URL`, `STORAGE_S3_URL`, `S3_PROTOCOL_REGION`, `S3_PROTOCOL_ACCESS_KEY_ID`, `S3_PROTOCOL_ACCESS_KEY_SECRET`).
 
