@@ -16,7 +16,7 @@ Conventions de ce guide : `<ref>` est l'identifiant du projet Supabase (20 lettr
 |---|---|---|
 | `FACTURX_ORIGINES` | `https://facturx.ibird.dev` : l'origine du site, sans barre finale (plusieurs, séparées par des virgules) | aucune origine admise : le navigateur bloque tout appel du Studio (CORS) |
 | `BREVO_API_KEY` | la clé de l'API Brevo (`xkeysib-…`) ; **jamais `simule`**, refusé sur un projet hébergé | `relancer` échoue (500) |
-| `RELANCES_EXPEDITEUR` | `relances@facturx.ibird.dev`, sur le domaine authentifié chez Brevo | `relancer` échoue (500) |
+| `RELANCES_EXPEDITEUR` | `relances@ibird.dev`, sur le domaine authentifié chez Brevo | `relancer` échoue (500) |
 | `PURGE_SECRET` | 64 caractères aléatoires (`openssl rand -hex 32`), **la même valeur** que `purger_secret` dans le Vault | `purger` refuse tout (401) ; un secret de moins de 32 caractères, ou celui de `.env.example`, aussi |
 | `FACTURX_TESTS` | **absent** : il laisserait un en-tête fixer « aujourd'hui » (la fonction l'ignore déjà sur `*.supabase.co`) | — |
 
@@ -55,36 +55,37 @@ Chaque étape dit ce qu'on doit voir. Si ce n'est pas ce qu'on voit, s'arrêter 
 
 ### 1.3 Brevo et le domaine d'envoi
 
-Brevo envoie les e-mails de l'authentification (inscription, réinitialisation) par SMTP, et les relances par son API. Les deux partent du domaine d'envoi, authentifié par SPF, DKIM et DMARC **avant le premier envoi** (spec § 15).
+Brevo envoie les e-mails de l'authentification (inscription, réinitialisation) par SMTP, et les relances par son API. Les deux partent de `ibird.dev`, le domaine de l'éditeur, authentifié par DKIM et DMARC **avant le premier envoi** (spec § 15) : `compte@ibird.dev` pour les e-mails de compte, `relances@ibird.dev` pour les relances.
+
+Ce domaine est aussi celui du courrier de l'éditeur (`hello@ibird.dev`, reçu par le serveur de messagerie de Hetzner) : la réputation des relances et celle de ce courrier n'en font qu'une. Les plafonds de `relancer` (une relance par facture tous les 3 jours, 20 par jour) la protègent. Un sous-domaine réservé aux envois les séparerait, au prix d'adresses d'expédition qui ne reçoivent rien.
 
 1. Créer le compte sur brevo.com (palier gratuit : 300 e-mails par jour à l'inscription, à vérifier sur la grille du moment ; le plafond est commun aux e-mails de compte et aux relances).
-2. *Senders, Domains & Dedicated IPs → Domains → Add a domain* : `facturx.ibird.dev`. Brevo affiche les enregistrements à poser (étape 1.3 bis) ; les copier **exactement**.
+2. *Senders, Domains & Dedicated IPs → Domains → Add a domain* : `ibird.dev`. Brevo affiche les enregistrements à poser (étape 1.3 bis) ; les copier **exactement**.
 3. Une fois les enregistrements posés et propagés, *Authenticate this domain* : toutes les lignes doivent passer au vert.
-4. *Senders → Add a sender* : `relances@facturx.ibird.dev` (nom : `facturx` ; chaque relance le remplace par « *Nom de l'entreprise* via facturx ») et l'adresse des e-mails de compte, par exemple `compte@facturx.ibird.dev` (nom : `facturx`). Sur un domaine authentifié, Brevo les admet ; s'il demande de valider une adresse par un code envoyé à celle-ci, il faut pouvoir lire cette boîte.
-5. *SMTP & API → SMTP* : noter le serveur (`smtp-relay.brevo.com`, port `587`) et l'identifiant SMTP, puis *Generate a new SMTP key* : c'est le mot de passe SMTP de l'étape 1.4.
-6. *SMTP & API → API Keys → Generate a new API key*, nommée `facturx-relances` : c'est `BREVO_API_KEY` (étape 1.5).
-
-**Si `facturx.ibird.dev` est un CNAME** (vers l'hôte de Coolify, par exemple) : le DNS n'admet aucun autre enregistrement sous ce même nom, donc ni le TXT de SPF ni celui de Brevo. Prendre alors un autre domaine d'envoi (`ibird.dev` lui-même, ou un sous-domaine dédié comme `mail.facturx.ibird.dev`), et le reporter partout où ce guide écrit `facturx.ibird.dev` pour les e-mails (`RELANCES_EXPEDITEUR`, expéditeur SMTP, enregistrements). `dig +short CNAME facturx.ibird.dev` le dit : une réponse non vide est un CNAME.
+4. Chez Hetzner, créer `compte@ibird.dev` et `relances@ibird.dev` comme redirections vers une boîte lue (`hello@ibird.dev`) : elles reçoivent le code si Brevo veut valider une adresse, et la réponse d'un destinataire dont le logiciel ignorerait le `Reply-To`.
+5. *Senders → Add a sender* : `relances@ibird.dev` (nom : `facturx` ; chaque relance le remplace par « *Nom de l'entreprise* via facturx ») et `compte@ibird.dev` (nom : `facturx`).
+6. *SMTP & API → SMTP* : noter le serveur (`smtp-relay.brevo.com`, port `587`) et l'identifiant SMTP, puis *Generate a new SMTP key* : c'est le mot de passe SMTP de l'étape 1.4.
+7. *SMTP & API → API Keys → Generate a new API key*, nommée `facturx-relances` : c'est `BREVO_API_KEY` (étape 1.5).
 
 ### 1.3 bis Les enregistrements DNS
 
-Chez l'hébergeur de la zone `ibird.dev`. Les valeurs exactes sont celles que Brevo affiche ; le tableau en donne la forme.
+Dans la zone `ibird.dev`, chez Hetzner. Les noms s'y écrivent sans le domaine (`@` pour `ibird.dev` lui-même, `brevo1._domainkey`, `_dmarc`), et une cible CNAME complète finit par un point, sans quoi la zone y ajoute `.ibird.dev`. Les valeurs exactes sont celles que Brevo affiche ; le tableau en donne la forme.
 
 | Type | Nom | Valeur | Rôle |
 |---|---|---|---|
-| TXT | `facturx.ibird.dev` | `brevo-code:<code donné par Brevo>` | prouve à Brevo que le domaine est à vous |
-| TXT | `facturx.ibird.dev` | `v=spf1 include:spf.brevo.com ~all` (celle de Brevo) | **SPF** : les serveurs de Brevo peuvent envoyer pour ce domaine. Un seul enregistrement SPF par nom : s'il en existe un, y ajouter l'`include` au lieu d'en créer un second |
-| CNAME (ou TXT) | `brevo1._domainkey.facturx.ibird.dev`, `brevo2._domainkey.facturx.ibird.dev` (ou `mail._domainkey…`) | ceux de Brevo | **DKIM** : la signature des e-mails |
-| TXT | `_dmarc.facturx.ibird.dev` | `v=DMARC1; p=none; rua=mailto:<une adresse que vous lisez>` | **DMARC** : la politique, et les rapports d'envoi |
+| TXT | `@` | `brevo-code:<code donné par Brevo>` | prouve à Brevo que le domaine est à vous |
+| TXT | `@` | le SPF existant, `v=spf1 +a +mx ?all`, auquel ajouter `include:spf.brevo.com` **si Brevo le demande** : `v=spf1 +a +mx include:spf.brevo.com ?all` | **SPF** : les serveurs autorisés à envoyer pour ce domaine. Un seul enregistrement SPF par nom : on complète celui qui existe, on n'en crée pas un second |
+| CNAME | `brevo1._domainkey`, `brevo2._domainkey` | ceux de Brevo | **DKIM** : la signature des e-mails |
+| TXT | `_dmarc` | `v=DMARC1; p=none; rua=mailto:<adresse des rapports>` (Brevo propose la sienne) | **DMARC** : la politique, et les rapports d'envoi |
 
-Commencer DMARC à `p=none` ; après deux à quatre semaines de rapports propres (tout l'envoi légitime passe DKIM aligné), passer à `p=quarantine`.
+DMARC vaut pour tout le courrier de `ibird.dev`, celui de `hello@` compris. Commencer à `p=none`, qui ne bloque rien. Ne passer à `p=quarantine` qu'après deux à quatre semaines de rapports propres **pour les deux expéditeurs** : Brevo, qui passe par sa signature DKIM, et le serveur de messagerie de Hetzner, qui ne passe que si le SPF couvre son serveur d'envoi. Sinon, le courrier de `hello@` finirait en spam.
 
 Ce qu'on doit voir, une fois propagé :
 
 ```sh
-dig +short TXT facturx.ibird.dev              # brevo-code:…  et  "v=spf1 include:spf.brevo.com ~all"
-dig +short CNAME brevo1._domainkey.facturx.ibird.dev   # la cible donnée par Brevo
-dig +short TXT _dmarc.facturx.ibird.dev       # "v=DMARC1; p=none; …"
+dig +short TXT ibird.dev                      # brevo-code:…  et  "v=spf1 …"
+dig +short CNAME brevo1._domainkey.ibird.dev  # la cible donnée par Brevo
+dig +short TXT _dmarc.ibird.dev               # "v=DMARC1; p=none; …"
 ```
 
 ### 1.4 L'authentification
@@ -97,15 +98,15 @@ Dans le tableau de bord du projet. **Ne jamais lancer `supabase config push`** a
 
    C'est le pendant de `site_url` et `additional_redirect_urls` dans `config.toml`. Le Studio demande le retour sur `/studio/` ou `/en/studio/` de son origine : une adresse absente de la liste renverrait sur la Site URL, dans la mauvaise langue.
 2. *Authentication → Emails → SMTP Settings* → *Enable custom SMTP* :
-   - Sender email : `compte@facturx.ibird.dev` (l'adresse ajoutée chez Brevo) ; Sender name : `facturx`
+   - Sender email : `compte@ibird.dev` (l'adresse ajoutée chez Brevo) ; Sender name : `facturx`
    - Host : `smtp-relay.brevo.com` ; Port : `587`
-   - Username : l'identifiant SMTP de Brevo ; Password : la clé SMTP de Brevo (étape 1.3, 5)
+   - Username : l'identifiant SMTP de Brevo ; Password : la clé SMTP de Brevo (étape 1.3, 6)
 3. *Authentication → Sign In / Providers → Email* : **Confirm email** activé (`emettre`, `importer` et `relancer` refusent un compte non confirmé) ; **Secure email change** activé (`double_confirm_changes = true` en local).
 4. *Authentication → Rate Limits* : la limite d'envoi d'e-mails par heure, que Supabase règle bas par défaut, sous le plafond quotidien de Brevo (300 par jour : 12 par heure tiennent dans la journée).
 5. Facultatif : *Authentication → Emails → Templates*, les gabarits sont en anglais par défaut.
 6. *Authentication → Configuration → Audit Logs* : **Write audit logs to the database** peut rester activé. Le serveur d'authentification y écrit (`auth.audit_log_entries`) l'inscription, chaque connexion et la suppression de chaque utilisateur, avec son adresse e-mail et son identifiant ; `auth.admin.deleteUser` ne les efface pas, et la purge de nuit le fait (`purger`, étape 3), à condition que le rôle `postgres` ait le droit d'effacer dans cette table : la vérification est en 1.8. **S'il ne l'a pas**, désactiver ce réglage : sans lui, le journal d'audit ne va plus que dans les journaux de la plateforme (*Logs → Auth*), conservés 7 jours sur le plan Pro, ce que la politique de confidentialité (§ 5) dit déjà ; la passe de `purger` resterait sinon en échec (500) chaque nuit.
 
-Ce qu'on doit voir : à l'étape 1.10, l'e-mail de confirmation arrive, de `compte@facturx.ibird.dev`, et ses en-têtes disent `spf=pass`, `dkim=pass` et `dmarc=pass` (Gmail : *Afficher l'original*).
+Ce qu'on doit voir : à l'étape 1.10, l'e-mail de confirmation arrive, de `compte@ibird.dev`, et ses en-têtes disent `spf=pass`, `dkim=pass` et `dmarc=pass` (Gmail : *Afficher l'original*).
 
 ### 1.5 Les secrets des fonctions
 
@@ -121,7 +122,7 @@ Le fichier, quatre lignes :
 ```sh
 FACTURX_ORIGINES=https://facturx.ibird.dev
 BREVO_API_KEY=<la clé API de Brevo>
-RELANCES_EXPEDITEUR=relances@facturx.ibird.dev
+RELANCES_EXPEDITEUR=relances@ibird.dev
 PURGE_SECRET=<la valeur tirée ci-dessus>
 ```
 
@@ -216,7 +217,7 @@ Avec un **compte d'essai** (une adresse que vous lisez, par exemple un alias `+e
 
 1. **Inscription réelle** : *Créer un compte gratuit*, CGU acceptées. L'e-mail de confirmation arrive (en-têtes `spf=pass`, `dkim=pass`, `dmarc=pass`) ; le lien ramène sur `/studio/`, connecté.
 2. **Émission** : renseigner l'entreprise (avec un SIREN : `relancer` l'exige), puis une facture dont l'acheteur a pour adresse de contact la vôtre, **datée d'il y a quelques jours (de cette année) et échue d'hier** (pour pouvoir la relancer tout de suite). *Émettre* : la facture prend son numéro, son PDF s'ouvre.
-3. **Relance** : sur cette facture, *Relancer*, destinataire votre adresse, *Envoyer*. L'e-mail arrive de « *Nom de l'entreprise* via facturx » `<relances@facturx.ibird.dev>`, avec le PDF joint, et y répondre écrit à l'adresse du compte (`Reply-To`). Le Studio dit « envoyée ».
+3. **Relance** : sur cette facture, *Relancer*, destinataire votre adresse, *Envoyer*. L'e-mail arrive de « *Nom de l'entreprise* via facturx » `<relances@ibird.dev>`, avec le PDF joint, et y répondre écrit à l'adresse du compte (`Reply-To`). Le Studio dit « envoyée ».
 4. Les contrôles du déploiement déjà vus : migrations appliquées depuis la base vide (1.7) ; `deno.lock` en version 5 accepté au déploiement (l'étape *Edge Functions* a réussi ; sinon, voir la section 5) ; `postgres` lit `storage.objects` et la tâche `purger-chaque-nuit` est là (1.8).
 
 ### 1.11 Confirmer D74 sur le projet déployé
