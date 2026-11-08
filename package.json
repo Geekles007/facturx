@@ -22,7 +22,11 @@
     "downloads:fetch": "node scripts/fetch-npm-downloads.mjs",
     "site:build": "node scripts/build-site.mjs",
     "site:dist": "pnpm build && pnpm validator:fetch && pnpm downloads:fetch && pnpm site:build",
-    "site:check": "tsc --noEmit -p tsconfig.site.json && vitest run --config vitest.site.config.mts && pnpm site:build"
+    "site:check": "tsc --noEmit -p tsconfig.site.json && vitest run --config vitest.site.config.mts && pnpm site:build",
+    "compte:preparer": "node scripts/compte-preparer.mjs",
+    "compte:polices": "node scripts/compte-polices.mjs",
+    "compte:start": "supabase start",
+    "compte:test": "node scripts/compte-test.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
@@ -32,9 +36,12 @@
     "@expo-google-fonts/libre-baskerville": "^0.4.3",
     "@expo-google-fonts/source-serif-4": "^0.4.1",
     "@pdf-lib/fontkit": "^1.1.1",
+    "@supabase/supabase-js": "^2.118.0",
     "@types/node": "^22.20.2",
     "esbuild": "^0.28.2",
     "facturx-sdk": "workspace:*",
+    "fake-indexeddb": "^6.2.7",
+    "fflate": "0.8.3",
     "geist": "^1.7.2",
     "pdf-lib": "^1.17.1",
     "preact": "^10.29.8",

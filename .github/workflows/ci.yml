@@ -5,6 +5,14 @@ on:
     branches: [main]
   pull_request:
 
+# veraPDF, épinglé : la version que CI tire, et non `latest`, qui changerait sous les tests. Le shim
+# scripts/verapdf lit VERAPDF_IMAGE. v1.31.217 est le `latest` du 7 novembre 2026 (même empreinte,
+# sha256:635c849e…) ; la version tirée jusque-là en local, v1.31.169, n'est plus dans le registre, qui
+# ne garde que ses dernières versions (dix ce jour-là, de v1.31.208 à v1.31.217) : quand
+# `docker pull` ne trouve plus celle-ci, la remonter à une version publiée.
+env:
+  VERAPDF_IMAGE: ghcr.io/verapdf/cli:v1.31.217
+
 jobs:
   ci:
     runs-on: ubuntu-latest
@@ -39,7 +47,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends libxml2-utils >/dev/null
       - name: veraPDF (shim Docker) dans le PATH
         run: |
-          docker pull --quiet ghcr.io/verapdf/cli:latest
+          docker pull --quiet "$VERAPDF_IMAGE"
           echo "$GITHUB_WORKSPACE/scripts" >> "$GITHUB_PATH"
       - run: pnpm lint
       - run: pnpm typecheck
@@ -48,3 +56,63 @@ jobs:
       - name: Validateur en ligne (types, tests, bundle)
         run: pnpm site:check
       - run: pnpm examples:check
+
+  # Le compte : les tests pgTAP (supabase/tests) et ceux des Edge Functions (supabase/functions/tests)
+  # contre une pile Supabase locale. Node 24 seulement : la matrice du job `ci` éprouve déjà le SDK.
+  compte:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: CLI Supabase
+        # `@v1` installe le CLI 2.20.3 sans `version` ; on épingle celui avec lequel config.toml a été écrit.
+        uses: supabase/setup-cli@v1
+        with:
+          version: 3.0.0
+      - uses: denoland/setup-deno@v2
+      - name: veraPDF (shim Docker) dans le PATH
+        run: |
+          docker pull --quiet "$VERAPDF_IMAGE"
+          echo "$GITHUB_WORKSPACE/scripts" >> "$GITHUB_PATH"
+      # Avant la pile : `supabase start` lit les fonctions, dont les modules partagés que
+      # `compte:preparer` copie dans supabase/functions/_vendor/ (ignoré par git).
+      - name: SDK, Studio et modules partagés des fonctions
+        run: pnpm build && pnpm site:build && pnpm compte:preparer
+      - name: Pile Supabase locale (sans les services inutiles aux tests)
+        run: supabase start -x studio,imgproxy,vector,logflare,supavisor
+      - name: Outils de mesure de D74 (types)
+        # Ils ne servent qu'à la mise en production (docs/compte.md, 1.11) : vérifier leurs types ici
+        # garde leurs imports d'accord avec les fonctions. La fonction de mesure se vérifie à la place
+        # où on la copie pour la déployer (dossier ignoré), puis la copie est retirée.
+        run: |
+          mkdir -p supabase/functions/mesure-rendu
+          cp supabase/mesure-rendu/fonction/index.ts supabase/functions/mesure-rendu/index.ts
+          deno check --config supabase/functions/deno.json supabase/mesure-rendu/mesurer.ts \
+            supabase/functions/mesure-rendu/index.ts
+          rm -r supabase/functions/mesure-rendu
+      - name: Tests du Studio contre la pile (persistance du compte)
+        # L'adresse et les clés de la pile viennent de `supabase status`, masquées avant tout usage :
+        # aucune n'apparaît dans le journal. Sans elles, les tests seraient sautés : l'étape échoue.
+        run: |
+          while IFS='=' read -r nom valeur; do
+            valeur="${valeur%\"}"
+            valeur="${valeur#\"}"
+            case "$nom" in
+              API_URL) export SUPABASE_URL="$valeur" ;;
+              ANON_KEY) echo "::add-mask::$valeur"; export SUPABASE_ANON_KEY="$valeur" ;;
+              SERVICE_ROLE_KEY) echo "::add-mask::$valeur"; export SUPABASE_SERVICE_ROLE_KEY="$valeur" ;;
+            esac
+          done < <(supabase status -o env)
+          : "${SUPABASE_URL:?}" "${SUPABASE_ANON_KEY:?}" "${SUPABASE_SERVICE_ROLE_KEY:?}"
+          pnpm exec vitest run --config vitest.site.config.mts site-src/studio/compte
+      - name: Tests de la base et des fonctions (le PDF émis passe veraPDF), émissions réelles du Studio
+        # `compte:test` sert les fonctions, puis y lance aussi les émissions réelles du Studio
+        # (emission-pile.test.ts, FACTURX_EMETTRE=1), sautées à l'étape précédente.
+        run: pnpm compte:test
+        env:
+          VERAPDF: '1'

@@ -1,0 +1,11 @@
+{
+  "imports": {
+    "facturx-sdk": "./_vendor/facturx-sdk/index.js",
+    "facturx-sdk/pdf": "./_vendor/facturx-sdk/pdf.js",
+    "pdf-lib": "npm:pdf-lib@1.17.1",
+    "@pdf-lib/fontkit": "npm:@pdf-lib/fontkit@1.1.1",
+    "postgres": "npm:postgres@3.4.9",
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2.118.0",
+    "@std/assert": "jsr:@std/assert@1.0.19"
+  }
+}

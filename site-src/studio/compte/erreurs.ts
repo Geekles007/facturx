@@ -1,0 +1,154 @@
+/**
+ * Ce que le Studio fait d'un refus des Edge Functions (spec § 13). Chaque réponse
+ * `{ code, message, details? }` devient une réaction : renvoyer à la connexion, dire quelque chose,
+ * recharger le brouillon, ouvrir l'onglet Contrôle sur les anomalies, ou indiquer les dates admises.
+ *
+ * Les phrases sont celles de l'interface (`i18n.ts`), jamais le `message` du serveur, qui n'est
+ * qu'en français ; les détails utiles (dates, numéro, identifiant de requête, heure) y passent. Les
+ * anomalies (422) gardent le leur, sauf celles que l'interface sait dire (`AVOIR_DEVISE`). Un
+ * code inconnu, ou des détails mal formés, donnent un message générique : jamais une exception.
+ * Chaque parcours (émettre, relancer, importer) dit en plus ce que le refus laisse intact.
+ */
+
+import type { Issue as IssueDuSdk } from 'facturx-sdk';
+import { formatDate, t } from '../i18n.js';
+
+/**
+ * Une anomalie au format des `Issue` du SDK, que le serveur rend dans `details` (422) ; il y ajoute
+ * ses propres codes (`CORPS`, `ORIGINE`, `FICHIER`…) et des chemins hors de la facture
+ * (`appearance.*`, `brouillonId`, `''`).
+ */
+export type Issue = Pick<IssueDuSdk, 'path' | 'message'> & { code: string };
+
+export type Reaction =
+  | { kind: 'connexion' }
+  /** `action` : ce que le message propose de faire (§ 13 : renvoyer la confirmation). */
+  | { kind: 'message'; texte: string; action?: 'renvoyerConfirmation' }
+  | { kind: 'recharger'; texte: string }
+  | { kind: 'controle'; issues: Issue[] }
+  /** Un avoir dans une autre devise que la facture qu'il cite (Ruling 49) : la devise à corriger. */
+  | { kind: 'devise'; issues: Issue[] }
+  | { kind: 'date'; min?: string; max: string };
+
+const estObjet = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+const DATE_ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Le champ texte `cle` des détails, s'il y en a un. */
+function texteDe(details: unknown, cle: string): string | undefined {
+  const valeur = estObjet(details) ? details[cle] : undefined;
+  return typeof valeur === 'string' && valeur !== '' ? valeur : undefined;
+}
+
+/** Les anomalies lisibles de `details` ; une entrée qui n'a pas la forme d'une `Issue` est écartée. */
+function anomalies(details: unknown): Issue[] {
+  if (!Array.isArray(details)) return [];
+  return details.flatMap((d): Issue[] =>
+    estObjet(d) &&
+    typeof d.code === 'string' &&
+    typeof d.path === 'string' &&
+    typeof d.message === 'string'
+      ? [{ code: d.code, path: d.path, message: messageDeLAnomalie(d) ?? d.message }]
+      : [],
+  );
+}
+
+const entierPositif = (v: unknown): v is number => Number.isInteger(v) && (v as number) > 0;
+
+/**
+ * La phrase de l'interface pour une anomalie que le serveur détaille : un logo trop grand en pixels
+ * (`FICHIER`, `details` : ses dimensions et le plafond, Ruling 62). Rien pour les autres, ou pour des
+ * détails mal formés : la phrase du serveur reste.
+ */
+function messageDeLAnomalie(d: Record<string, unknown>): string | undefined {
+  const details = d.details;
+  if (d.code !== 'FICHIER' || !estObjet(details) || !estObjet(details.plafond)) return undefined;
+  const { largeur, hauteur } = details;
+  const plafond = details.plafond;
+  if (
+    !entierPositif(largeur) ||
+    !entierPositif(hauteur) ||
+    !entierPositif(plafond.largeur) ||
+    !entierPositif(plafond.hauteur)
+  ) {
+    return undefined;
+  }
+  return t.compte.erreurs.logoDimensions(largeur, hauteur, plafond.largeur, plafond.hauteur);
+}
+
+/**
+ * La fin de l'attente (`reessayerApres`, ISO), à l'heure de ce navigateur et dans la langue de
+ * l'interface : l'heure seule si c'est aujourd'hui, sinon la date et l'heure (une relance attend
+ * jusqu'à trois jours ; l'heure seule se lirait comme celle d'aujourd'hui). Rien si elle est illisible.
+ */
+export function finDAttente(details: unknown, maintenant = new Date()): string | undefined {
+  const iso = texteDe(details, 'reessayerApres');
+  const date = iso ? new Date(iso) : undefined;
+  if (!date || Number.isNaN(date.getTime())) return undefined;
+  const heure = date.toLocaleTimeString(t.lang === 'fr' ? 'fr-FR' : 'en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  if (date.toDateString() === maintenant.toDateString()) return heure;
+  const jour = [date.getFullYear(), date.getMonth() + 1, date.getDate()]
+    .map((n) => String(n).padStart(2, '0'))
+    .join('-');
+  return t.compte.erreurs.dateEtHeure(formatDate(jour), heure);
+}
+
+/** La réaction du Studio au refus `corps`, de statut `statut`. Ne lève jamais. */
+export function reaction(
+  statut: number,
+  corps: { code: string; message: string; details?: unknown },
+): Reaction {
+  const phrases = t.compte.erreurs;
+  const message = (texte: string): Reaction => ({ kind: 'message', texte });
+  const { code, details } = corps;
+  if (statut === 401 || code === 'SESSION') return { kind: 'connexion' };
+  // Le corps trop grand (`ANOMALIES`, chemin vide) : ce qui se corrige, ce sont les pièces jointes.
+  if (statut === 413) return message(phrases.tropGros);
+  switch (code) {
+    case 'NON_CONFIRME':
+      return { kind: 'message', texte: phrases.nonConfirme, action: 'renvoyerConfirmation' };
+    case 'SUPPRESSION':
+      return message(phrases.suppression);
+    case 'DROITS':
+      return message(phrases.droits);
+    case 'BROUILLON_MODIFIE':
+      return { kind: 'recharger', texte: phrases.brouillonModifie };
+    case 'DATE': {
+      const max = texteDe(details, 'max');
+      const min = texteDe(details, 'min');
+      if (!max || !DATE_ISO.test(max)) return message(phrases.date);
+      return min && DATE_ISO.test(min) ? { kind: 'date', min, max } : { kind: 'date', max };
+    }
+    case 'DOUBLON':
+      // `compteur: false` : le gabarit n'a pas de compteur, il n'y a pas de numéro suivant à attendre.
+      return message(
+        phrases.doublon(
+          texteDe(details, 'numero') ?? '',
+          !(estObjet(details) && details.compteur === false),
+        ),
+      );
+    case 'PDF_DEJA_DEPOSE':
+      return message(phrases.pdfDejaDepose);
+    case 'ANOMALIES': {
+      // `AVOIR_DEVISE` se dit dans la langue de l'interface, et mène à la devise.
+      const issues = anomalies(details).map((i) =>
+        i.code === 'AVOIR_DEVISE' ? { ...i, message: phrases.avoirDevise } : i,
+      );
+      return issues.some((i) => i.code === 'AVOIR_DEVISE')
+        ? { kind: 'devise', issues }
+        : { kind: 'controle', issues };
+    }
+    case 'LIMITE':
+      return message(phrases.limite(finDAttente(details)));
+    case 'ENVOI':
+      return message(phrases.envoi);
+    case 'INTERNE':
+      return message(phrases.interne(texteDe(details, 'requete')));
+    default:
+      return message(phrases.inconnue);
+  }
+}

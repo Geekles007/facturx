@@ -4,7 +4,7 @@
  * numérotation : un numéro émis ne se réutilise pas, la séquence avance d'un cran à chaque émission.
  */
 
-import { centsToString, DepositError, withDeposits } from 'facturx-sdk';
+import { centsToString, DepositError, isCreditNoteType, withDeposits } from 'facturx-sdk';
 import { putFile } from './files.js';
 import { t } from './i18n.js';
 import {
@@ -16,10 +16,12 @@ import {
   type SavedInvoice,
 } from './library.js';
 import { buildInvoice, type InvoiceForm, isoToday, uid } from './model.js';
+import { ErreurConservation, estDuCompte } from './persistence.js';
 import type { Assets } from './pipeline.js';
 import { buildFacturX, download, fileStem } from './pipeline.js';
+import { fragmentNonCharge } from './rechargement.js';
 import { storage } from './storage.js';
-import { store, toast, ui } from './store.js';
+import { brouillonAffiche, enregistrerMaintenant, store, toast, ui } from './store.js';
 
 /** Nouveaux identifiants d'interface pour chaque élément de liste d'un formulaire copié. */
 function refreshUids(form: InvoiceForm): InvoiceForm {
@@ -70,6 +72,24 @@ export function creditNoteForm(original: InvoiceForm, today = isoToday()): Invoi
 }
 
 /**
+ * Les factures de l'historique qu'un avoir cite et qui ne sont pas dans sa devise (Ruling 49) : un
+ * avoir est dans la devise de la facture qu'il corrige, et le serveur refuse d'émettre les autres.
+ * Rien pour un document qui n'est pas un avoir, ni pour une facture citée hors de l'historique.
+ */
+export function citeesDansUneAutreDevise(
+  form: InvoiceForm,
+  history: readonly SavedInvoice[],
+): { numero: string; devise: string }[] {
+  if (!isCreditNoteType(form.typeCode)) return [];
+  return form.references.precedingInvoices.flatMap((citee) => {
+    const facture = history.find((h) => h.summary.id === citee.id.trim());
+    return facture && facture.summary.currency !== form.currency
+      ? [{ numero: facture.summary.id, devise: facture.summary.currency }]
+      : [];
+  });
+}
+
+/**
  * Facture définitive après acomptes : `withDeposits` fixe le cadre `B4`/`S4`/`M4`, référence
  * chaque acompte et calcule le montant déjà versé, que la facture déduit.
  */
@@ -100,8 +120,21 @@ export function balanceForm(deposits: SavedInvoice[], today = isoToday()): Invoi
 /**
  * Émet la facture courante : PDF Factur-X produit, conservé et téléchargé, facture ajoutée à
  * l'historique, numérotation avancée. Refuse un numéro déjà émis.
+ *
+ * En mode compte, c'est le serveur qui émet (`compte/emission.ts`, chargé à la demande) : il
+ * attribue le numéro, valide la facture et produit son PDF. Le PDF « sans émettre » (`record`
+ * faux), qui n'enregistre rien, reste produit ici.
  */
 export async function issueInvoice(assets: Assets, options: { record: boolean }): Promise<boolean> {
+  if (options.record && store.get().ui.compte) {
+    const emission = await import('./compte/emission.js').catch(() => undefined);
+    if (!emission) {
+      // Le navigateur garde l'échec : chaque nouvel essai échouerait aussitôt, jusqu'au rechargement.
+      fragmentNonCharge(t.compte.emission.chargement);
+      return false;
+    }
+    return emission.emettreSurServeur();
+  }
   const { form, appearance, history, numbering } = store.get();
   const { invoice } = buildInvoice(form);
   if (options.record && history.some((h) => h.form.id.trim() === form.id.trim())) {
@@ -163,8 +196,110 @@ export function openIssued(saved: SavedInvoice): void {
   }));
 }
 
-/** Remplace la facture affichée par un nouveau brouillon. */
-export function startDraft(form: InvoiceForm, appearance?: Appearance): void {
+/** Pourquoi la saisie du brouillon ouvert n'est pas partie, sans encore la dire. */
+export type CauseEnAttente =
+  | { cause: 'injoignable' | 'session' | 'supprime' | 'conflit' | 'reseau' | 'enCours' }
+  | { cause: 'refus'; detail: string }
+  | { cause: 'inconnue'; detail: string | undefined };
+
+/**
+ * Pourquoi la saisie du brouillon ouvert n'est pas partie, d'après ce que le magasin en sait et
+ * `raison` (un code de la conservation) : une seule source, dans un seul ordre, pour le refus de
+ * changer de document (`messageEnAttente`) et pour l'émission qui ne peut pas partir.
+ */
+export function causeEnAttente(raison?: string): CauseEnAttente {
+  const s = store.get().ui;
+  if (s.storage === 'injoignable') return { cause: 'injoignable' };
+  if (s.compte?.session === 'expiree' || raison === 'SESSION') return { cause: 'session' };
+  if (s.conflit === 'supprime') return { cause: 'supprime' };
+  if (s.conflit || raison === 'BROUILLON_MODIFIE') return { cause: 'conflit' };
+  if (s.brouillonRefuse !== undefined) return { cause: 'refus', detail: s.brouillonRefuse };
+  if (s.reseau === 'hors-ligne' || raison === 'RESEAU') return { cause: 'reseau' };
+  if (raison === 'EN_COURS') return { cause: 'enCours' };
+  return { cause: 'inconnue', detail: raison };
+}
+
+/** Pourquoi la saisie du brouillon ouvert n'est pas partie (`raison` : un code de la conservation). */
+export function messageEnAttente(raison?: string): string {
+  const phrases = t.compte.conservation.enAttente;
+  const c = causeEnAttente(raison);
+  switch (c.cause) {
+    case 'refus':
+      return phrases.refus(c.detail);
+    case 'inconnue':
+      return phrases.refus(c.detail ?? '');
+    default:
+      return phrases[c.cause];
+  }
+}
+
+/**
+ * En mode compte, avant de quitter le brouillon ouvert : sa saisie part au serveur, et l'on attend
+ * la fin des envois. Faux, avec un message qui dit pourquoi, si elle ne peut pas partir (hors
+ * ligne, session expirée, conflit, refus) : changer de document la perdrait, on reste donc sur
+ * lui. Sans compte, toujours vrai.
+ */
+export async function quitterLeBrouillon(): Promise<boolean> {
+  if (!store.get().ui.compte || !estDuCompte(storage)) return true;
+  if (!(await enregistrerMaintenant())) {
+    toast(messageEnAttente(), 'error', 9000);
+    return false;
+  }
+  await storage.envoisTermines();
+  return true;
+}
+
+/** Au-delà, on renonce à rattraper une saisie qui ne cesse de changer pendant les envois. */
+const ESSAIS_DE_BASCULE = 10;
+
+/**
+ * Bascule vers un autre document sans rien perdre de la saisie : on enregistre, puis `basculer`
+ * vérifie et change de document d'un seul tenant, sans rien attendre — aucune frappe ne peut
+ * s'intercaler entre la vérification et l'éditeur. Si l'on a tapé pendant l'envoi, la
+ * vérification échoue (`basculer` rend faux, ou lève `EN_ATTENTE`/`EN_COURS`) et l'on recommence.
+ * Faux, avec un message, si la saisie ne peut pas partir. Sans compte, `basculer` seul.
+ */
+export async function changerDeDocument(
+  basculer: () => boolean | Promise<boolean>,
+): Promise<boolean> {
+  if (!store.get().ui.compte || !estDuCompte(storage)) return basculer();
+  for (let essai = 1; ; essai++) {
+    if (!(await quitterLeBrouillon())) return false;
+    try {
+      if (await basculer()) return true;
+    } catch (erreur) {
+      const raison = erreur instanceof ErreurConservation ? erreur.detail : undefined;
+      if (raison !== 'EN_COURS') throw erreur;
+    }
+    if (essai === ESSAIS_DE_BASCULE) {
+      toast(messageEnAttente('EN_COURS'), 'error', 9000);
+      return false;
+    }
+  }
+}
+
+/**
+ * Remplace la facture affichée par un nouveau brouillon. En mode compte, c'en est un de plus : le
+ * brouillon ouvert part d'abord au serveur et reste dans la liste ; s'il ne peut pas partir, rien
+ * ne change et le Studio dit pourquoi. Vrai si la facture a été remplacée. Sans compte, rien
+ * n'attend : le remplacement est immédiat, comme toujours.
+ */
+export function startDraft(form: InvoiceForm, appearance?: Appearance): Promise<boolean> {
+  return changerDeDocument(() => {
+    // Synchrone : on ne quitte le brouillon qu'au moment où l'éditeur change.
+    if (
+      estDuCompte(storage) &&
+      store.get().ui.compte &&
+      !storage.quitterBrouillon(brouillonAffiche())
+    )
+      return false;
+    remplacer(form, appearance);
+    return true;
+  });
+}
+
+/** Remplace la facture affichée, tout de suite (sans rien enregistrer ni vérifier avant). */
+export function remplacer(form: InvoiceForm, appearance?: Appearance): void {
   store.set((s) => ({
     form,
     ...(appearance ? { appearance } : {}),
@@ -174,6 +309,7 @@ export function startDraft(form: InvoiceForm, appearance?: Appearance): void {
       library: undefined,
       tab: 'content',
       sample: false,
+      conflit: false,
       focus: undefined,
     },
   }));

@@ -856,6 +856,160 @@ footer {
   color: var(--fg);
 }
 
+/* Pages juridiques : CGU, confidentialité, sous-traitance */
+.legal {
+  padding: 56px 0 96px;
+}
+.legal .wrap {
+  max-width: 820px;
+}
+.legal h1 {
+  margin-top: 22px;
+  font-size: clamp(30px, 4.4vw, 48px);
+  letter-spacing: -0.035em;
+}
+.legal .lede {
+  margin-top: 18px;
+}
+.legal-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 28px;
+}
+.legal-lien {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 14px;
+  color: var(--muted);
+  transition:
+    color 0.2s var(--ease),
+    border-color 0.2s var(--ease);
+}
+.legal-lien:hover {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+.legal-lien[aria-current="page"] {
+  color: var(--fg);
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+.legal section {
+  margin-top: 48px;
+  scroll-margin-top: 80px;
+}
+.legal h2 {
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+.table-scroll {
+  overflow-x: auto;
+}
+.legal ul,
+.legal ol {
+  margin: 0;
+  padding-left: 1.3em;
+}
+.legal li + li {
+  margin-top: 8px;
+}
+.legal li::marker {
+  color: var(--faint);
+}
+.legal h2 + *,
+.legal p + p,
+.legal p + ul,
+.legal p + ol,
+.legal ul + p,
+.legal ol + p,
+.legal .table-scroll + p,
+.legal p + .table-scroll {
+  margin-top: 14px;
+}
+.legal code {
+  font-size: 0.9em;
+}
+
+/* Tableaux : des colonnes sur grand écran, des fiches empilées sur téléphone */
+.legal table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.legal th,
+.legal td {
+  padding: 10px 16px 10px 0;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.legal th {
+  font: 500 12px / 1.3 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.legal td:first-child {
+  font-weight: 600;
+}
+@media (max-width: 640px) {
+  .legal table.stack thead {
+    position: absolute;
+    left: -9999px;
+  }
+  .legal table.stack,
+  .legal table.stack tbody,
+  .legal table.stack tr,
+  .legal table.stack td {
+    display: block;
+  }
+  .legal table.stack tr {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .legal table.stack td {
+    padding: 2px 0;
+    border: 0;
+  }
+  .legal table.stack td::before {
+    content: attr(data-label);
+    display: block;
+    font: 500 11px / 1.4 var(--mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  .legal table.stack td + td {
+    margin-top: 6px;
+  }
+}
+
+/* La variante d'une page pour un site construit sans compte (scripts/publier-site.mjs la garde et
+   retire ce qui est marqué data-compte) : cachée dans les pages telles que le dépôt les sert. */
+[data-sans-compte] {
+  display: none;
+}
+
+/* Ce que l'éditeur doit encore renseigner : visible, jamais confondu avec le texte */
+.a-completer {
+  padding: 12px 14px;
+  border: 1px dashed var(--d);
+  border-left: 3px solid var(--d);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--d) 14%, transparent);
+  font-size: 14.5px;
+}
+span.a-completer {
+  padding: 1px 6px;
+  border-width: 1px;
+  border-radius: 4px;
+  font-size: inherit;
+}
+
 /* Reveal */
 .js .reveal {
   opacity: 0;

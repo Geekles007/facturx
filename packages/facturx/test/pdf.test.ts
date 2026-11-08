@@ -1,10 +1,13 @@
 import {
   AFRelationship,
+  decodePDFRawStream,
   PDFArray,
+  PDFContext,
   PDFDict,
   PDFDocument,
   PDFHexString,
   PDFName,
+  PDFRawStream,
   PDFStream,
   type PDFString,
   StandardFonts,
@@ -23,6 +26,33 @@ import {
 import { multiRateInvoice, simpleInvoice } from './fixtures/invoices.js';
 
 const FIXED_DATE = new Date('2026-09-11T10:00:00.000Z');
+const MIB = 1024 * 1024;
+
+/**
+ * Lance `run` en notant le plus grand tampon que les décodeurs de pdf-lib ont demandé : tous
+ * l'agrandissent par `ensureBuffer`. Rend l'erreur levée, s'il y en a une.
+ */
+async function tampons(run: () => Promise<unknown>): Promise<{ max: number; erreur?: unknown }> {
+  const flux = decodePDFRawStream(
+    PDFRawStream.of(PDFContext.create().obj({ Filter: 'ASCIIHexDecode' }), new Uint8Array(0)),
+  );
+  let proto = Object.getPrototypeOf(flux);
+  while (proto && !Object.hasOwn(proto, 'ensureBuffer')) proto = Object.getPrototypeOf(proto);
+  const original = proto.ensureBuffer;
+  let max = 0;
+  proto.ensureBuffer = function (this: unknown, demande: number) {
+    max = Math.max(max, demande);
+    return original.call(this, demande);
+  };
+  try {
+    await run();
+    return { max };
+  } catch (erreur) {
+    return { max, erreur };
+  } finally {
+    proto.ensureBuffer = original;
+  }
+}
 
 async function makePdf(
   options: { title?: string; attachments?: Record<string, string> } = {},
@@ -265,6 +295,48 @@ describe('extractFacturX', () => {
     const truncated = new TextEncoder().encode('%PDF-1.4 document incomplet');
     await expect(extractFacturX(truncated)).rejects.toMatchObject({ code: 'INVALID_PDF' });
     await expect(extractFacturX(truncated)).rejects.toBeInstanceOf(FacturXPdfError);
+  });
+
+  it('ne décompresse pas une pièce Factur-X au-delà de xmlBytes (bombe de décompression)', async () => {
+    // Quelques Ko compressés, 8 Mio une fois gonflés : le décodage doit s'arrêter près de la limite,
+    // pas après avoir tout décompressé.
+    const doc = await PDFDocument.create({ updateMetadata: false });
+    doc.addPage();
+    await doc.attach(new Uint8Array(8 * MIB).fill(0x20), 'factur-x.xml', {
+      mimeType: 'text/xml',
+      afRelationship: AFRelationship.Alternative,
+    });
+    const pdf = await doc.save();
+    expect(pdf.byteLength).toBeLessThan(100_000);
+    const plusGrand = await tampons(() => extractFacturX(pdf, { limits: { xmlBytes: MIB } }));
+    expect(plusGrand.erreur).toMatchObject({ code: 'TOO_LARGE' });
+    expect(plusGrand.max).toBeLessThanOrEqual(2 * MIB);
+  });
+
+  it('ne décompresse pas un flux d’objets au-delà de pdfBytes au chargement', async () => {
+    const doc = await PDFDocument.create({ updateMetadata: false });
+    doc.addPage();
+    // Le titre, en UTF-16 hexadécimal, pèse 8 Mio dans le flux d'objets, compressé en quelques Ko.
+    doc.setTitle('x'.repeat(2 * MIB));
+    const pdf = await doc.save({ useObjectStreams: true });
+    expect(pdf.byteLength).toBeLessThan(MIB);
+    const plusGrand = await tampons(() => extractFacturX(pdf, { limits: { pdfBytes: MIB } }));
+    expect(plusGrand.erreur).toMatchObject({ code: 'TOO_LARGE' });
+    expect(plusGrand.max).toBeLessThanOrEqual(2 * MIB);
+  });
+
+  it('readXmp ne décompresse pas les métadonnées au-delà de la limite donnée', async () => {
+    const doc = await PDFDocument.create({ updateMetadata: false });
+    doc.addPage();
+    const flux = doc.context.flateStream(new Uint8Array(8 * MIB).fill(0x20), {
+      Type: 'Metadata',
+      Subtype: 'XML',
+    });
+    doc.catalog.set(PDFName.of('Metadata'), doc.context.register(flux));
+    const relu = await PDFDocument.load(await doc.save(), { updateMetadata: false });
+    const plusGrand = await tampons(async () => readXmp(relu, MIB));
+    expect(plusGrand.erreur).toMatchObject({ code: 'TOO_LARGE' });
+    expect(plusGrand.max).toBeLessThanOrEqual(2 * MIB);
   });
 
   it('retrouve une pièce ZUGFeRD en repli, sans niveau de conformité', async () => {

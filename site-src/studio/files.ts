@@ -1,16 +1,34 @@
 /**
  * Fichiers de l'utilisateur (logo, polices importées) : gardés en mémoire pour la session, et
- * dans IndexedDB quand il répond. Ils ne sont envoyés nulle part.
+ * conservés quand la conservation répond — dans IndexedDB sans compte, sur le serveur avec un
+ * compte (un échec s'y voit et l'écriture repart, comme le reste : `conserver`).
  */
 
+import { PLAFOND_LOGO } from '../shared/image.js';
+import { t } from './i18n.js';
 import { storage } from './storage.js';
-import { store } from './store.js';
+import { conserver, estEnAttente, store, toast } from './store.js';
 
 const memory = new Map<string, Uint8Array>();
 
-export async function putFile(key: string, bytes: Uint8Array): Promise<void> {
+/**
+ * Garde le fichier pour la session et le conserve. Avec un compte, rend faux si le serveur le
+ * refuse (`conserver` a dit pourquoi), ou s'il n'a pas répondu au démarrage (`injoignable` :
+ * rien n'y part avant son retour) : l'appelant ne l'applique pas. Hors ligne ou session expirée, le
+ * dépôt attend et repart au retour du réseau ou après la reconnexion : il compte comme gardé. Sans
+ * compte, la copie en mémoire suffit à la session, comme toujours.
+ */
+export async function putFile(key: string, bytes: Uint8Array): Promise<boolean> {
   memory.set(key, bytes);
-  if (store.get().ui.storage === 'ok') await storage.setFile(key, bytes).catch(() => undefined);
+  const { storage: etat, compte } = store.get().ui;
+  if (compte && etat === 'injoignable') {
+    toast(t.compte.conservation.injoignableFichier, 'error');
+    return false;
+  }
+  if (etat !== 'ok') return true;
+  const cle = `files:${key}`;
+  if (await conserver(cle, () => storage.setFile(key, bytes))) return true;
+  return store.get().ui.compte === undefined || estEnAttente(cle);
 }
 
 export async function getFile(key: string): Promise<Uint8Array | undefined> {
@@ -33,9 +51,29 @@ function loadImage(url: string): Promise<HTMLImageElement> {
 }
 
 /**
+ * La taille où un logo est redessiné : 480 pixels de haut au plus (120 points sur la page, à 4 pixels
+ * par point : bien assez pour l'impression ; un SVG y est rastérisé), et `PLAFOND_LOGO` en largeur —
+ * un logo très allongé est réduit d'autant, plutôt que refusé par le compte (Ruling 62).
+ */
+export function tailleDuLogo(
+  natural: { width: number; height: number },
+  isSvg: boolean,
+): { width: number; height: number } {
+  const maxHeight = 480;
+  const ratio = natural.width / natural.height;
+  let height = isSvg ? maxHeight : Math.min(natural.height, maxHeight);
+  let width = Math.round(height * ratio);
+  if (width > PLAFOND_LOGO.largeur) {
+    width = PLAFOND_LOGO.largeur;
+    height = width / ratio;
+  }
+  return { width: Math.max(1, width), height: Math.max(1, Math.round(height)) };
+}
+
+/**
  * Prépare un logo pour le PDF : un SVG est rastérisé en PNG (pdf-lib n'embarque que PNG et JPEG),
- * une image démesurée est réduite, et tout sort en PNG 8 bits ou en JPEG — des formats que
- * PDF/A accepte sans discussion. La transparence est conservée.
+ * une image démesurée est réduite (`tailleDuLogo`), et tout sort en PNG 8 bits ou en JPEG — des
+ * formats que PDF/A accepte sans discussion. La transparence est conservée.
  */
 export async function normalizeLogo(
   file: File,
@@ -46,14 +84,10 @@ export async function normalizeLogo(
   try {
     const image = await loadImage(url);
     const natural = { width: image.naturalWidth || 600, height: image.naturalHeight || 300 };
-    // 120 points de haut au plus sur la page, à 4 pixels par point : bien assez pour l'impression.
-    const maxHeight = 480;
-    const ratio = natural.width / natural.height;
-    const height = isSvg ? maxHeight : Math.min(natural.height, maxHeight);
-    const width = Math.round(height * ratio);
+    const { width, height } = tailleDuLogo(natural, isSvg);
     const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, width);
-    canvas.height = Math.max(1, Math.round(height));
+    canvas.width = width;
+    canvas.height = height;
     const context = canvas.getContext('2d');
     if (!context) throw new Error('canvas indisponible');
     if (isJpeg) {

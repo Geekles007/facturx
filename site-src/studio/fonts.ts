@@ -7,6 +7,7 @@
  * largeurs calculées par la mise en page sont celles des glyphes que le navigateur dessine.
  */
 
+import { FICHIERS_POLICES } from '../shared/polices.js';
 import { pageBase } from '../validateur/base.js';
 
 export interface FontFamily {
@@ -20,61 +21,61 @@ export interface FontFamily {
   source: { regular: string; bold: string };
 }
 
+/** Fichiers d'une famille, tels que `shared/polices.ts` les déclare (les fonctions lisent la même table). */
+function files(id: string): { regular: string; bold: string } {
+  const found = FICHIERS_POLICES[id];
+  if (!found) throw new Error(`famille sans fichiers dans FICHIERS_POLICES : ${id}`);
+  return found;
+}
+
 export const FONT_FAMILIES: FontFamily[] = [
   {
     id: 'geist',
     name: 'Geist',
     kind: 'sans',
-    regular: 'geist-regular.ttf',
-    bold: 'geist-semibold.ttf',
+    ...files('geist'),
     source: { regular: 'Geist-Regular.ttf', bold: 'Geist-SemiBold.ttf' },
   },
   {
     id: 'inter',
     name: 'Inter',
     kind: 'sans',
-    regular: 'inter-regular.ttf',
-    bold: 'inter-semibold.ttf',
+    ...files('inter'),
     source: { regular: 'Inter-Regular.ttf', bold: 'Inter-SemiBold.ttf' },
   },
   {
     id: 'plex',
     name: 'IBM Plex Sans',
     kind: 'sans',
-    regular: 'plex-regular.ttf',
-    bold: 'plex-semibold.ttf',
+    ...files('plex'),
     source: { regular: 'IBMPlexSans-Regular.ttf', bold: 'IBMPlexSans-SemiBold.ttf' },
   },
   {
     id: 'dm-sans',
     name: 'DM Sans',
     kind: 'sans',
-    regular: 'dmsans-regular.ttf',
-    bold: 'dmsans-semibold.ttf',
+    ...files('dm-sans'),
     source: { regular: 'DMSans-Regular.ttf', bold: 'DMSans-SemiBold.ttf' },
   },
   {
     id: 'source-serif',
     name: 'Source Serif 4',
     kind: 'serif',
-    regular: 'sourceserif-regular.ttf',
-    bold: 'sourceserif-semibold.ttf',
+    ...files('source-serif'),
     source: { regular: 'SourceSerif4-Regular.ttf', bold: 'SourceSerif4-SemiBold.ttf' },
   },
   {
     id: 'baskerville',
     name: 'Libre Baskerville',
     kind: 'serif',
-    regular: 'baskerville-regular.ttf',
-    bold: 'baskerville-bold.ttf',
+    ...files('baskerville'),
     source: { regular: 'LibreBaskerville-Regular.ttf', bold: 'LibreBaskerville-Bold.ttf' },
   },
   {
     id: 'geist-mono',
     name: 'Geist Mono',
     kind: 'mono',
-    regular: 'geistmono-regular.ttf',
-    bold: 'geistmono-semibold.ttf',
+    ...files('geist-mono'),
     source: { regular: 'GeistMono-Regular.ttf', bold: 'GeistMono-SemiBold.ttf' },
   },
 ];

@@ -11,7 +11,7 @@ import { useContext, useEffect, useId, useRef, useState } from 'preact/hooks';
 import { concerns } from './anchors.js';
 import type { Option } from './catalog.js';
 import { t } from './i18n.js';
-import { useStudio } from './store.js';
+import { ui, useStudio } from './store.js';
 
 // ---------- icônes ----------
 
@@ -180,18 +180,21 @@ interface InputProps {
   value: string;
   onValue: (value: string) => void;
   path?: string | undefined;
-  type?: 'text' | 'date' | 'email' | 'tel' | 'url';
+  type?: 'text' | 'date' | 'email' | 'password' | 'tel' | 'url';
   decimal?: boolean;
   suffix?: string;
   class?: string;
   placeholder?: string | undefined;
   disabled?: boolean;
+  /** Affiché et sélectionnable, mais pas modifiable (le numéro d'une facture en mode compte). */
+  readOnly?: boolean;
   autoComplete?: string;
   inputMode?: 'text' | 'numeric' | 'decimal' | 'email' | 'tel' | 'url';
   spellcheck?: boolean;
   maxLength?: number;
   'aria-label'?: string;
   'aria-invalid'?: boolean | undefined;
+  onBlur?: () => void;
 }
 
 export function Input({
@@ -213,6 +216,7 @@ export function Input({
       data-path={path}
       placeholder={rest.placeholder}
       disabled={rest.disabled}
+      readOnly={rest.readOnly}
       maxLength={rest.maxLength}
       aria-label={rest['aria-label']}
       aria-invalid={rest['aria-invalid']}
@@ -220,6 +224,7 @@ export function Input({
       autoComplete={rest.autoComplete ?? 'off'}
       spellcheck={decimal ? false : rest.spellcheck}
       onInput={(event) => onValue((event.currentTarget as HTMLInputElement).value)}
+      onBlur={rest.onBlur}
     />
   );
   if (!suffix) return input;
@@ -241,6 +246,8 @@ interface TextAreaProps {
   rows?: number;
   placeholder?: string;
   invalid?: boolean;
+  maxLength?: number;
+  disabled?: boolean;
 }
 
 export function TextArea({
@@ -251,6 +258,8 @@ export function TextArea({
   rows = 3,
   placeholder,
   invalid,
+  maxLength,
+  disabled,
 }: TextAreaProps) {
   return (
     <textarea
@@ -260,6 +269,8 @@ export function TextArea({
       value={value}
       data-path={path}
       placeholder={placeholder}
+      maxLength={maxLength}
+      disabled={disabled}
       aria-invalid={invalid || undefined}
       onInput={(event) => onValue((event.currentTarget as HTMLTextAreaElement).value)}
     />
@@ -404,6 +415,8 @@ export function Segmented<T extends string>({
 /** Attributs d'un bouton : ceux dont le Studio se sert. */
 interface ButtonAttrs {
   id?: string;
+  /** `submit` pour envoyer le formulaire qui contient le bouton ; `button` sinon. */
+  type?: 'button' | 'submit';
   class?: string;
   title?: string | undefined;
   disabled?: boolean | undefined;
@@ -637,6 +650,7 @@ export function Dialog({
   children,
   actions,
   wide,
+  fermable = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -644,6 +658,12 @@ export function Dialog({
   children: ComponentChildren;
   actions?: ComponentChildren;
   wide?: boolean;
+  /**
+   * Faux pendant une opération qui ne s'interrompt pas (l'émission) : ni Échap, ni la croix, ni un
+   * clic sur le fond ne ferment le dialogue ; s'il est fermé quand même (Échap répété, que le
+   * navigateur finit par imposer), il se rouvre.
+   */
+  fermable?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -657,22 +677,63 @@ export function Dialog({
     <dialog
       ref={ref}
       class={`dialog${wide ? ' wide' : ''}`}
-      onClose={onClose}
+      onCancel={(event) => {
+        if (!fermable) event.preventDefault();
+      }}
+      onClose={() => {
+        if (fermable) onClose();
+        else if (open) ref.current?.showModal();
+      }}
       onClick={(event) => {
-        if (event.target === ref.current) onClose();
+        if (fermable && event.target === ref.current) onClose();
       }}
     >
       {open && (
         <div class="dialog-inner">
           <header>
             <h2>{title}</h2>
-            <IconButton icon="x" label={t.app.close} onClick={onClose} />
+            <IconButton icon="x" label={t.app.close} onClick={onClose} disabled={!fermable} />
           </header>
           <div class="dialog-body">{children}</div>
           {actions && <footer>{actions}</footer>}
         </div>
       )}
     </dialog>
+  );
+}
+
+/**
+ * Le message du moment (`toast`), avec l'action qu'il propose ; l'application l'affiche, et l'écran
+ * d'un compte en suppression aussi.
+ */
+export function Toasts() {
+  const toastState = useStudio((s) => s.ui.toast);
+  if (!toastState) return null;
+  return (
+    <div
+      class={`toast ${toastState.kind}`}
+      role={toastState.kind === 'error' ? 'alert' : 'status'}
+      key={toastState.id}
+    >
+      <Icon
+        name={toastState.kind === 'error' ? 'alert' : toastState.kind === 'info' ? 'info' : 'check'}
+      />
+      <span>{toastState.text}</span>
+      {toastState.action && (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            const action = toastState.action;
+            ui({ toast: undefined });
+            void action?.run();
+          }}
+        >
+          {toastState.action.label}
+        </Button>
+      )}
+      <IconButton icon="x" label={t.app.close} onClick={() => ui({ toast: undefined })} />
+    </div>
   );
 }
 

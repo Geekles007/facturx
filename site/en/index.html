@@ -18,7 +18,7 @@
 <link rel="icon" href="../favicon.svg" type="image/svg+xml">
 <link rel="preload" href="../fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="../style.css">
-<script>document.documentElement.classList.add("js")</script>
+<script src="../classe-js.js"></script>
 </head>
 <body>
 <a class="skip" href="#content">Skip to content</a>
@@ -98,13 +98,14 @@
   <div class="wrap reveal">
     <div class="tryout-card">
       <div>
-        <p class="label">Studio · free, no account</p>
+        <p class="label">Studio · free<span data-compte>, with or without an account</span></p>
         <h2>Design your invoice your way. It stays compliant.</h2>
-        <p class="pitch">Six templates, your colour, your font, your logo, a SEPA payment QR code — and every mandatory statement, which no setting can remove. The Studio checks live with the official validators, produces the <b>Factur-X PDF</b> and shows the SDK code that does the same. Nothing leaves your browser.</p>
+        <p class="pitch">Six templates, your colour, your font, your logo, a SEPA payment QR code — and every mandatory statement, which no setting can remove. The Studio checks live with the official validators, produces the <b>Factur-X PDF</b> and shows the SDK code that does the same. Nothing you enter leaves your browser<span data-compte> without an account; with a free account, your invoices are kept on a server in Europe, with payment tracking and reminders</span>.</p>
       </div>
       <div class="tryout-actions">
         <a class="btn primary" href="studio/">Open the Studio <span aria-hidden="true">→</span></a>
-        <p class="fine">Invoices, credit notes, deposits · customers, catalogue and numbering kept on your machine</p>
+        <a class="btn" data-compte href="studio/?compte=creer">Create a free account</a>
+        <p class="fine">Invoices, credit notes, deposits · <span data-compte>without an account: </span>customers, catalogue and numbering stay on your machine</p>
       </div>
     </div>
     <div class="tryout-card">
@@ -286,6 +287,9 @@
     <nav class="foot-links" aria-label="Secondary links">
       <a class="foot-link" href="studio/">Studio</a>
       <a class="foot-link" href="validateur/">Validator</a>
+      <a class="foot-link" data-compte href="cgu/">Terms</a>
+      <a class="foot-link" href="confidentialite/">Privacy</a>
+      <a class="foot-link" data-compte href="sous-traitance/">Data processing</a>
       <a class="foot-link" href="https://github.com/Geekles007/facturx/blob/main/CHANGELOG.md">CHANGELOG</a>
       <a class="foot-link" href="https://github.com/Geekles007/facturx/blob/main/SECURITY.md">Security</a>
       <a class="foot-link" href="https://github.com/Geekles007/facturx/blob/main/README.en.md">Documentation</a>

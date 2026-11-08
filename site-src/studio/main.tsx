@@ -2,48 +2,47 @@
  * facturx Studio — démarrage.
  *
  * Relit ce que ce navigateur a conservé (brouillon, entreprise, clients, catalogue, historique,
- * numérotation) ; à la première visite, ouvre la facture d'exemple. Tout s'exécute ici : le Studio
- * n'a pas de serveur. Un seul signal sans contenu part quand un PDF Factur-X est produit, pour le
- * décompte (site/README.md, « Compter les factures du Studio »).
+ * numérotation) ; à la première visite, ouvre la facture d'exemple. Sans compte, tout s'exécute ici :
+ * le Studio n'a pas de serveur. Un seul signal sans contenu part quand un PDF Factur-X est produit,
+ * pour le décompte (site/README.md, « Compter les factures du Studio »). Avec un compte, la session
+ * est restaurée avant la lecture de ce qui a été conservé, qui vient alors du serveur. Un compte dont
+ * la suppression est demandée n'ouvre que l'écran d'annulation (spec § 12) : ni l'éditeur, ni rien
+ * de ce qu'il conserve. Le lien « Créer un compte gratuit » de l'accueil (`?compte=creer`) ouvre le
+ * dialogue de connexion sur la création d'un compte.
  */
 
 import { render } from 'preact';
 import { App } from './app.js';
-import { defaultAppearance, defaultCompany, defaultNumbering } from './library.js';
-import { blankForm, blankParty, type InvoiceForm } from './model.js';
+import { compteActif, creationDemandee, retourDeLien, sessionProbable } from './compte/session.js';
+import { t } from './i18n.js';
+import {
+  defaultAppearance,
+  defaultCompany,
+  defaultNumbering,
+  fill,
+  hydrateForm,
+} from './library.js';
+import { estDuCompte } from './persistence.js';
 import { sampleForm } from './sample.js';
-import { loadPersisted, startPersistence, store } from './store.js';
-
-/** Complète un objet conservé par les valeurs par défaut : un champ ajouté depuis ne manque jamais. */
-function fill<T>(defaults: T, saved: unknown): T {
-  if (Array.isArray(defaults) || saved === undefined || saved === null)
-    return (saved ?? defaults) as T;
-  if (
-    typeof defaults !== 'object' ||
-    defaults === null ||
-    typeof saved !== 'object' ||
-    Array.isArray(saved)
-  ) {
-    return saved as T;
-  }
-  if (saved instanceof Uint8Array) return saved as T;
-  const out: Record<string, unknown> = { ...(defaults as Record<string, unknown>) };
-  for (const [key, value] of Object.entries(saved as Record<string, unknown>)) {
-    out[key] = key in out ? fill(out[key], value) : value;
-  }
-  return out as T;
-}
-
-function hydrateForm(saved: InvoiceForm): InvoiceForm {
-  const form = fill(blankForm(), saved);
-  form.seller = fill(blankParty(), saved.seller);
-  form.buyer = fill(blankParty(), saved.buyer);
-  return form;
-}
+import { storage } from './storage.js';
+import { DELAI_COMPTE_MS, type Loaded, loadPersisted, startPersistence, store } from './store.js';
 
 async function boot(): Promise<void> {
   const root = document.getElementById('studio');
   if (!root) return;
+  // Lu (et retiré de l'adresse) avant tout : le lien « Créer un compte gratuit » de l'accueil.
+  const creation = creationDemandee();
+  // Qui n'a pas de session ne télécharge ni `supabase-js` ni le code du compte. Le retour d'un lien
+  // de confirmation arrive sans session, avec un code (ou une erreur) dans l'adresse : il charge le
+  // compte, qui échange le code ou explique l'échec. Si le fragment ne se charge pas (hors ligne),
+  // le Studio démarre en mode local.
+  if (compteActif() && (sessionProbable() || retourDeLien() !== undefined)) {
+    await import('./compte/index.js').then((m) => m.demarrer()).catch(() => undefined);
+  }
+  if (store.get().ui.compte?.suppressionDemandeeLe) {
+    await ecranDeSuppression(root);
+    return;
+  }
   const loaded = await loadPersisted().catch(() => undefined);
   const ui = store.get().ui;
   if (loaded) {
@@ -63,12 +62,56 @@ async function boot(): Promise<void> {
         issued: draft?.issued,
       },
     });
+  } else if (ui.compte && estDuCompte(storage)) {
+    // Le serveur du compte n'a pas répondu à la lecture : rien n'en est lu, donc rien n'y part
+    // (`injoignable`). La saisie gardée dans ce navigateur reprend, et le Studio le dit.
+    const local = (await storage.brouillonLocal().catch(() => undefined)) as Loaded['draft'];
+    store.set({
+      form: local ? hydrateForm(local.form) : sampleForm(),
+      appearance: local ? fill(defaultAppearance(), local.appearance) : defaultAppearance(),
+      ui: {
+        ...ui,
+        storage: 'injoignable',
+        sample: local ? local.sample === true : true,
+        issued: local?.issued,
+      },
+    });
   } else {
     store.set({ form: sampleForm(), ui: { ...ui, storage: 'memory', sample: true } });
   }
-  startPersistence();
+  // Le lien de l'accueil ouvre la création d'un compte, si ce site en offre et qu'aucun n'est
+  // connecté : le dialogue se charge à la demande, comme depuis le bouton de l'en-tête.
+  if (creation && compteActif() && !store.get().ui.compte) {
+    store.set((s) => ({ ui: { ...s.ui, connexion: 'inscription' } }));
+  }
+  // En mode compte, l'enregistrement part vers le serveur une seconde après la dernière frappe.
+  startPersistence(store.get().ui.compte ? { delai: DELAI_COMPTE_MS } : {});
   root.replaceChildren();
   render(<App />, root);
+}
+
+/**
+ * L'écran d'un compte en suppression, à la place du Studio. Si son fragment ne se charge pas, une
+ * phrase le dit et propose de recharger : l'éditeur ne s'ouvre pas pour autant.
+ */
+async function ecranDeSuppression(root: HTMLElement): Promise<void> {
+  const ecran = await import('./compte/annulation.js').catch(() => undefined);
+  root.replaceChildren();
+  if (ecran) {
+    render(<ecran.EcranSuppression />, root);
+    return;
+  }
+  render(
+    <div class="boot">
+      <p class="boot-text">{t.compte.suppression.chargement}</p>
+      <p>
+        <button type="button" class="btn-ui default md" onClick={() => location.reload()}>
+          {t.compte.conservation.rechargerPage}
+        </button>
+      </p>
+    </div>,
+    root,
+  );
 }
 
 void boot();

@@ -4,7 +4,9 @@
  *   pnpm site:build
  *
  * - bundle du validateur : site-src/validateur/main.ts → site/validateur/app.js (+ fragments chargés à la demande)
- * - bundle du Studio : site-src/studio/main.tsx → site/studio/app.js (+ fragments), et ses polices
+ * - bundle du Studio : site-src/studio/main.tsx → site/studio/app.js (+ fragments), et ses polices ;
+ *   FACTURX_SUPABASE_URL et FACTURX_SUPABASE_KEY (clé publique ; une clé de service interrompt la
+ *   construction) y injectent le projet du compte
  * - exemples cliquables dérivés des fichiers de référence du SDK
  *
  * Les jeux de règles et le runtime XSLT viennent de `pnpm validator:fetch`.
@@ -23,6 +25,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { verifierCleSupabase } from './cle-supabase.mjs';
 import { buildBrokenFacturX, buildExampleFacturX } from './example-invoice.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -32,6 +35,18 @@ const goldenDir = join(root, 'packages/facturx/test/golden');
 
 if (!existsSync(join(root, 'packages/facturx/dist/index.js'))) {
   throw new Error('le SDK n’est pas construit : lancer `pnpm build` avant `pnpm site:build`.');
+}
+
+// Le projet Supabase du compte : URL et clé publique, lues dans l'environnement. Vides, le Studio
+// n'offre aucun compte et reste local. Le bundle est public : une clé de service arrête tout
+// avant la moindre écriture.
+const supabaseUrl = process.env.FACTURX_SUPABASE_URL?.trim() ?? '';
+const supabaseKey = process.env.FACTURX_SUPABASE_KEY?.trim() ?? '';
+try {
+  verifierCleSupabase(supabaseKey);
+} catch (error) {
+  console.error(`site:build — ${error.message}`);
+  process.exit(1);
 }
 
 mkdirSync(outDir, { recursive: true });
@@ -83,6 +98,10 @@ const studio = await build({
   jsxImportSource: 'preact',
   // Le profil sRGB de l'OutputIntent, embarqué tel quel dans le bundle (456 octets).
   loader: { '.icc': 'binary' },
+  define: {
+    __FACTURX_SUPABASE_URL__: JSON.stringify(supabaseUrl),
+    __FACTURX_SUPABASE_KEY__: JSON.stringify(supabaseKey),
+  },
 });
 let studioBytes = 0;
 for (const info of Object.values(studio.metafile.outputs)) studioBytes += info.bytes;

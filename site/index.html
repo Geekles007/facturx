@@ -18,7 +18,7 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preload" href="fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
-<script>document.documentElement.classList.add("js")</script>
+<script src="classe-js.js"></script>
 </head>
 <body>
 <a class="skip" href="#contenu">Aller au contenu</a>
@@ -97,13 +97,14 @@
   <div class="wrap reveal">
     <div class="tryout-card">
       <div>
-        <p class="label">Studio · gratuit, sans compte</p>
+        <p class="label">Studio · gratuit<span data-compte>, avec ou sans compte</span></p>
         <h2>Composez votre facture à votre image. Elle reste conforme.</h2>
-        <p class="pitch">Six modèles, votre couleur, votre police, votre logo, un QR code de paiement SEPA — et toutes les mentions obligatoires, qu'aucun réglage ne retire. Le Studio contrôle en direct avec les validateurs officiels, produit le <b>PDF Factur-X</b> et montre le code SDK qui fait la même chose. Rien ne quitte votre navigateur.</p>
+        <p class="pitch">Six modèles, votre couleur, votre police, votre logo, un QR code de paiement SEPA — et toutes les mentions obligatoires, qu'aucun réglage ne retire. Le Studio contrôle en direct avec les validateurs officiels, produit le <b>PDF Factur-X</b> et montre le code SDK qui fait la même chose. Rien de ce que vous saisissez ne quitte votre navigateur<span data-compte> sans compte&nbsp;; avec un compte gratuit, vos factures sont conservées sur un serveur en Europe, avec le suivi de leurs paiements et des relances</span>.</p>
       </div>
       <div class="tryout-actions">
         <a class="btn primary" href="studio/">Ouvrir le Studio <span aria-hidden="true">→</span></a>
-        <p class="fine">Factures, avoirs, acomptes · clients, catalogue et numérotation gardés sur votre machine</p>
+        <a class="btn" data-compte href="studio/?compte=creer">Créer un compte gratuit</a>
+        <p class="fine">Factures, avoirs, acomptes · <span data-compte>sans compte : </span>clients, catalogue et numérotation restent sur votre machine</p>
       </div>
     </div>
     <div class="tryout-card">
@@ -254,7 +255,7 @@
         <div class="row off"><span class="tick">—</span><span>Envoi à une plateforme agréée, e-reporting, annuaire</span></div>
         <div class="row off"><span class="tick">—</span><span>Conversion d'un PDF quelconque en PDF/A</span></div>
         <div class="row off"><span class="tick">—</span><span>Écriture UBL, autres profils Factur-X en écriture</span></div>
-        <p class="fine">Écrit noir sur blanc dans le <a href="https://github.com/Geekles007/facturx/blob/main/docs/reforme.md">guide de la réforme</a> et le <a href="https://github.com/Geekles007/facturx/blob/main/docs/decisions.md">journal des 71 décisions</a>.</p>
+        <p class="fine">Écrit noir sur blanc dans le <a href="https://github.com/Geekles007/facturx/blob/main/docs/reforme.md">guide de la réforme</a> et le <a href="https://github.com/Geekles007/facturx/blob/main/docs/decisions.md">journal des décisions</a>.</p>
       </div>
     </div>
   </div>
@@ -286,6 +287,9 @@
     <nav class="foot-links" aria-label="Liens secondaires">
       <a class="foot-link" href="studio/">Studio</a>
       <a class="foot-link" href="validateur/">Validateur</a>
+      <a class="foot-link" data-compte href="cgu/">CGU</a>
+      <a class="foot-link" href="confidentialite/">Confidentialité</a>
+      <a class="foot-link" data-compte href="sous-traitance/">Sous-traitance</a>
       <a class="foot-link" href="https://github.com/Geekles007/facturx/blob/main/CHANGELOG.md">CHANGELOG</a>
       <a class="foot-link" href="https://github.com/Geekles007/facturx/blob/main/SECURITY.md">Sécurité</a>
       <a class="foot-link" href="https://github.com/Geekles007/facturx/blob/main/docs/decisions.md">Décisions</a>

@@ -3,17 +3,20 @@
  *
  * À chaque modification, le formulaire devient une `Invoice` (`buildInvoice`), le SDK la valide
  * (`validateInvoice`), la met en page (`layoutInvoice`) et, une fois conforme, produit son XML
- * (`toCiiXml`) que les trois schematrons officiels jugent. Rien de cela ne quitte le navigateur.
+ * (`toCiiXml`) que les trois schematrons officiels jugent. Ces calculs se font dans le navigateur,
+ * avec ou sans compte ; avec un compte, l'émission passe en plus par le serveur.
  */
 
 import { toCiiXml, validateInvoice } from 'facturx-sdk';
 import type { InvoiceLayout } from 'facturx-sdk/pdf';
+import type { ComponentType } from 'preact';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { compterControle } from '../validateur/compteur.js';
 import { anchorOf, type SectionId, sectionOf as sectionFor } from './anchors.js';
 import { AppearancePanel } from './appearance.js';
 import { CheckPanel } from './check.js';
 import { CodePanel } from './codeview.js';
+import { compteActif, oublierSession } from './compte/session.js';
 import {
   type Derived,
   DerivedContext,
@@ -36,11 +39,27 @@ import { LibraryPanel } from './librarypanel.js';
 import { buildInvoice } from './model.js';
 import { type Assets, buildXml, download, fileStem, layoutFor } from './pipeline.js';
 import { Preview } from './preview.js';
+import { fragmentNonCharge, rechargerLaPage } from './rechargement.js';
 import { sampleForm } from './sample.js';
 import { storage } from './storage.js';
 import { persistKeys, store, type Tab, toast, ui, useStudio } from './store.js';
-import { Button, Dialog, FilePick, Icon, IconButton, IssuesContext, Menu } from './ui.js';
-import { creditNoteForm, duplicateForm, issueInvoice, startDraft } from './workflows.js';
+import {
+  Button,
+  Dialog,
+  FilePick,
+  Icon,
+  IssuesContext,
+  Menu,
+  type MenuItem,
+  Toasts,
+} from './ui.js';
+import {
+  creditNoteForm,
+  duplicateForm,
+  issueInvoice,
+  quitterLeBrouillon,
+  startDraft,
+} from './workflows.js';
 
 // ---------- ressources : police et logo ----------
 
@@ -229,6 +248,9 @@ function SectionNav({ issues }: { issues: StudioIssue[] }) {
 
 function ContentEditor({ issues }: { issues: StudioIssue[] }) {
   const issued = useStudio((s) => s.ui.issued);
+  // « Rien ne quitte ce navigateur » n'est vrai que sans compte : avec un compte, le pied dit où sont
+  // les données.
+  const compte = useStudio((s) => s.ui.compte !== undefined);
   return (
     // `inert` : une facture émise ne se modifie plus, au clavier comme à la souris.
     <div
@@ -248,12 +270,13 @@ function ContentEditor({ issues }: { issues: StudioIssue[] }) {
       <NotesSection />
       <AttachmentsSection />
       <footer class="editor-foot">
-        <p>{t.app.footPrivacy}</p>
+        <p>{compte ? t.app.footPrivacyCompte : t.app.footPrivacy}</p>
         <p>{t.app.footLegal}</p>
         <p class="foot-links">
           <a href="../">{t.app.footLinks.home}</a>
           <a href="../validateur/">{t.app.footLinks.validator}</a>
           <a href="https://github.com/Geekles007/facturx">{t.app.footLinks.source}</a>
+          <a href="../confidentialite/">{t.app.footLinks.privacy}</a>
           <a href={studioAsset('polices/LICENCES.txt')}>{t.app.footLinks.fonts}</a>
         </p>
       </footer>
@@ -317,9 +340,18 @@ function StatusPill({ issues, official }: { issues: StudioIssue[]; official: Off
   );
 }
 
+/**
+ * Sans compte, le brouillon est unique : le remplacer perd la saisie, d'où la question. Avec un
+ * compte, le brouillon ouvert reste dans la liste (`startDraft` en crée un autre) : rien à demander.
+ */
 function confirmReplace(): boolean {
   const { ui: state } = store.get();
-  return state.sample || state.issued !== undefined || confirm(t.app.replaceConfirm);
+  return (
+    state.compte !== undefined ||
+    state.sample ||
+    state.issued !== undefined ||
+    confirm(t.app.replaceConfirm)
+  );
 }
 
 async function openFile(file: File): Promise<void> {
@@ -327,8 +359,8 @@ async function openFile(file: File): Promise<void> {
   toast(t.app.importing(file.name), 'info');
   try {
     const imported = await importBytes(new Uint8Array(await file.arrayBuffer()), file.name);
-    startDraft(imported.form, imported.appearance);
-    toast(t.app.imported(t.app.sources[imported.source] ?? imported.source));
+    if (await startDraft(imported.form, imported.appearance))
+      toast(t.app.imported(t.app.sources[imported.source] ?? imported.source));
   } catch (error) {
     toast(
       t.app.importFailed(error instanceof ImportError ? error.message : String(error)),
@@ -339,6 +371,8 @@ async function openFile(file: File): Promise<void> {
 
 async function newBlank(): Promise<void> {
   if (!confirmReplace()) return;
+  // En mode compte, le refus vient tout de suite, avant de lire l'apparence par défaut.
+  if (!(await quitterLeBrouillon())) return;
   const { company, numbering, form, ui: state } = store.get();
   const saved = await storage
     .get<ReturnType<typeof defaultAppearance>>(persistKeys.appearance)
@@ -348,17 +382,172 @@ async function newBlank(): Promise<void> {
     company.seller.name.trim() || state.sample
       ? company
       : { ...company, seller: form.seller, paymentMeans: form.paymentMeans };
-  startDraft(newInvoiceForm(profile, numbering), saved ?? store.get().appearance);
+  await startDraft(newInvoiceForm(profile, numbering), saved ?? store.get().appearance);
+}
+
+/**
+ * Termine la session de ce navigateur ; le code du compte est déjà chargé quand on est connecté.
+ * Si une saisie n'a pas atteint le serveur et que l'utilisateur refuse de la perdre, rien ne se passe
+ * (`deconnecter` le lui a demandé). Sinon la page est rechargée sans session, quoi que réponde le
+ * serveur, ou si le module du compte ne se charge pas : le menu du compte ne reste jamais affiché
+ * alors que la session n'existe plus.
+ */
+async function seDeconnecter(): Promise<void> {
+  const compte = await import('./compte/index.js').catch(() => undefined);
+  if (compte) {
+    await compte.deconnecter();
+  } else {
+    oublierSession();
+    location.reload();
+  }
+}
+
+/** « Exporter mes données » : le module d'export (et fflate) ne se charge qu'à la demande. */
+async function exporterMesDonnees(): Promise<void> {
+  const module = await import('./compte/export.js').catch(() => undefined);
+  if (!module) {
+    fragmentNonCharge(t.compte.export.chargement);
+    return;
+  }
+  await module.telechargerExport();
+}
+
+/**
+ * « Se connecter » et « Créer un compte gratuit », ou le menu du compte connecté (les brouillons
+ * sont dans la navigation du compte) : importer les données de ce navigateur (pas pendant une
+ * suppression demandée), exporter les siennes, se déconnecter. Rien de tout cela n'existe dans un
+ * site construit sans projet Supabase.
+ */
+function CompteBoutons() {
+  const compte = useStudio((s) => s.ui.compte);
+  if (compte) {
+    return (
+      <Menu
+        label={t.compte.menu}
+        align="right"
+        trigger={(props) => (
+          <Button icon="user" variant="ghost" title={compte.email} {...props}>
+            <span class="hide-lg compte-email">{compte.email}</span>
+          </Button>
+        )}
+        items={[
+          { label: compte.email, icon: 'user', disabled: true, onSelect: () => undefined },
+          'separator',
+          ...(compte.suppressionDemandeeLe
+            ? []
+            : [
+                {
+                  label: t.compte.importation.menu,
+                  icon: 'upload',
+                  onSelect: () => ui({ importation: 'demandee' }),
+                } satisfies MenuItem,
+              ]),
+          { label: t.compte.export.menu, icon: 'download', onSelect: exporterMesDonnees },
+          'separator',
+          { label: t.compte.signOut, icon: 'lock', onSelect: seDeconnecter },
+        ]}
+      />
+    );
+  }
+  return (
+    <>
+      <Button
+        icon="user"
+        variant="ghost"
+        title={t.compte.signIn}
+        onClick={() => ui({ connexion: 'connexion' })}
+      >
+        <span class="hide-lg">{t.compte.signIn}</span>
+      </Button>
+      <Button class="hide-lg" onClick={() => ui({ connexion: 'inscription' })}>
+        {t.compte.create}
+      </Button>
+    </>
+  );
+}
+
+/**
+ * Le bouton de la bibliothèque : le Studio sans compte, ou en attendant la navigation du compte ;
+ * en mode compte, la bibliothèque n'a plus l'entreprise (elle a sa page), elle s'ouvre sur les clients.
+ */
+function BoutonBibliotheque() {
+  const compte = useStudio((s) => s.ui.compte !== undefined);
+  return (
+    <Button
+      icon="book"
+      variant="ghost"
+      title={t.app.library}
+      onClick={() => ui({ library: compte ? 'clients' : 'company' })}
+    >
+      <span class="hide-md">{t.app.library}</span>
+    </Button>
+  );
+}
+
+/**
+ * La navigation du compte (spec § 10), chargée à la connexion avec le reste du compte ; elle prend
+ * la place du bouton de la bibliothèque, qui reste affiché tant qu'elle n'est pas chargée. Sans
+ * elle, ni les factures ni les brouillons ne s'ouvrent : un échec de chargement se dit, et, le
+ * message parti, la barre garde « Recharger la page ».
+ */
+function NavigationALaDemande() {
+  const [Navigation, setNavigation] =
+    useState<ComponentType<{ nouvelleFacture: () => Promise<void> }>>();
+  const [echec, setEchec] = useState(false);
+  useEffect(() => {
+    if (Navigation) return;
+    import('./compte/navigation.js').then(
+      (m) => setNavigation(() => m.Navigation),
+      () => {
+        setEchec(true);
+        fragmentNonCharge(t.compte.navigation.chargement);
+      },
+    );
+  }, [Navigation]);
+  if (Navigation) return <Navigation nouvelleFacture={newBlank} />;
+  const recharger = t.compte.conservation.rechargerPage;
+  return (
+    <>
+      <BoutonBibliotheque />
+      {echec && (
+        <Button icon="refresh" variant="ghost" title={recharger} onClick={() => rechargerLaPage()}>
+          <span class="hide-md">{recharger}</span>
+        </Button>
+      )}
+    </>
+  );
+}
+
+/** Charge le dialogue de connexion, et avec lui `supabase-js`, à la première ouverture. */
+function ConnexionALaDemande() {
+  const volet = useStudio((s) => s.ui.connexion);
+  const [Dialogue, setDialogue] = useState<ComponentType>();
+  useEffect(() => {
+    if (!volet || Dialogue) return;
+    import('./compte/connexion.js').then(
+      (m) => setDialogue(() => m.Connexion),
+      () => {
+        // Rouvrir la boîte réimporterait la même adresse, en vain : recharger la page.
+        fragmentNonCharge(t.compte.errors.loadFailed);
+        ui({ connexion: undefined });
+      },
+    );
+  }, [volet, Dialogue]);
+  return Dialogue ? <Dialogue /> : null;
 }
 
 function TopBar({ derived, onIssue }: { derived: Derived; onIssue: () => void }) {
   const form = useStudio((s) => s.form);
   const appearance = useStudio((s) => s.appearance);
   const issued = useStudio((s) => s.ui.issued);
+  // Pendant une émission, rien ne change de document ni ne s'ouvre par-dessus.
+  const emission = useStudio((s) => s.ui.emissionEnCours);
+  // Connecté, la navigation du compte remplace le bouton de la bibliothèque.
+  const compte = useStudio((s) => s.ui.compte !== undefined);
   const ok = derived.issues.length === 0;
   const title = form.id.trim() || t.app.untitled;
   return (
-    <header class="topbar">
+    <header class="topbar" inert={emission}>
       <a class="brand" href="../" aria-label="facturx-sdk">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path
@@ -408,12 +597,12 @@ function TopBar({ derived, onIssue }: { derived: Derived; onIssue: () => void })
             {
               label: t.app.duplicate,
               icon: 'copy',
-              onSelect: () => startDraft(duplicateForm(store.get().form)),
+              onSelect: () => void startDraft(duplicateForm(store.get().form)),
             },
             {
               label: t.app.creditNote,
               icon: 'receipt',
-              onSelect: () => startDraft(creditNoteForm(store.get().form)),
+              onSelect: () => void startDraft(creditNoteForm(store.get().form)),
             },
             'separator',
             {
@@ -421,8 +610,9 @@ function TopBar({ derived, onIssue }: { derived: Derived; onIssue: () => void })
               icon: 'sparkle',
               onSelect: () => {
                 if (!confirmReplace()) return;
-                startDraft(sampleForm(), defaultAppearance());
-                ui({ sample: true });
+                void startDraft(sampleForm(), defaultAppearance()).then((ok) => {
+                  if (ok) ui({ sample: true });
+                });
               },
             },
           ]}
@@ -435,14 +625,8 @@ function TopBar({ derived, onIssue }: { derived: Derived; onIssue: () => void })
         >
           <span class="hide-md">{t.app.open}</span>
         </FilePick>
-        <Button
-          icon="book"
-          variant="ghost"
-          title={t.app.library}
-          onClick={() => ui({ library: 'company' })}
-        >
-          <span class="hide-md">{t.app.library}</span>
-        </Button>
+        {compte ? <NavigationALaDemande /> : <BoutonBibliotheque />}
+        {compteActif() && <CompteBoutons />}
         <div class="split">
           <Button
             icon={issued ? 'download' : 'check'}
@@ -529,27 +713,36 @@ function IssueDialog({
 }) {
   const form = useStudio((s) => s.form);
   const history = useStudio((s) => s.history);
+  // En mode compte, le serveur attribue le numéro : un numéro déjà émis n'empêche rien.
+  const compte = useStudio((s) => s.ui.compte !== undefined);
   const [busy, setBusy] = useState(false);
-  const duplicate = history.some((h) => h.form.id.trim() === form.id.trim());
+  const duplicate = !compte && history.some((h) => h.form.id.trim() === form.id.trim());
   const invoice = derived.built.invoice;
   const confirmIssue = async () => {
     if (!derived.assets) return;
     setBusy(true);
-    const done = await issueInvoice(derived.assets, { record: true });
-    setBusy(false);
-    if (done) {
-      countIssued();
-      onClose();
+    let done = false;
+    try {
+      done = await issueInvoice(derived.assets, { record: true });
+    } finally {
+      // Même si l'émission lève, le dialogue redevient fermable.
+      setBusy(false);
     }
+    if (done) countIssued();
+    // En mode compte, un refus mène hors du dialogue (onglet Contrôle, date, bandeau, connexion).
+    if (done || compte) onClose();
   };
+  const phrases = compte ? t.issueDialog.compte : undefined;
   return (
     <Dialog
       open={open}
       onClose={onClose}
-      title={t.issueDialog.title(form.id)}
+      // Une émission partie ne s'annule pas : le dialogue reste jusqu'à la réponse.
+      fermable={!busy}
+      title={phrases ? phrases.title : t.issueDialog.title(form.id)}
       actions={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
             {t.app.cancel}
           </Button>
           <Button
@@ -558,7 +751,7 @@ function IssueDialog({
             disabled={busy || duplicate}
             onClick={confirmIssue}
           >
-            {t.issueDialog.confirm}
+            {phrases ? phrases.confirm : t.issueDialog.confirm}
           </Button>
         </>
       }
@@ -577,9 +770,108 @@ function IssueDialog({
           <dd>{formatMoney(invoice.totals.taxInclusiveAmount, invoice.currency)}</dd>
         </div>
       </dl>
-      <p>{t.issueDialog.body}</p>
+      <p>{phrases ? phrases.body : t.issueDialog.body}</p>
       {duplicate && <p class="field-issue">{t.issueDialog.duplicateNumber}</p>}
     </Dialog>
+  );
+}
+
+/** Le module des brouillons du compte (liste, conflit), chargé à la première demande. */
+const moduleBrouillons = () =>
+  import('./compte/brouillons.js').catch(() => {
+    fragmentNonCharge(t.compte.brouillons.moduleNonCharge);
+    return undefined;
+  });
+
+/**
+ * Ce qui empêche l'enregistrement sur le serveur, en mode compte : la session expirée (le plus
+ * urgent, elle bloque tout), le réseau coupé, un conflit sur le brouillon. La saisie reste dans ce
+ * navigateur dans les trois cas.
+ */
+function CompteBanners() {
+  const expiree = useStudio((s) => s.ui.compte?.session === 'expiree');
+  const horsLigne = useStudio((s) => s.ui.compte !== undefined && s.ui.reseau === 'hors-ligne');
+  const conflit = useStudio((s) => (s.ui.compte !== undefined ? s.ui.conflit : false));
+  // Une vue (facture émise, exemple) recouvre le brouillon en conflit : on l'ouvre d'abord.
+  const sousUneVue = useStudio((s) => s.ui.issued !== undefined || s.ui.sample);
+  const refuse = useStudio((s) => (s.ui.compte ? s.ui.brouillonRefuse : undefined));
+  const phrases = t.compte.conservation;
+  return (
+    <>
+      {expiree && (
+        <div class="banner warn actions">
+          <Icon name="lock" />
+          <span>{phrases.sessionExpiree}</span>
+          <Button size="sm" onClick={() => ui({ connexion: 'connexion' })}>
+            {phrases.reconnecter}
+          </Button>
+        </div>
+      )}
+      {!expiree && horsLigne && (
+        <p class="banner warn" role="status">
+          <Icon name="alert" /> {phrases.horsLigne}
+        </p>
+      )}
+      {refuse !== undefined && (
+        <div class="banner warn actions">
+          <Icon name="alert" />
+          <span>{phrases.brouillonRefuse(refuse)}</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => void moduleBrouillons().then((m) => m?.abandonnerSaisie())}
+          >
+            {phrases.abandonner}
+          </Button>
+        </div>
+      )}
+      {conflit && sousUneVue && (
+        <div class="banner warn actions">
+          <Icon name="alert" />
+          <span>{phrases.conflitSousVue}</span>
+          <Button
+            size="sm"
+            onClick={() => void moduleBrouillons().then((m) => m?.ouvrirLeBrouillonEnConflit())}
+          >
+            {phrases.ouvrirConflit}
+          </Button>
+        </div>
+      )}
+      {conflit === 'supprime' && !sousUneVue && (
+        <div class="banner warn actions">
+          <Icon name="alert" />
+          <span>{phrases.supprime}</span>
+          <Button
+            size="sm"
+            onClick={() => void moduleBrouillons().then((m) => m?.recreerBrouillon())}
+          >
+            {phrases.recreer}
+          </Button>
+        </div>
+      )}
+      {conflit === true && !sousUneVue && (
+        <div class="banner warn actions">
+          <Icon name="alert" />
+          <span>{phrases.conflit}</span>
+          <div class="banner-actions">
+            <Button
+              size="sm"
+              icon="refresh"
+              onClick={() => void moduleBrouillons().then((m) => m?.rechargerBrouillon())}
+            >
+              {phrases.recharger}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void moduleBrouillons().then((m) => m?.garderMaVersion())}
+            >
+              {phrases.garder}
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -589,14 +881,25 @@ function Banners() {
   const storageState = useStudio((s) => s.ui.storage);
   const history = useStudio((s) => s.history);
   const saved = issued ? history.find((h) => h.uid === issued) : undefined;
+  const emission = useStudio((s) => s.ui.emissionEnCours);
   // Un seul conteneur, toujours présent : la grille de l'application a une rangée pour lui.
   return (
-    <div class="banners">
+    <div class="banners" inert={emission}>
       {storageState === 'memory' && (
         <p class="banner warn">
           <Icon name="alert" /> {t.app.storageMemory}
         </p>
       )}
+      {storageState === 'injoignable' && (
+        <div class="banner warn actions">
+          <Icon name="alert" />
+          <span>{t.compte.conservation.injoignable}</span>
+          <Button size="sm" icon="refresh" onClick={() => location.reload()}>
+            {t.compte.conservation.rechargerPage}
+          </Button>
+        </div>
+      )}
+      <CompteBanners />
       {sample && !issued && (
         <p class="banner info">
           <Icon name="sparkle" /> <span>{t.app.sample}</span>
@@ -617,7 +920,7 @@ function Banners() {
               size="sm"
               icon="copy"
               onClick={() =>
-                startDraft(duplicateForm(saved.form), structuredClone(saved.appearance))
+                void startDraft(duplicateForm(saved.form), structuredClone(saved.appearance))
               }
             >
               {t.app.duplicate}
@@ -627,7 +930,7 @@ function Banners() {
                 size="sm"
                 icon="receipt"
                 onClick={() =>
-                  startDraft(creditNoteForm(saved.form), structuredClone(saved.appearance))
+                  void startDraft(creditNoteForm(saved.form), structuredClone(saved.appearance))
                 }
               >
                 {t.app.creditNote}
@@ -639,24 +942,6 @@ function Banners() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function Toasts() {
-  const toastState = useStudio((s) => s.ui.toast);
-  if (!toastState) return null;
-  return (
-    <div
-      class={`toast ${toastState.kind}`}
-      role={toastState.kind === 'error' ? 'alert' : 'status'}
-      key={toastState.id}
-    >
-      <Icon
-        name={toastState.kind === 'error' ? 'alert' : toastState.kind === 'info' ? 'info' : 'check'}
-      />
-      <span>{toastState.text}</span>
-      <IconButton icon="x" label={t.app.close} onClick={() => ui({ toast: undefined })} />
     </div>
   );
 }
@@ -677,6 +962,8 @@ export function App() {
   const mobile = useStudio((s) => s.ui.mobile);
   const issued = useStudio((s) => s.ui.issued);
   const history = useStudio((s) => s.history);
+  // Une émission en cours fige le document : l'éditeur, l'aperçu et la navigation sont inertes.
+  const emission = useStudio((s) => s.ui.emissionEnCours);
   const { assets, fonts, logoUrl, error: assetError } = useAssets();
   const scroller = useRef<HTMLDivElement>(null);
   const [issueOpen, setIssueOpen] = useState(false);
@@ -793,8 +1080,9 @@ export function App() {
           class={`studio mobile-${mobile}${dragging ? ' dragging' : ''}`}
           onDragOver={(e) => {
             if (e.dataTransfer?.types.includes('Files')) {
+              // Toujours retenu : sinon le navigateur ouvrirait le fichier à la place du Studio.
               e.preventDefault();
-              setDragging(true);
+              if (!store.get().ui.emissionEnCours) setDragging(true);
             }
           }}
           onDragLeave={(e) => {
@@ -804,12 +1092,12 @@ export function App() {
             e.preventDefault();
             setDragging(false);
             const file = e.dataTransfer?.files?.[0];
-            if (file) void openFile(file);
+            if (file && !store.get().ui.emissionEnCours) void openFile(file);
           }}
         >
           <TopBar derived={derived} onIssue={onIssue} />
           <Banners />
-          <main class="workspace" id="contenu">
+          <main class="workspace" id="contenu" inert={emission}>
             <div class="editor-pane">
               <div class="tabs-ui" role="tablist" aria-label={t.app.studio}>
                 {TABS.map((item) => {
@@ -851,7 +1139,7 @@ export function App() {
               <Preview />
             </div>
           </main>
-          <nav class="mobile-nav" aria-label={t.app.studio}>
+          <nav class="mobile-nav" aria-label={t.app.studio} inert={emission}>
             <button
               type="button"
               class={mobile === 'edit' ? 'on' : ''}
@@ -868,6 +1156,7 @@ export function App() {
             </button>
           </nav>
           <LibraryPanel />
+          {compteActif() && <ConnexionALaDemande />}
           <IssueDialog open={issueOpen} onClose={() => setIssueOpen(false)} derived={derived} />
           <Toasts />
           {dragging && (

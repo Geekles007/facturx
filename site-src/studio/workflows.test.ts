@@ -9,7 +9,12 @@ import {
 import { blankLine, buildInvoice, type InvoiceForm } from './model.js';
 import { sampleForm } from './sample.js';
 import { store } from './store.js';
-import { balanceForm, creditNoteForm, duplicateForm } from './workflows.js';
+import {
+  balanceForm,
+  citeesDansUneAutreDevise,
+  creditNoteForm,
+  duplicateForm,
+} from './workflows.js';
 
 const TODAY = '2026-09-30';
 
@@ -88,5 +93,32 @@ describe('parcours entre factures', () => {
 
   it('refuse de facturer le solde d’une facture qui n’est pas un acompte', () => {
     expect(() => balanceForm([saved(sampleForm(TODAY))], TODAY)).toThrow(/acompte/);
+  });
+});
+
+describe('un avoir dans la devise de la facture qu’il cite (Ruling 49)', () => {
+  it('l’éditeur repère la facture citée de l’historique qui est dans une autre devise', () => {
+    const original = sampleForm(TODAY);
+    const historique = [saved(original)];
+    const avoir = creditNoteForm(original, TODAY);
+    // L'avoir reprend la devise de sa facture : rien à dire.
+    expect(avoir.currency).toBe(original.currency);
+    expect(citeesDansUneAutreDevise(avoir, historique)).toEqual([]);
+    // La devise changée : la facture citée, et sa devise.
+    avoir.currency = 'USD';
+    expect(citeesDansUneAutreDevise(avoir, historique)).toEqual([
+      { numero: original.id, devise: original.currency },
+    ]);
+    // Une facture citée hors de l'historique : rien à comparer, rien à dire.
+    avoir.references.precedingInvoices = [{ uid: 'x', id: 'F-AILLEURS', issueDate: TODAY }];
+    expect(citeesDansUneAutreDevise(avoir, historique)).toEqual([]);
+  });
+
+  it('seuls les avoirs sont visés : une facture rectificative peut changer de devise', () => {
+    const original = sampleForm(TODAY);
+    const rectificative = creditNoteForm(original, TODAY);
+    rectificative.typeCode = '384';
+    rectificative.currency = 'USD';
+    expect(citeesDansUneAutreDevise(rectificative, [saved(original)])).toEqual([]);
   });
 });

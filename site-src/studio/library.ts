@@ -8,10 +8,14 @@
  */
 
 import type { RenderDisplay, RenderStyle, RenderTemplate } from 'facturx-sdk/pdf';
+import { formatNumber, type Numbering, nextRank } from '../shared/numerotation.js';
+import { fromPortableJson } from '../shared/portable.js';
+import type { LIBELLES_RENOMMABLES } from '../shared/rendu.js';
 import {
   addDays,
   blankForm,
   blankLine,
+  blankParty,
   blankPaymentMeans,
   endOfMonth,
   type FormLine,
@@ -23,21 +27,12 @@ import {
   partyForm,
   uid,
 } from './model.js';
+import type { Persistence } from './persistence.js';
 
 // ---------- apparence ----------
 
-export type LabelKey =
-  | 'seller'
-  | 'buyer'
-  | 'designation'
-  | 'quantity'
-  | 'unitPrice'
-  | 'vat'
-  | 'netAmount'
-  | 'amountDue'
-  | 'paymentTerms'
-  | 'notes'
-  | 'scanToPay';
+/** Un libellé renommable : la liste est partagée avec le rendu du serveur (`shared/rendu.ts`). */
+export type LabelKey = (typeof LIBELLES_RENOMMABLES)[number];
 
 export interface Appearance {
   template: RenderTemplate;
@@ -129,6 +124,23 @@ export interface ProductRecord {
   updatedAt: string;
 }
 
+/**
+ * Ce qui reconnaît un client dans le carnet : son identifiant (champ SIREN), en majuscules, réduit à
+ * ses lettres et chiffres sans accent (tout séparateur tombe : espaces, insécables compris, points,
+ * tirets de toute sorte, barres, virgules ; et un libellé « SIREN » ou « SIRET » en tête), si bien
+ * que « 732 829 320 », « 732/829/320 » et « SIREN 732 829 320 » sont le même client, et
+ * « SC123456 » et « NI123456 » deux. Un identifiant sans chiffre (« N/A », « néant », « ? ») n'en
+ * est pas un : c'est alors le nom, sans casse, qui reconnaît le client. Le carnet (`saveClient`) et
+ * l'émission (`clientId`) s'en servent tous deux.
+ */
+export function cleClient(p: FormParty): string {
+  const id = p.siren
+    .toUpperCase()
+    .replace(/^\s*SIRE[NT]\b/, '')
+    .replace(/[^0-9A-Z]/g, '');
+  return /\d/.test(id) ? id : p.name.trim().toLowerCase();
+}
+
 export function productToLine(product: ProductRecord): FormLine {
   return {
     ...blankLine(product.vat),
@@ -178,16 +190,16 @@ export interface SavedInvoice {
 
 // ---------- numérotation ----------
 
-export interface Numbering {
-  /** Gabarit : `{AAAA}` année, `{AA}` année sur deux chiffres, `{MM}` mois, `{N…}` compteur sur autant de chiffres. */
-  pattern: string;
-  /** Prochain numéro de la séquence. */
-  next: number;
-  /** Recommencer à 1 chaque année. */
-  yearly: boolean;
-  /** Année du dernier numéro attribué, pour la remise à zéro annuelle. */
-  year: number;
-}
+// Le gabarit, le rang et les vérifications vivent dans `shared/`, où les Edge Functions les
+// emploient aussi ; le Studio continue de les importer d'ici.
+export {
+  advance,
+  formatNumber,
+  type Numbering,
+  nextRank,
+  numberProblems,
+  rankOf,
+} from '../shared/numerotation.js';
 
 export const defaultNumbering = (): Numbering => ({
   pattern: 'F-{AAAA}-{NNNN}',
@@ -195,64 +207,6 @@ export const defaultNumbering = (): Numbering => ({
   yearly: true,
   year: new Date().getFullYear(),
 });
-
-/** Numéro obtenu avec `pattern` pour le rang `n` à la date `iso`. */
-export function formatNumber(pattern: string, n: number, iso: string): string {
-  const [year = '2026', month = '01'] = iso.split('-');
-  return pattern
-    .replace(/\{(AAAA|YYYY)\}/g, year)
-    .replace(/\{(AA|YY)\}/g, year.slice(2))
-    .replace(/\{MM\}/g, month)
-    .replace(/\{(N+)\}/g, (_, width: string) => String(n).padStart(width.length, '0'));
-}
-
-/** Rang à utiliser pour une facture datée de `iso`, remise à zéro annuelle comprise. */
-export function nextRank(numbering: Numbering, iso: string): number {
-  const year = Number(iso.slice(0, 4));
-  return numbering.yearly && year > numbering.year ? 1 : numbering.next;
-}
-
-/**
- * Rang d'un numéro composé avec `pattern` (`F-2026-0042` → 42), ou `undefined` s'il n'en suit pas
- * le gabarit — un numéro saisi à la main, par exemple.
- */
-export function rankOf(pattern: string, id: string): number | undefined {
-  let groups = 0;
-  const source = pattern
-    .split(/(\{(?:AAAA|YYYY|AA|YY|MM|N+)\})/)
-    .map((part) => {
-      if (/^\{(AAAA|YYYY)\}$/.test(part)) return '\\d{4}';
-      if (/^\{(AA|YY|MM)\}$/.test(part)) return '\\d{2}';
-      if (/^\{N+\}$/.test(part)) {
-        groups++;
-        return '(\\d+)';
-      }
-      return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    })
-    .join('');
-  if (groups !== 1) return undefined;
-  const match = new RegExp(`^${source}$`).exec(id.trim());
-  return match ? Number(match[1]) : undefined;
-}
-
-/**
- * La numérotation après l'émission d'une facture datée de `iso`. Si le numéro émis suit le
- * gabarit avec un rang plus élevé que prévu, la séquence repart de lui : jamais de retour en arrière.
- */
-export function advance(numbering: Numbering, iso: string, id?: string): Numbering {
-  const year = Number(iso.slice(0, 4));
-  const issued = id === undefined ? undefined : rankOf(numbering.pattern, id);
-  const next = Math.max(nextRank(numbering, iso), issued ?? 0) + 1;
-  return { ...numbering, next, year: Math.max(year, numbering.year) };
-}
-
-/** BR-FR-01 et BR-FR-02 : 35 caractères au plus, parmi A-Z a-z 0-9 - + _ /. */
-export function numberProblems(id: string): ('length' | 'chars')[] {
-  const out: ('length' | 'chars')[] = [];
-  if (id.length > 35) out.push('length');
-  if (id !== '' && !/^[A-Za-z0-9+_/-]+$/.test(id)) out.push('chars');
-  return out;
-}
 
 // ---------- nouvelle facture ----------
 
@@ -295,35 +249,72 @@ export function newInvoiceForm(
 
 // ---------- sauvegarde ----------
 
-/** Octets → base64, par blocs (un `String.fromCharCode(...grand tableau)` déborde la pile). */
-export function toBase64(bytes: Uint8Array): string {
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+// Le JSON portable (octets en base64) vit dans `shared/`, comme la numérotation.
+export { fromBase64, fromPortableJson, toBase64, toPortableJson } from '../shared/portable.js';
+
+/**
+ * Le format d'une sauvegarde du Studio : `{ format, version: 1, data }`, en JSON portable. L'export
+ * d'un compte en est une aussi (`compte/export.ts`), qui se restaure de même dans le Studio sans
+ * compte, PDF compris.
+ */
+export const FORMAT_SAUVEGARDE = 'facturx-studio-backup';
+
+/** Le contenu d'une sauvegarde : ce que `Persistence.dump()` rend, les PDF sous `pdf-<uid>`. */
+export interface DonneesSauvegarde {
+  kv?: Record<string, unknown>;
+  files?: Record<string, Uint8Array>;
+  invoices?: SavedInvoice[];
+  clients?: ClientRecord[];
+  products?: ProductRecord[];
+}
+
+/** Le contenu de la sauvegarde `texte` ; lève si ce n'en est pas une. */
+export function lireSauvegarde(texte: string): DonneesSauvegarde {
+  const sauvegarde = fromPortableJson<{ format?: unknown; data?: unknown }>(texte);
+  if (sauvegarde?.format !== FORMAT_SAUVEGARDE || typeof sauvegarde.data !== 'object') {
+    throw new Error('pas une sauvegarde du Studio');
   }
-  return btoa(binary);
+  return (sauvegarde.data ?? {}) as DonneesSauvegarde;
 }
 
-export function fromBase64(text: string): Uint8Array {
-  const binary = atob(text);
-  const out = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
-  return out;
+/** Écrit la sauvegarde dans `cible`, clé par clé : ce qui y est déjà sous la même clé est remplacé. */
+export async function restaurerSauvegarde(
+  data: DonneesSauvegarde,
+  cible: Pick<Persistence, 'set' | 'setFile' | 'put'>,
+): Promise<void> {
+  for (const [key, value] of Object.entries(data.kv ?? {})) await cible.set(key, value);
+  for (const [key, value] of Object.entries(data.files ?? {})) await cible.setFile(key, value);
+  for (const item of data.invoices ?? []) await cible.put('invoices', item);
+  for (const item of data.clients ?? []) await cible.put('clients', item);
+  for (const item of data.products ?? []) await cible.put('products', item);
 }
 
-/** JSON qui transporte des `Uint8Array` (pièces jointes, logo, polices) en base64 balisé. */
-export function toPortableJson(value: unknown): string {
-  return JSON.stringify(
-    value,
-    (_, v) => (v instanceof Uint8Array ? { $bytes: toBase64(v) } : v),
-    2,
-  );
+// ---------- reprise ----------
+
+/** Complète un objet conservé par les valeurs par défaut : un champ ajouté depuis ne manque jamais. */
+export function fill<T>(defaults: T, saved: unknown): T {
+  if (Array.isArray(defaults) || saved === undefined || saved === null)
+    return (saved ?? defaults) as T;
+  if (
+    typeof defaults !== 'object' ||
+    defaults === null ||
+    typeof saved !== 'object' ||
+    Array.isArray(saved)
+  ) {
+    return saved as T;
+  }
+  if (saved instanceof Uint8Array) return saved as T;
+  const out: Record<string, unknown> = { ...(defaults as Record<string, unknown>) };
+  for (const [key, value] of Object.entries(saved as Record<string, unknown>)) {
+    out[key] = key in out ? fill(out[key], value) : value;
+  }
+  return out as T;
 }
 
-export function fromPortableJson<T>(text: string): T {
-  return JSON.parse(text, (_, v) =>
-    v && typeof v === 'object' && typeof (v as { $bytes?: unknown }).$bytes === 'string'
-      ? fromBase64((v as { $bytes: string }).$bytes)
-      : v,
-  ) as T;
+/** Un formulaire conservé (brouillon du navigateur ou du serveur), complété comme au démarrage. */
+export function hydrateForm(saved: InvoiceForm): InvoiceForm {
+  const form = fill(blankForm(), saved);
+  form.seller = fill(blankParty(), saved.seller);
+  form.buyer = fill(blankParty(), saved.buyer);
+  return form;
 }

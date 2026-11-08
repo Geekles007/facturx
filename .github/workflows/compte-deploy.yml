@@ -1,0 +1,152 @@
+name: Déploiement du compte
+
+# Déploie le serveur du compte sur le projet Supabase de production, à la main seulement (Actions →
+# Déploiement du compte → Run workflow, branche `main`) : la suite de docs/compte.md (« Déployer »),
+# dans l'ordre.
+#
+#   pnpm build && pnpm site:build && pnpm compte:preparer
+#   supabase db push --remote   les migrations en attente
+#   supabase functions deploy   les fonctions de config.toml, avec leurs réglages (verify_jwt, import map)
+#   pnpm compte:polices         les polices du Studio dans le bucket public `polices`
+#
+# Le site lui-même (le Studio, avec l'URL et la clé publique du projet) est construit par Coolify.
+# Les secrets des fonctions et du Vault sont posés une fois à la main (docs/compte.md) : ce workflow
+# vérifie seulement que ceux des fonctions sont là, et que `FACTURX_TESTS` n'y est pas.
+#
+# Secrets du dépôt : SUPABASE_ACCESS_TOKEN (jeton personnel du compte Supabase), SUPABASE_DB_PASSWORD
+# (mot de passe de la base), SUPABASE_PROJECT_REF (identifiant du projet) ; SUPABASE_SERVICE_ROLE_KEY,
+# facultatif, sinon lue par le CLI. Chacun n'est donné qu'aux étapes qui parlent au projet, jamais à
+# l'installation des dépendances ni aux constructions. Aucun n'est écrit dans le journal, public
+# comme le dépôt : la clé lue par le CLI est masquée avant tout usage.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compte-deploy
+  cancel-in-progress: false
+
+# `bash -eo pipefail` : une commande qui échoue au début d'un tube arrête l'étape.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  deploiement:
+    # Le dépôt d'origine seulement (une copie n'a ni secrets ni projet), et la branche `main` : la
+    # production ne reçoit que ce qui y est fusionné. Lancé depuis une autre branche, le job est sauté.
+    if: github.repository == 'Geekles007/facturx' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Secrets présents
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          : "${SUPABASE_ACCESS_TOKEN:?secret SUPABASE_ACCESS_TOKEN absent}"
+          : "${SUPABASE_DB_PASSWORD:?secret SUPABASE_DB_PASSWORD absent}"
+          : "${SUPABASE_PROJECT_REF:?secret SUPABASE_PROJECT_REF absent}"
+          echo "Déploiement de ${GITHUB_REF_NAME} (${GITHUB_SHA::7})"
+
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: CLI Supabase
+        # La version avec laquelle config.toml et ce workflow ont été écrits (comme le job `compte`).
+        uses: supabase/setup-cli@v1
+        with:
+          version: 3.0.0
+
+      - name: SDK, polices du Studio et modules partagés des fonctions
+        run: pnpm build && pnpm site:build && pnpm compte:preparer
+
+      - name: Lier le projet
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
+
+      # Avant d'écrire quoi que ce soit : les variables que les fonctions lisent doivent exister, et
+      # celle des tests ne jamais être là (elle laisserait un en-tête fixer « aujourd'hui »).
+      - name: Secrets des fonctions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          noms=$(supabase secrets list --output json | jq -r '.[]?.name? // empty') || noms=''
+          if [ -z "$noms" ]; then
+            echo 'liste des secrets illisible (supabase secrets list --output json) : la vérifier à la main.'
+            exit 1
+          fi
+          for nom in FACTURX_ORIGINES BREVO_API_KEY RELANCES_EXPEDITEUR PURGE_SECRET; do
+            grep -qx "$nom" <<<"$noms" || { echo "secret de fonction absent : $nom (docs/compte.md)"; exit 1; }
+          done
+          if grep -qx FACTURX_TESTS <<<"$noms"; then
+            echo 'FACTURX_TESTS est posé sur le projet : à retirer (supabase secrets unset FACTURX_TESTS).'
+            exit 1
+          fi
+
+      # `--remote` : sans lui, le CLI 3 vise la base locale. `--yes` confirme une modification du
+      # projet hébergé sans question.
+      - name: Migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: supabase db push --remote --yes
+
+      - name: Edge Functions
+        # Celles que config.toml déclare (chaque fonction y a son entrée) : ni les dossiers partagés, ni
+        # les tests, ni une fonction de mesure laissée là par erreur.
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          fonctions=$(sed -nE 's/^\[functions\.([A-Za-z0-9_-]+)\]$/\1/p' supabase/config.toml)
+          [ -n "$fonctions" ] || { echo 'aucune fonction dans supabase/config.toml'; exit 1; }
+          echo "Fonctions : $(echo $fonctions)"
+          supabase functions deploy $fonctions --yes
+
+      - name: Polices du Studio dans le bucket `polices`
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          CLE_DE_SERVICE: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          cle="$CLE_DE_SERVICE"
+          if [ -z "$cle" ]; then
+            # La clé de service lue par le CLI : l'ancienne (JWT `service_role`) ou la nouvelle
+            # (`sb_secret_…`), révélée en entier. Masquée avant tout usage.
+            cle=$(supabase projects api-keys --reveal --output json | jq -r '
+              first((.[] | select(.name == "service_role")), (.[] | select(.type == "secret")))
+              | .api_key // empty') || cle=''
+            if [ -n "$cle" ]; then echo "::add-mask::$cle"; fi
+          fi
+          case "$cle" in
+            eyJ*.*.* | sb_secret_*) ;;
+            *) echo 'clé de service introuvable : poser le secret SUPABASE_SERVICE_ROLE_KEY'; exit 1 ;;
+          esac
+          SUPABASE_URL="https://$SUPABASE_PROJECT_REF.supabase.co" SUPABASE_SERVICE_ROLE_KEY="$cle" \
+            pnpm compte:polices
+
+      # Les fonctions répondent, avec leurs propres gardes : sans session, `emettre` dit 401 SESSION
+      # (et non la passerelle, que `verify_jwt = false` écarte) ; sans secret, `purger` refuse.
+      - name: Les fonctions répondent
+        env:
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          base="https://$SUPABASE_PROJECT_REF.supabase.co/functions/v1"
+          for fonction in emettre purger; do
+            code=$(curl -sS -o reponse.json -w '%{http_code}' -X POST "$base/$fonction" \
+              -H 'content-type: application/json' --data '{}')
+            echo "$fonction : $code $(jq -c '{code}' reponse.json 2>/dev/null)"
+            [ "$code" = 401 ] && jq -e '.code == "SESSION"' reponse.json >/dev/null ||
+              { echo "$fonction : 401 SESSION attendu"; exit 1; }
+          done
+          rm -f reponse.json

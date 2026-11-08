@@ -3,17 +3,23 @@ name: Image du site
 # L'image du site n'était jusqu'ici construite que par Coolify, au déploiement : une erreur de
 # configuration nginx ne se voyait donc qu'en production. Ce contrôle la rattrape avant.
 # Limité aux chemins qui la composent : inutile de reconstruire une image à chaque commit du SDK.
+# `site/**` en fait partie : la CSP interdit les scripts en ligne, et une page qui en reprendrait un
+# resterait muette en production sans qu'aucun autre contrôle ne le voie.
 on:
   push:
     paths:
       - Dockerfile
       - docker/**
+      - site/**
+      - scripts/publier-site.mjs
       - .dockerignore
       - .github/workflows/image.yml
   pull_request:
     paths:
       - Dockerfile
       - docker/**
+      - site/**
+      - scripts/publier-site.mjs
       - .dockerignore
       - .github/workflows/image.yml
 
@@ -41,6 +47,154 @@ jobs:
           curl -fsS -o /dev/null http://localhost:8080/
           curl -fsS -o /dev/null http://localhost:8080/validateur/
 
+      # nginx n'hérite d'aucun add_header du niveau server dans une location qui en définit un : la CSP
+      # est donc incluse dans chacune, et il faut un chemin par location pour le voir. Toutes les
+      # réponses disent la même politique.
+      - name: Chaque réponse du site porte la CSP, quelle que soit la location qui la sert
+        run: |
+          reference=""
+          for chemin in \
+              / /en/ /validateur/ /en/validateur/ /studio/ /en/studio/ /confidentialite/ \
+              /en/confidentialite/ \
+              /fonts/Geist-Variable.woff2 \
+              /studio/polices/geist-regular.ttf \
+              /validateur/vendor/SaxonJS2.rt.js \
+              /validateur/schemas/v1.4.0.04/FACTUR-X_EN16931.sef.json.gz \
+              /npm-downloads.json \
+              /validateur/compteur/controle /studio/compteur/facture; do
+            entetes=$(curl -sI "http://localhost:8080$chemin" | tr -d '\r')
+            statut=$(printf '%s\n' "$entetes" | head -1)
+            case "$chemin:$statut" in
+              # Le relevé npm n'est pas écrit quand l'API était indisponible à la construction : la
+              # location répond alors 404, avec sa CSP, et c'est la CSP que l'on regarde ici.
+              /npm-downloads.json:*) ;;
+              *:*' 2'[0-9][0-9]*) ;;
+              *) echo "$chemin : réponse inattendue « $statut »"; exit 1 ;;
+            esac
+            csp=$(printf '%s\n' "$entetes" | grep -i '^content-security-policy:' || true)
+            [ -n "$csp" ] || { echo "$chemin : pas d'en-tête content-security-policy"; exit 1; }
+            [ "$(printf '%s\n' "$csp" | wc -l)" -eq 1 ] \
+              || { echo "$chemin : content-security-policy en double"; exit 1; }
+            reference="${reference:-$csp}"
+            [ "$csp" = "$reference" ] || { echo "$chemin : CSP différente de celle de /"; exit 1; }
+            echo "$chemin : CSP présente"
+          done
+          echo "$reference"
+          # Ce qui compte dans la politique : aucun script hors du site, ni en ligne ni par eval,
+          # aucun plugin, aucune base ou cadre étranger, et le site seul pour connect-src (cette
+          # image est construite sans projet Supabase ; l'origine d'un projet est vérifiée plus bas).
+          for jeton in "script-src 'self';" "object-src 'none';" "base-uri 'self';" \
+              "frame-ancestors 'none'" "connect-src 'self';"; do
+            case "$reference" in
+              *"$jeton"*) ;;
+              *) echo "CSP : « $jeton » absent"; exit 1 ;;
+            esac
+          done
+          case "$reference" in
+            *unsafe-eval*|*'${'*) echo "CSP : jeton interdit, ou gabarit non substitué"; exit 1 ;;
+          esac
+
+      # Une page gardée en cache garde sa CSP : les pages sont revalidées à chaque visite, pour qu'un
+      # changement de politique ou de projet Supabase atteigne aussi un visiteur qui revient. Les
+      # fichiers immuables gardent leur cache long.
+      - name: Les pages sont revalidées, les polices restent en cache
+        run: |
+          for chemin in / /validateur/ /studio/ /en/studio/ /studio/app.js; do
+            curl -sI "http://localhost:8080$chemin" | tr -d '\r' \
+              | grep -qi '^cache-control: no-cache$' \
+              || { echo "$chemin : pas de « Cache-Control: no-cache »"; exit 1; }
+            echo "$chemin : revalidée"
+          done
+          curl -sI http://localhost:8080/fonts/Geist-Variable.woff2 | tr -d '\r' \
+            | grep -qi '^cache-control: public, max-age=31536000, immutable$' \
+            || { echo "/fonts/ : le cache long a disparu"; exit 1; }
+          # La CSP est écrite à la construction avec l'ARG du bundle : si ce câblage disparaissait du
+          # Dockerfile, cette image (construite sans projet) resterait verte, et la production aurait
+          # un connect-src sans l'origine du projet.
+          grep -q '^ARG FACTURX_SUPABASE_URL' <(sed -n '/^FROM nginx/,$p' Dockerfile) \
+            || { echo "Dockerfile : l'ARG FACTURX_SUPABASE_URL n'est plus redéclaré dans l'étape nginx"; exit 1; }
+          grep -q 'ecrire-csp.sh "\$FACTURX_SUPABASE_URL"' Dockerfile \
+            || { echo "Dockerfile : la CSP n'est plus écrite depuis FACTURX_SUPABASE_URL"; exit 1; }
+
+      # L'URL du projet est un argument de construction, gravé dans le bundle du Studio : la CSP
+      # l'est aussi, par docker/ecrire-csp.sh, pour que les deux disent la même origine. On essaie
+      # le script dans l'image plutôt que de la reconstruire pour chaque cas.
+      - name: L'origine du projet Supabase entre dans connect-src, et rien d'autre
+        run: |
+          csp() {
+            docker run --rm --entrypoint /usr/local/bin/ecrire-csp.sh facturx-site \
+              "$1" /etc/nginx/csp.gabarit /dev/stdout | grep -o 'connect-src[^;]*;'
+          }
+          attendu() {
+            obtenu=$(csp "$1")
+            [ "$obtenu" = "$2" ] || { echo "« $1 » : attendu « $2 », reçu « $obtenu »"; exit 1; }
+          }
+          attendu '' "connect-src 'self';"
+          attendu 'https://abcdefgh.supabase.co' "connect-src 'self' https://abcdefgh.supabase.co;"
+          attendu 'https://abcdefgh.supabase.co/' "connect-src 'self' https://abcdefgh.supabase.co;"
+          attendu 'http://127.0.0.1:55421' "connect-src 'self' http://127.0.0.1:55421;"
+          # Une valeur qui n'est pas une origine ajouterait une directive à l'en-tête : la
+          # construction s'arrête plutôt que de publier une politique qu'on n'a pas écrite.
+          for mauvaise in "https://x.supabase.co; script-src *" "https://x.supabase.co/rest/v1" \
+              "supabase.co" "javascript:alert(1)" "https://x y.co"; do
+            if docker run --rm --entrypoint /usr/local/bin/ecrire-csp.sh facturx-site \
+                "$mauvaise" /etc/nginx/csp.gabarit /dev/null 2>/dev/null; then
+              echo "« $mauvaise » aurait dû être refusée"
+              exit 1
+            fi
+          done
+
+      # Un script en ligne serait bloqué par `script-src 'self'` : la page resterait muette sans que
+      # rien ne le dise. On le cherche donc dans le HTML servi, de même qu'un gestionnaire
+      # d'événement (on…=) ou une adresse javascript:, bloqués de la même façon.
+      # Les pages que sert cette image, et toutes celles du dépôt : les CGU et l'accord de
+      # sous-traitance ne sont publiés qu'avec un projet Supabase, et cette image n'en a pas.
+      - name: Aucune page ne porte de script en ligne
+        run: |
+          verifier() {
+            if printf '%s\n' "$2" | grep -i '<script' | grep -ivq 'src='; then
+              echo "$1 : script en ligne"; exit 1
+            fi
+            if printf '%s\n' "$2" | grep -Eiq '<[^>]*[[:space:]]on[a-z]+=|javascript:'; then
+              echo "$1 : gestionnaire d'événement ou adresse javascript:"; exit 1
+            fi
+          }
+          for page in / /en/ /validateur/ /en/validateur/ /studio/ /en/studio/ \
+              /confidentialite/ /en/confidentialite/; do
+            verifier "$page" "$(curl -fsS "http://localhost:8080$page")"
+          done
+          while IFS= read -r fichier; do
+            verifier "$fichier" "$(cat "$fichier")"
+          done < <(find site -name '*.html')
+
+      # Les adresses sans barre finale redirigent, sans quoi les chemins relatifs de la page
+      # remonteraient d'un cran.
+      - name: La politique de confidentialité est servie, avec ou sans barre finale
+        run: |
+          for langue in "" /en; do
+            curl -fsS -o /dev/null "http://localhost:8080$langue/confidentialite/"
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8080$langue/confidentialite")
+            [ "$code" = "301" ] || { echo "$langue/confidentialite : attendu 301, reçu $code"; exit 1; }
+          done
+
+      # Ruling 66 : un site construit sans projet Supabase ne parle pas du compte : ni CGU ni accord
+      # de sous-traitance (publiés avec un projet, ce que scripts/publier-site.test.mjs éprouve), ni
+      # bouton « Créer un compte », ni marque restée dans les pages. Les CGU sont le lien de la boîte
+      # de création de compte : avec un projet, elles sont publiées.
+      - name: Sans projet Supabase, aucune page ne parle du compte
+        run: |
+          for chemin in /cgu/ /sous-traitance/ /en/cgu/ /en/sous-traitance/; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8080$chemin")
+            [ "$code" = "404" ] || { echo "$chemin : attendu 404, reçu $code"; exit 1; }
+          done
+          for page in / /en/ /studio/ /en/studio/ /confidentialite/ /en/confidentialite/; do
+            html=$(curl -fsS "http://localhost:8080$page")
+            if printf '%s\n' "$html" \
+                | grep -Eiq 'supabase|créer un compte|create a free account|data-(sans-)?compte|href="[^"]*(cgu|sous-traitance)/'; then
+              echo "$page : texte ou lien du compte"; exit 1
+            fi
+          done
+
       - name: /stats/ est fermé sans mot de passe
         run: |
           code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/stats/)
@@ -57,6 +211,19 @@ jobs:
           # Générée au démarrage, avant toute requête : rien n'est encore compté.
           curl -fsS -u stats:motdepassedetest http://localhost:8080/stats/compteurs.html >/tmp/compteurs.html
           grep -q 'Aucun décompte enregistré' /tmp/compteurs.html
+
+      # Le rapport de GoAccess repose sur des scripts et des styles en ligne : la CSP du site le
+      # rendrait muet. Il est derrière son mot de passe, et n'est pas une page du site.
+      - name: /stats/ n'a pas la CSP du site
+        run: |
+          for chemin in /stats/ /stats/compteurs.html /stats/rapport.js; do
+            entetes=$(curl -sI -u stats:motdepassedetest "http://localhost:8080$chemin" | tr -d '\r')
+            printf '%s\n' "$entetes" | head -1 | grep -q ' 200' \
+              || { echo "$chemin : attendu 200"; printf '%s\n' "$entetes"; exit 1; }
+            if printf '%s\n' "$entetes" | grep -iq '^content-security-policy:'; then
+              echo "$chemin : la CSP du site ne doit pas s'y appliquer"; exit 1
+            fi
+          done
 
       - name: Le rapport contient les visites, et pas d'adresse complète
         run: |
@@ -108,6 +275,32 @@ jobs:
           curl -fsS -u stats:motdepassedetest http://localhost:8080/stats/rapport.js >/tmp/rapport.js
           grep -q 'compteurs.html' /tmp/rapport.js
 
+      - name: Le journal des statistiques ne garde que 13 mois
+        run: |
+          # Une ligne de 14 mois, une de 12, et une de 14 dont le nom d'utilisateur imite une date
+          # récente : seule la date que nginx écrit, suivie d'un guillemet, compte.
+          vieux=$(LC_ALL=C date -d '14 months ago' '+%d/%b/%Y:%H:%M:%S +0000')
+          recent=$(LC_ALL=C date -d '12 months ago' '+%d/%b/%Y:%H:%M:%S +0000')
+          docker exec site sh -c "printf '%s\n' \
+            '203.0.113.0 - - [$vieux] \"GET /ancienne HTTP/1.1\" 200 1 \"-\" \"test\"' \
+            '203.0.113.0 - - [$recent] \"GET /recente HTTP/1.1\" 200 1 \"-\" \"test\"' \
+            '203.0.113.0 - [$recent] [$vieux] \"GET /piege HTTP/1.1\" 200 1 \"-\" \"test\"' \
+            >>/var/log/nginx/access.log"
+          avant=$(docker exec site grep -c 'GET / HTTP' /var/log/nginx/access.log)
+          docker exec site /usr/local/bin/elaguer-journal.sh
+          docker exec site cat /var/log/nginx/access.log >/tmp/journal
+          for chemin in /ancienne /piege; do
+            if grep -q "GET $chemin " /tmp/journal; then echo "$chemin aurait dû partir"; exit 1; fi
+          done
+          grep -q 'GET /recente ' /tmp/journal || { echo "/recente a disparu"; exit 1; }
+          apres=$(grep -c 'GET / HTTP' /tmp/journal)
+          [ "$avant" = "$apres" ] || { echo "visites du jour : $avant avant, $apres après"; exit 1; }
+          # nginx écrit toujours dans le même fichier après la réécriture.
+          curl -fsS -o /dev/null http://localhost:8080/confidentialite/
+          sleep 1
+          docker exec site grep -q 'GET /confidentialite/ ' /var/log/nginx/access.log
+          docker exec site grep -q 'elaguer-journal' /etc/crontabs/root
+
       - name: Sans mot de passe, /stats/ n'existe pas
         run: |
           docker rm -f site >/dev/null
@@ -121,3 +314,9 @@ jobs:
             [ "$code" = "404" ] || { echo "$chemin : attendu 404, reçu $code"; exit 1; }
           done
           docker logs nu
+          # Sans statistiques, la purge du journal tourne quand même, et le rapport non.
+          docker exec nu grep -q 'elaguer-journal' /etc/crontabs/root
+          if docker exec nu grep -q 'goaccess-report' /etc/crontabs/root; then
+            echo "rapport planifié sans statistiques"; exit 1
+          fi
+          docker exec nu sh -c 'ps | grep -q "[c]rond"' || { echo "crond ne tourne pas"; exit 1; }

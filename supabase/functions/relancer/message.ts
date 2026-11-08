@@ -1,0 +1,143 @@
+/**
+ * Le message d'une relance (spec § 9, étape 3) : ce que l'utilisateur a relu, mis en forme pour
+ * l'API Brevo sans que rien de ce qu'il a saisi puisse devenir du HTML, un en-tête ou un destinataire
+ * de plus.
+ *
+ *   - le corps, en texte, est échappé puis placé dans un gabarit HTML fixe (`textContent` garde le
+ *     texte brut) : aucun HTML saisi par l'utilisateur n'est envoyé ;
+ *   - l'objet est débarrassé des retours à la ligne, des caractères de contrôle et de mise en forme
+ *     (sens d'écriture, largeur nulle), et coupé à 200 caractères ; le nom de l'expéditeur, de ces
+ *     caractères, des guillemets et des chevrons ;
+ *   - le destinataire est une seule adresse (`destinataireValide`, site-src/shared/destinataire.ts,
+ *     la règle que le Studio applique aussi avant d'activer « Envoyer »).
+ *
+ * L'adresse d'expédition est celle du domaine de facturx (`RELANCES_EXPEDITEUR`) ; `Reply-To` est
+ * l'adresse du compte, de sorte qu'une réponse du client arrive à l'entreprise.
+ */
+import { fileStem } from '../_vendor/shared/numerotation.ts';
+import { toBase64 } from '../_vendor/shared/portable.ts';
+
+/** Le corps de `POST https://api.brevo.com/v3/smtp/email` (les champs que `relancer` renseigne). */
+export interface MessageBrevo {
+  sender: { name: string; email: string };
+  to: { email: string }[];
+  replyTo: { email: string };
+  subject: string;
+  htmlContent: string;
+  textContent: string;
+  /** Le PDF de la facture : `content` est son contenu en base64. */
+  attachment: { name: string; content: string }[];
+}
+
+const OBJET_MAX = 200;
+const NOM_MAX = 100;
+
+/** Une fin de ligne, sous toutes ses formes : caractères de contrôle (CR, LF, tabulation…) et U+2028/9. */
+const FINS_DE_LIGNE = /[\p{Cc}\p{Zl}\p{Zp}]+/gu;
+
+/**
+ * Les caractères de mise en forme (catégorie Cf) : sens d'écriture (U+202E, U+2066-2069 : un objet qui
+ * se lirait à l'envers), largeur nulle (U+200B…), marque d'ordre des octets. Ils n'ont rien à faire dans
+ * un objet ni dans un nom d'expéditeur ; retirés, ils séparent les composants d'un émoji composé.
+ */
+const MISE_EN_FORME = /\p{Cf}/gu;
+
+const ENTITES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
+/** `texte` pour le contenu d'un élément HTML : il s'affichera tel qu'il a été saisi. */
+export function echapper(texte: string): string {
+  return texte.replace(/[&<>"']/g, (c) => ENTITES[c] as string);
+}
+
+/** Les `max` premiers caractères de `texte` : un caractère hors du plan de base ne se coupe pas en deux. */
+function couper(texte: string, max: number): string {
+  // Deux unités par caractère au plus : la première coupe évite de parcourir un texte énorme.
+  return Array.from(texte.slice(0, max * 2))
+    .slice(0, max)
+    .join('');
+}
+
+/**
+ * `texte` sur une seule ligne, de `max` caractères au plus : les caractères de mise en forme sont
+ * retirés, chaque suite de retours à la ligne et de caractères de contrôle devient une espace, puis le
+ * texte est coupé. Aussi pour ce que Brevo répond (l'identifiant du message), avant qu'il soit consigné.
+ */
+export function uneLigne(texte: string, max: number): string {
+  return couper(texte.replace(MISE_EN_FORME, '').replace(FINS_DE_LIGNE, ' ').trim(), max).trim();
+}
+
+/**
+ * L'objet d'un e-mail sur une seule ligne (c'est ce qui empêche `Relance\r\nBcc: x@y` d'ouvrir un
+ * en-tête), de 200 caractères au plus.
+ */
+export function nettoyerObjet(objet: string): string {
+  return uneLigne(objet, OBJET_MAX);
+}
+
+/** « *Nom de l'entreprise* via facturx », sans guillemet, chevron, barre oblique inverse ni retour à la ligne. */
+function nomExpediteur(entreprise: string): string {
+  const nom = couper(
+    entreprise
+      .replace(/["<>\\]/g, '')
+      .replace(MISE_EN_FORME, '')
+      .replace(FINS_DE_LIGNE, ' ')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    NOM_MAX,
+  ).trim();
+  return nom === '' ? 'facturx' : `${nom} via facturx`;
+}
+
+/** Les paragraphes du texte (lignes vides), en `<p>` ; un retour à la ligne simple devient `<br>`. */
+function enParagraphes(corps: string): string {
+  return corps
+    .replace(/\r\n?/g, '\n')
+    .split(/\n\s*\n/)
+    .map((paragraphe) => paragraphe.trim())
+    .filter((paragraphe) => paragraphe !== '')
+    .map(
+      (paragraphe) =>
+        `<p style="margin:0 0 16px">${echapper(paragraphe).replace(/\n/g, '<br>')}</p>`,
+    )
+    .join('');
+}
+
+/** Le gabarit fixe : le seul HTML qui part est celui-ci, autour de paragraphes déjà échappés. */
+const gabarit = (paragraphes: string): string =>
+  '<!doctype html><html><head><meta charset="utf-8"></head>' +
+  '<body style="margin:0;padding:24px;font-family:Arial,Helvetica,sans-serif;font-size:15px;' +
+  `line-height:1.5;color:#111">${paragraphes}</body></html>`;
+
+/**
+ * Le message à envoyer. L'adresse d'expédition est lue dans `RELANCES_EXPEDITEUR` : sans elle, la
+ * fonction lève (une erreur du serveur, pas un message sans expéditeur).
+ */
+export function composer(m: {
+  objet: string;
+  corps: string;
+  entreprise: string;
+  destinataire: string;
+  replyTo: string;
+  numero: string;
+  pdf: Uint8Array;
+}): MessageBrevo {
+  const expediteur = Deno.env.get('RELANCES_EXPEDITEUR')?.trim();
+  if (!expediteur) {
+    throw new Error('RELANCES_EXPEDITEUR : à définir (adresse d’expédition des relances).');
+  }
+  return {
+    sender: { name: nomExpediteur(m.entreprise), email: expediteur },
+    to: [{ email: m.destinataire }],
+    replyTo: { email: m.replyTo },
+    subject: nettoyerObjet(m.objet),
+    htmlContent: gabarit(enParagraphes(m.corps)),
+    textContent: m.corps,
+    attachment: [{ name: `${fileStem(m.numero)}.pdf`, content: toBase64(m.pdf) }],
+  };
+}

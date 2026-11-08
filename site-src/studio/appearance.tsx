@@ -15,16 +15,17 @@ import {
   type RenderTemplate,
 } from 'facturx-sdk/pdf';
 import { useEffect, useState } from 'preact/hooks';
+import { LIBELLES_RENOMMABLES } from '../shared/rendu.js';
 import { useDerived } from './context.js';
 import { getFile, normalizeLogo, putFile } from './files.js';
 import { FONT_FAMILIES, type LoadedFonts, loadFamily } from './fonts.js';
 import { t } from './i18n.js';
-import type { Appearance, LabelKey } from './library.js';
+import type { Appearance } from './library.js';
 import { uid } from './model.js';
 import { type Assets, layoutFor } from './pipeline.js';
 import { Thumbnail } from './preview.js';
 import { storage } from './storage.js';
-import { persistKeys, setAppearance, store, toast, useStudio } from './store.js';
+import { conserver, persistKeys, setAppearance, store, toast, useStudio } from './store.js';
 import { Button, Field, FilePick, Icon, Input, Segmented, TextArea, Toggle } from './ui.js';
 
 const SWATCHES = [
@@ -172,6 +173,8 @@ function ColorPicker() {
 
 function FontPicker() {
   const appearance = useStudio((s) => s.appearance);
+  // Le serveur du compte ne garde que des polices TTF (bucket `fichiers`) ; en local, OTF aussi.
+  const formats = useStudio((s) => (s.ui.compte ? '.ttf' : '.ttf,.otf'));
   const { built } = useDerived();
   const [loaded, setLoaded] = useState<Record<string, LoadedFonts>>({});
   const [regular, setRegular] = useState<File | undefined>();
@@ -201,14 +204,20 @@ function FontPicker() {
         fonts: boldBytes ? { regular: bytes, bold: boldBytes } : { regular: bytes },
       });
       const regularKey = `font-${uid()}`;
-      await putFile(regularKey, bytes);
+      // Une police que le serveur refuse n'est pas appliquée : le message a dit pourquoi.
+      if (!(await putFile(regularKey, bytes))) return;
       const customFont: NonNullable<Appearance['customFont']> = {
         regularKey,
         name: file.name.replace(/\.(ttf|otf)$/i, ''),
       };
       if (boldBytes) {
         customFont.boldKey = `font-${uid()}`;
-        await putFile(customFont.boldKey, boldBytes);
+        if (!(await putFile(customFont.boldKey, boldBytes))) {
+          // La face normale, déposée pour rien, ne reste pas sur le serveur (même clé : si son
+          // dépôt attend encore le réseau, c'est sa suppression qui repartira à sa place).
+          void conserver(`files:${regularKey}`, () => storage.remove('files', regularKey));
+          return;
+        }
       }
       setAppearance({ font: 'custom', customFont });
       setRegular(undefined);
@@ -262,7 +271,7 @@ function FontPicker() {
       <div class="font-import">
         {!regular ? (
           <FilePick
-            accept=".ttf,.otf"
+            accept={formats}
             onFile={(file) => setRegular(file)}
             icon="upload"
             size="sm"
@@ -276,7 +285,7 @@ function FontPicker() {
               <Icon name="file" /> {regular.name}
             </span>
             <FilePick
-              accept=".ttf,.otf"
+              accept={formats}
               onFile={(bold) => importFont(regular, bold)}
               icon="upload"
               size="sm"
@@ -309,7 +318,8 @@ function LogoPicker() {
     try {
       const { bytes, type } = await normalizeLogo(file);
       const key = `logo-${uid()}`;
-      await putFile(key, bytes);
+      // Un logo que le serveur refuse (trop lourd) n'est pas appliqué : le message a dit pourquoi.
+      if (!(await putFile(key, bytes))) return;
       setAppearance({
         logo: {
           key,
@@ -437,26 +447,12 @@ function StyleTuner() {
   );
 }
 
-const LABEL_KEYS: LabelKey[] = [
-  'designation',
-  'quantity',
-  'unitPrice',
-  'vat',
-  'netAmount',
-  'seller',
-  'buyer',
-  'amountDue',
-  'paymentTerms',
-  'notes',
-  'scanToPay',
-];
-
 function LabelsEditor() {
   const appearance = useStudio((s) => s.appearance);
   const defaults = RENDER_LABELS[appearance.language];
   return (
     <div class="grid">
-      {LABEL_KEYS.map((key) => (
+      {LIBELLES_RENOMMABLES.map((key) => (
         <Field key={key} label={t.appearance.labelNames[key]} span={3}>
           {(id) => (
             <Input
@@ -518,8 +514,11 @@ export function AppearancePanel() {
   }, [appearance.logo?.key]);
   const saveDefault = () => {
     const current = store.get().appearance;
-    storage.set(persistKeys.appearance, current).catch(() => undefined);
-    toast(t.appearance.defaultSaved);
+    void conserver(persistKeys.appearance, () => storage.set(persistKeys.appearance, current)).then(
+      (ok) => {
+        if (ok) toast(t.appearance.defaultSaved);
+      },
+    );
   };
   return (
     <div class="panel appearance">
@@ -535,7 +534,7 @@ export function AppearancePanel() {
         <h3>{t.appearance.logo}</h3>
         <LogoPicker />
       </section>
-      <section class="panel-section">
+      <section class="panel-section" data-field="font">
         <h3>{t.appearance.font}</h3>
         <FontPicker />
       </section>

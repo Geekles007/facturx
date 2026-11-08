@@ -14,13 +14,20 @@ import { t } from '../i18n.js';
 import { formatNumber, nextRank, numberProblems } from '../library.js';
 import { setForm, store, useStudio } from '../store.js';
 import { Card, Disclosure, Field, Input, Segmented, Select, Toggle } from '../ui.js';
+import { citeesDansUneAutreDevise } from '../workflows.js';
 
 export function DocumentSection() {
   const form = useStudio((s) => s.form);
   const numbering = useStudio((s) => s.numbering);
   const history = useStudio((s) => s.history);
   const issued = useStudio((s) => s.ui.issued);
+  // En mode compte, le serveur attribue le numéro à l'émission : le Studio ne fait que le proposer.
+  const compte = useStudio((s) => s.ui.compte !== undefined);
   const type = DOCUMENT_TYPES.find((d) => d.value === form.typeCode);
+  // Un avoir est dans la devise de la facture qu'il cite (Ruling 49) : l'éditeur le dit au champ.
+  const avoirDevise = citeesDansUneAutreDevise(form, history)
+    .map((c) => `${c.numero} (${c.devise})`)
+    .join(', ');
   const next = formatNumber(
     numbering.pattern,
     nextRank(numbering, form.issueDate || '2026-01-01'),
@@ -28,7 +35,9 @@ export function DocumentSection() {
   );
   const problems = numberProblems(form.id.trim());
   const duplicate =
-    !issued && history.some((h) => h.form.id.trim() === form.id.trim() && form.id.trim() !== '');
+    !issued &&
+    !compte &&
+    history.some((h) => h.form.id.trim() === form.id.trim() && form.id.trim() !== '');
   const warning = duplicate
     ? t.document.numberDuplicate
     : problems.includes('length')
@@ -86,7 +95,7 @@ export function DocumentSection() {
           path="id"
           span={3}
           warning={warning}
-          hint={t.document.numberHint}
+          hint={compte && !issued ? t.document.numberAssigned : t.document.numberHint}
           action={
             next !== form.id && !issued ? (
               <button
@@ -106,6 +115,7 @@ export function DocumentSection() {
               path="id"
               value={form.id}
               onValue={setNumber}
+              readOnly={compte}
               aria-invalid={invalid || undefined}
               spellcheck={false}
             />
@@ -154,11 +164,20 @@ export function DocumentSection() {
           'buyerReference',
         ]}
         defaultOpen={Boolean(
-          form.processing || form.businessProcess || form.vatOnDebits || form.buyerReference,
+          form.processing ||
+            form.businessProcess ||
+            form.vatOnDebits ||
+            form.buyerReference ||
+            avoirDevise,
         )}
       >
         <div class="grid">
-          <Field label={t.document.currency} path="currency" span={2}>
+          <Field
+            label={t.document.currency}
+            path="currency"
+            span={2}
+            warning={avoirDevise ? t.document.avoirDevise(avoirDevise) : undefined}
+          >
             {(id) => (
               <Select
                 id={id}

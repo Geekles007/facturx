@@ -15,6 +15,10 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+# veraPDF, épinglé comme dans ci.yml (voir son commentaire) : la même version pour publier.
+env:
+  VERAPDF_IMAGE: ghcr.io/verapdf/cli:v1.31.217
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -48,7 +52,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends libxml2-utils >/dev/null
       - name: veraPDF (shim Docker) dans le PATH
         run: |
-          docker pull --quiet ghcr.io/verapdf/cli:latest
+          docker pull --quiet "$VERAPDF_IMAGE"
           echo "$GITHUB_WORKSPACE/scripts" >> "$GITHUB_PATH"
       - name: Vérifications complètes
         run: pnpm check

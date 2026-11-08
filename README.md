@@ -32,9 +32,18 @@ Tout s'exécute **dans le navigateur** : aucun fichier n'est transmis. Les jeux 
 
 ## Studio
 
-**[facturx.ibird.dev/studio](https://facturx.ibird.dev/studio/)** — composez une facture Factur-X, gratuitement et sans compte : tous les types de documents (facture, avoir, acompte, rectificative…), lignes, remises et frais répartis par taux de TVA, exonérations, livraison, paiement, références, pièces jointes. Six modèles, votre couleur, votre police, votre logo, un QR code de paiement SEPA — et toutes les mentions obligatoires, qu'aucun réglage ne retire.
+**[facturx.ibird.dev/studio](https://facturx.ibird.dev/studio/)** — composez une facture Factur-X, gratuitement, avec ou sans compte : tous les types de documents (facture, avoir, acompte, rectificative…), lignes, remises et frais répartis par taux de TVA, exonérations, livraison, paiement, références, pièces jointes. Six modèles, votre couleur, votre police, votre logo, un QR code de paiement SEPA — et toutes les mentions obligatoires, qu'aucun réglage ne retire.
 
-Le Studio est une vitrine honnête du SDK : il n'emploie que son API publique (`computeTotals`, `validateInvoice`, `layoutInvoice`, `renderInvoicePdf`, `embedFacturX`, `withDeposits`…) et montre, dans son onglet « Code », le programme TypeScript exact qui produit la facture affichée. Il contrôle en direct avec le SDK puis avec les trois schematrons officiels, et son aperçu est peint depuis la mise en page même du PDF — un clic sur un bloc mène au champ qui l'a produit. Entreprise, clients, catalogue, historique et numérotation restent **dans le navigateur** (IndexedDB) : rien n'est transmis.
+Le Studio est une vitrine honnête du SDK : il n'emploie que son API publique (`computeTotals`, `validateInvoice`, `layoutInvoice`, `renderInvoicePdf`, `embedFacturX`, `withDeposits`…) et montre, dans son onglet « Code », le programme TypeScript exact qui produit la facture affichée. Il contrôle en direct avec le SDK puis avec les trois schematrons officiels, et son aperçu est peint depuis la mise en page même du PDF — un clic sur un bloc mène au champ qui l'a produit.
+
+**Deux modes, et c'est l'utilisateur qui choisit** ([D73](docs/decisions.md)) :
+
+- **Sans compte**, rien de ce que vous saisissez n'est transmis. Entreprise, clients, catalogue, historique et numérotation restent **dans le navigateur** (IndexedDB), et le Studio n'envoie rien à un serveur. Un seul signal part, sans contenu, quand un PDF Factur-X est produit : un décompte, sans cookie ni identifiant (voir [site/README.md](site/README.md)).
+- **Avec un compte gratuit** (adresse e-mail et mot de passe, CGU acceptées), les données sont **sur un serveur** : un projet Supabase en région UE (Paris, `eu-west-3`). L'hébergeur les chiffre au repos, mais le **service les lit** : il lit une facture pour l'émettre, la numéroter, calculer ce qu'il reste dû et envoyer une relance. Ce n'est pas un chiffrement de bout en bout. Le compte ajoute ce que le mode sans compte ne fait pas : brouillons multiples, factures émises numérotées et contrôlées côté serveur avec le SDK, avec leur PDF Factur-X figé, paiements et statut de chaque facture, tableau de bord, relances envoyées après relecture, import des données du navigateur, export complet, suppression du compte (30 jours de délai). Le brouillon ouvert est aussi recopié dans le navigateur : une session expirée ou un réseau coupé ne fait pas perdre la saisie.
+
+Un compte est un choix, jamais un préalable : le validateur ci-dessus reste entièrement local, et sans session le Studio ne télécharge ni `supabase-js` ni le code du compte. Les textes qui encadrent le service : [CGU](https://facturx.ibird.dev/cgu/), [politique de confidentialité](https://facturx.ibird.dev/confidentialite/) et [accord de sous-traitance](https://facturx.ibird.dev/sous-traitance/).
+
+**Licence.** Le dossier [`supabase/`](supabase) (schéma, règles d'accès, fonctions d'émission, de relance, d'import, de suppression et de purge) est sous **AGPL-3.0-or-later**, avec son propre [`LICENSE`](supabase/LICENSE) : qui modifie ce service et l'offre à des tiers par le réseau doit en publier les modifications. Le reste du dépôt — le SDK, le Studio, le validateur — reste sous **MIT**. La mise en service du compte (Supabase, e-mails, sauvegardes, déploiement) est décrite dans [docs/compte.md](docs/compte.md).
 
 ## Exemples exécutables
 
@@ -237,8 +246,8 @@ pnpm install
 pnpm check       # lint + typecheck + test + build + site (types, tests, bundle) + exemples
 ```
 
-Monorepo pnpm : `packages/facturx` (le SDK), `examples/*` (exemples exécutés en CI), `site/` + `site-src/` (la page et le validateur en ligne ; construction, déploiement Coolify ou rsync et vérifications dans [site/README.md](site/README.md)). Publication : tag `vX.Y.Z` → workflow de release (trusted publishing npm), voir [docs/release.md](docs/release.md). Outils : TypeScript strict, tsup (ESM + CJS + d.ts), vitest, Biome, GitHub Actions (Node 22/24).
+Monorepo pnpm : `packages/facturx` (le SDK), `examples/*` (exemples exécutés en CI), `site/` + `site-src/` (la page, le validateur en ligne et le Studio ; construction, déploiement Coolify ou rsync et vérifications dans [site/README.md](site/README.md)), `supabase/` (le service du compte : base, règles d'accès, fonctions ; mise en service dans [docs/compte.md](docs/compte.md)). Publication : tag `vX.Y.Z` → workflow de release (trusted publishing npm), voir [docs/release.md](docs/release.md). Outils : TypeScript strict, tsup (ESM + CJS + d.ts), vitest, Biome, GitHub Actions (Node 22/24).
 
 ## Licence
 
-MIT
+MIT, sauf le dossier [`supabase/`](supabase), sous AGPL-3.0-or-later ([`supabase/LICENSE`](supabase/LICENSE)). Voir [LICENSE](LICENSE).

@@ -1,16 +1,23 @@
 /**
  * Conservation locale : IndexedDB, dans le navigateur de l'utilisateur, et nulle part ailleurs.
  *
- * Une facture est une donnée commerciale ; le Studio n'a pas de serveur où la mettre. Tout ce qui
- * doit survivre à la fermeture de l'onglet — brouillon en cours, entreprise, clients, catalogue,
- * historique, logo, police — vit ici. Si le stockage est indisponible (navigation privée stricte,
- * quota épuisé), le Studio continue en mémoire et le dit ; il ne perd rien en silence.
+ * Une facture est une donnée commerciale ; sans compte, le Studio n'a pas de serveur où la mettre.
+ * Tout ce qui doit survivre à la fermeture de l'onglet — brouillon en cours, entreprise, clients,
+ * catalogue, historique, logo, police — vit ici. Si le stockage est indisponible (navigation privée
+ * stricte, quota épuisé), le Studio continue en mémoire et le dit ; il ne perd rien en silence.
+ *
+ * Les appelants importent `storage` et ne connaissent que `Persistence` : `utiliser` change la
+ * réponse derrière ce nom, et chacun la voit aussitôt (liaison ES vivante). Avec un compte, la
+ * persistance du serveur prend la place : IndexedDB n'y reçoit plus que le miroir du brouillon ouvert
+ * (`compte/persistence.ts`), et garde ce qu'on y avait saisi sans compte.
  */
+
+import type { Persistence, StoreName } from './persistence.js';
+
+export type { StoreName };
 
 const DB_NAME = 'facturx-studio';
 const VERSION = 1;
-
-export type StoreName = 'kv' | 'invoices' | 'clients' | 'products' | 'files';
 
 let opening: Promise<IDBDatabase> | undefined;
 
@@ -53,7 +60,8 @@ function run<T>(
   );
 }
 
-export const storage = {
+/** L'implémentation d'origine : IndexedDB. */
+export const indexedDbPersistence: Persistence = {
   /** Vrai si le stockage répond ; sinon le Studio travaille en mémoire. */
   async available(): Promise<boolean> {
     try {
@@ -95,7 +103,7 @@ export const storage = {
   async dump(): Promise<Record<string, unknown>> {
     const out: Record<string, unknown> = {};
     for (const store of ['invoices', 'clients', 'products'] as const)
-      out[store] = await storage.list(store);
+      out[store] = await indexedDbPersistence.list(store);
     const db = await open();
     for (const store of ['kv', 'files'] as const) {
       out[store] = await new Promise<Record<string, unknown>>((resolve, reject) => {
@@ -113,3 +121,11 @@ export const storage = {
     return out;
   },
 };
+
+/** Ce que les appelants utilisent ; IndexedDB tant qu'on n'en a pas choisi d'autre. */
+export let storage: Persistence = indexedDbPersistence;
+
+/** Met `p` derrière `storage`. */
+export function utiliser(p: Persistence): void {
+  storage = p;
+}
