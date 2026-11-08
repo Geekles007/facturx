@@ -62,8 +62,9 @@
     <h2>1. Qui est responsable</h2>
     <p data-compte>Pour les données de votre compte, le responsable du traitement est l'éditeur du service facturx, désigné ci-dessous. Pour les données de vos clients que vous saisissez dans le Service, c'est vous qui êtes responsable du traitement et facturx qui est votre sous-traitant&nbsp;: voir l'<a href="../sous-traitance/">accord de sous-traitance</a>.</p>
     <p data-sans-compte>Pour les journaux du site (articles 2 et 3), le responsable du traitement est l'éditeur du site facturx, désigné ci-dessous.</p>
-    <p class="a-completer">À compléter par l'éditeur&nbsp;: nom ou raison sociale, adresse, SIREN, adresse de contact, date d'entrée en vigueur de la version 2026-11.</p>
-    <p>Cette politique porte le numéro de version <b>2026-11</b><span data-compte>, comme les <a href="../cgu/">conditions générales d'utilisation</a></span>.</p>
+    <p>Éditeur du site et responsable du traitement&nbsp;: <b>Ibird</b>, particulier, à titre non professionnel et gratuit. Contact, y compris pour exercer vos droits&nbsp;: <a href="mailto:hello@ibird.dev">hello@ibird.dev</a>.</p>
+    <p>Hébergeur du site&nbsp;: Hetzner Online GmbH, Industriestr.&nbsp;25, 91710 Gunzenhausen, Allemagne, +49&nbsp;9831&nbsp;505-0.</p>
+    <p>Cette politique porte le numéro de version <b>2026-11</b><span data-compte>, comme les <a href="../cgu/">conditions générales d'utilisation</a></span>, et s'applique depuis le 8&nbsp;novembre&nbsp;2026.</p>
     </section>
 
     <section id="sans-compte">
@@ -105,12 +106,12 @@
     <tbody>
     <tr><td data-label="Prestataire">Supabase</td><td data-label="Ce qu'il fait">Base de données, authentification, stockage des PDF et des fichiers, fonctions du Service</td><td data-label="Société">Supabase Inc., société américaine</td><td data-label="Où">Région eu-west-3 (Paris), sur l'infrastructure d'AWS</td></tr>
     <tr><td data-label="Prestataire">Brevo</td><td data-label="Ce qu'il fait">Envoi des e-mails&nbsp;: confirmation d'adresse, mot de passe oublié, relances</td><td data-label="Société">Société française</td><td data-label="Où">Hébergement dans l'Union européenne</td></tr>
-    <tr><td data-label="Prestataire"><span class="a-completer">Nom à compléter</span></td><td data-label="Ce qu'il fait">Copie hebdomadaire chiffrée des données du Service</td><td data-label="Société"><span class="a-completer">À compléter</span></td><td data-label="Où">Un hébergeur européen, distinct de Supabase</td></tr>
+    <tr><td data-label="Prestataire">Scaleway</td><td data-label="Ce qu'il fait">Copie hebdomadaire chiffrée des données du Service</td><td data-label="Société">Scaleway SAS, société française</td><td data-label="Où">Région fr-par (Paris), hors de Supabase</td></tr>
     </tbody>
     </table>
     </div>
-    <p data-compte>Brevo reçoit l'adresse e-mail de votre compte et, pour une relance, l'adresse du destinataire, l'objet, le texte et le PDF joint. Le site lui-même (pages, Studio, validateur) est servi par le serveur de l'éditeur&nbsp;: il ne reçoit aucune donnée de compte, seulement les requêtes de pages et leur journal.</p>
-    <p data-sans-compte>Le site (pages, Studio, validateur) est servi par le serveur de l'éditeur&nbsp;: il ne reçoit que les requêtes de pages et leur journal (articles 2 et 5).</p>
+    <p data-compte>Brevo reçoit l'adresse e-mail de votre compte et, pour une relance, l'adresse du destinataire, l'objet, le texte et le PDF joint. Le site lui-même (pages, Studio, validateur) est servi par le serveur de l'éditeur, loué chez Hetzner à Falkenstein (Allemagne)&nbsp;: il ne reçoit aucune donnée de compte, seulement les requêtes de pages et leur journal.</p>
+    <p data-sans-compte>Le site (pages, Studio, validateur) est servi par le serveur de l'éditeur, loué chez Hetzner à Falkenstein (Allemagne)&nbsp;: il ne reçoit que les requêtes de pages et leur journal (articles 2 et 5).</p>
     <p data-compte><b>Supabase est une société américaine.</b> Vos données sont hébergées à Paris, mais l'hébergement en Europe ne change pas la nationalité du prestataire&nbsp;: Supabase Inc. reste soumise au droit des États-Unis. Nous ne pouvons donc pas vous promettre que vos données échappent à toute demande d'une autorité américaine adressée à ce prestataire. Si c'est un obstacle pour vous, utilisez le Studio sans compte&nbsp;: rien de ce que vous saisissez ou déposez ne quitte alors votre navigateur.</p>
     <p data-compte><b>Pas de chiffrement de bout en bout.</b> Vos données sont chiffrées au repos par l'hébergeur, mais elles restent lisibles par le Service&nbsp;: le serveur lit votre facture pour l'émettre, la numéroter, calculer ce qu'il reste à payer et envoyer une relance. C'est la contrepartie d'un compte, et c'est à vous de faire ce choix.</p>
     </section>
@@ -125,8 +126,8 @@
     <tr data-compte><td data-label="Situation">Vous demandez la suppression du compte</td><td data-label="Durée">30 jours de délai de grâce, que vous pouvez annuler. Pendant ce délai, le Service n'émet plus rien et n'envoie plus de relance&nbsp;: il ne propose que l'export, l'annulation et la déconnexion.</td></tr>
     <tr data-compte><td data-label="Situation">Les 30 jours sont écoulés</td><td data-label="Durée">Tout est effacé à la première passe de nuit qui suit, dans cet ordre&nbsp;: vos PDF et fichiers&nbsp;; votre identifiant de connexion&nbsp;; les données de l'entreprise (factures, clients, catalogue, paiements, relances)&nbsp;; enfin les traces que le serveur d'authentification garde de votre inscription et de vos connexions (adresse e-mail, identifiant, et pour certains évènements adresse IP). Il ne reste que les sauvegardes (ligne suivante) et les journaux techniques de l'hébergeur (requêtes à l'API et au serveur d'authentification, qui peuvent contenir votre adresse IP et votre adresse e-mail), qui s'effacent d'eux-mêmes au bout de 7&nbsp;jours.</td></tr>
     <tr data-compte><td data-label="Situation">Une émission est interrompue et laisse un PDF sans facture</td><td data-label="Durée">Le PDF est effacé après un jour au moins, à la passe de nuit suivante.</td></tr>
-    <tr data-compte><td data-label="Situation">Sauvegardes</td><td data-label="Durée">Sauvegardes quotidiennes de l'hébergeur et copie hebdomadaire chiffrée&nbsp;: l'effacement ci-dessus ne les réécrit pas, vos données y subsistent jusqu'à leur renouvellement. Durée de conservation&nbsp;: <span class="a-completer">à compléter</span>.</td></tr>
-    <tr><td data-label="Situation">Journaux du site</td><td data-label="Durée">Le journal qui sert aux statistiques ne contient jamais d'adresse complète. Un journal d'exploitation distinct, éphémère, sert au diagnostic et garde les adresses complètes. Durée&nbsp;: <span class="a-completer">à compléter</span>.</td></tr>
+    <tr data-compte><td data-label="Situation">Sauvegardes</td><td data-label="Durée">Sauvegardes quotidiennes de l'hébergeur et copie hebdomadaire chiffrée&nbsp;: l'effacement ci-dessus ne les réécrit pas, vos données y subsistent jusqu'à leur renouvellement. Durée de conservation&nbsp;: 7&nbsp;jours pour les sauvegardes quotidiennes de Supabase&nbsp;; 12&nbsp;semaines pour la copie hebdomadaire, et 4&nbsp;mois au plus si Scaleway en garde une version antérieure.</td></tr>
+    <tr><td data-label="Situation">Journaux du site</td><td data-label="Durée">Le journal qui sert aux statistiques ne contient jamais d'adresse complète. Un journal d'exploitation distinct, éphémère, sert au diagnostic et garde les adresses complètes. Durées&nbsp;: 13&nbsp;mois pour le journal des statistiques, dont les lignes plus anciennes sont effacées chaque nuit&nbsp;; le journal d'exploitation est effacé à chaque mise à jour du site.</td></tr>
     </tbody>
     </table>
     </div>
