@@ -42,7 +42,7 @@ COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 # La CSP : le gabarit, puis le script qui en tire /etc/nginx/csp.conf (voir plus bas).
 COPY docker/csp.conf /etc/nginx/csp.gabarit
 COPY docker/entrypoint.sh docker/goaccess-report.sh docker/compteurs-report.sh docker/ecrire-csp.sh \
-    /usr/local/bin/
+    docker/elaguer-journal.sh /usr/local/bin/
 # Le complément du rapport : un lien vers la page des compteurs. /var/lib/goaccess, servi sur
 # /stats/, n'est pas un volume : le fichier de l'image y est à chaque démarrage.
 COPY docker/rapport.js /var/lib/goaccess/
@@ -57,10 +57,10 @@ ARG FACTURX_SUPABASE_URL=""
 # l'entrypoint ne s'exécutait pas. Le « nginx -t » final fait échouer la construction plutôt que
 # le démarrage du site — une erreur de configuration ne peut donc pas atteindre la production.
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/goaccess-report.sh \
-        /usr/local/bin/compteurs-report.sh /usr/local/bin/ecrire-csp.sh \
+        /usr/local/bin/compteurs-report.sh /usr/local/bin/ecrire-csp.sh /usr/local/bin/elaguer-journal.sh \
     && rm -f /var/log/nginx/access.log \
     && mkdir -p /var/lib/goaccess \
-    && echo '*/5 * * * * /usr/local/bin/goaccess-report.sh' >/etc/crontabs/root \
+    && echo '17 3 * * * /usr/local/bin/elaguer-journal.sh' >/etc/crontabs/root \
     && echo 'location /stats/ { return 404; }' >/etc/nginx/stats.conf \
     && /usr/local/bin/ecrire-csp.sh "$FACTURX_SUPABASE_URL" \
     && nginx -t

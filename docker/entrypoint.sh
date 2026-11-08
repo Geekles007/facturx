@@ -28,7 +28,10 @@ CONF
 
     # Un rapport présent dès le premier démarrage, plutôt qu'un 404 le temps du premier passage.
     /usr/local/bin/goaccess-report.sh || echo "stats : rapport initial non généré"
-    crond -b -l 8 || echo "stats : crond indisponible, le rapport ne se régénérera pas tout seul"
+    # Le rapport toutes les cinq minutes, à côté de la purge nocturne du journal (Dockerfile). Un
+    # redémarrage garde la crontab du conteneur : la ligne n'y est ajoutée qu'une fois.
+    grep -q goaccess-report /etc/crontabs/root \
+        || echo '*/5 * * * * /usr/local/bin/goaccess-report.sh' >>/etc/crontabs/root || return 1
     return 0
 }
 
@@ -45,6 +48,11 @@ else
     echo 'location /stats/ { return 404; }' >/etc/nginx/stats.conf
     echo "stats : désactivé (STATS_PASSWORD non défini)"
 fi
+
+# crond tourne avec ou sans statistiques : nginx écrit le journal dans les deux cas, et la purge de
+# chaque nuit (elaguer-journal.sh) tient la durée de conservation que la politique de
+# confidentialité annonce.
+crond -b -l 8 || echo "crond indisponible : ni purge du journal, ni rapport régénéré"
 
 # Enchaîner sur l'entrypoint de l'image nginx : il traite /docker-entrypoint.d/ et les gabarits.
 exec /docker-entrypoint.sh "$@"

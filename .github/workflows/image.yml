@@ -275,6 +275,32 @@ jobs:
           curl -fsS -u stats:motdepassedetest http://localhost:8080/stats/rapport.js >/tmp/rapport.js
           grep -q 'compteurs.html' /tmp/rapport.js
 
+      - name: Le journal des statistiques ne garde que 13 mois
+        run: |
+          # Une ligne de 14 mois, une de 12, et une de 14 dont le nom d'utilisateur imite une date
+          # récente : seule la date que nginx écrit, suivie d'un guillemet, compte.
+          vieux=$(LC_ALL=C date -d '14 months ago' '+%d/%b/%Y:%H:%M:%S +0000')
+          recent=$(LC_ALL=C date -d '12 months ago' '+%d/%b/%Y:%H:%M:%S +0000')
+          docker exec site sh -c "printf '%s\n' \
+            '203.0.113.0 - - [$vieux] \"GET /ancienne HTTP/1.1\" 200 1 \"-\" \"test\"' \
+            '203.0.113.0 - - [$recent] \"GET /recente HTTP/1.1\" 200 1 \"-\" \"test\"' \
+            '203.0.113.0 - [$recent] [$vieux] \"GET /piege HTTP/1.1\" 200 1 \"-\" \"test\"' \
+            >>/var/log/nginx/access.log"
+          avant=$(docker exec site grep -c 'GET / HTTP' /var/log/nginx/access.log)
+          docker exec site /usr/local/bin/elaguer-journal.sh
+          docker exec site cat /var/log/nginx/access.log >/tmp/journal
+          for chemin in /ancienne /piege; do
+            if grep -q "GET $chemin " /tmp/journal; then echo "$chemin aurait dû partir"; exit 1; fi
+          done
+          grep -q 'GET /recente ' /tmp/journal || { echo "/recente a disparu"; exit 1; }
+          apres=$(grep -c 'GET / HTTP' /tmp/journal)
+          [ "$avant" = "$apres" ] || { echo "visites du jour : $avant avant, $apres après"; exit 1; }
+          # nginx écrit toujours dans le même fichier après la réécriture.
+          curl -fsS -o /dev/null http://localhost:8080/confidentialite/
+          sleep 1
+          docker exec site grep -q 'GET /confidentialite/ ' /var/log/nginx/access.log
+          docker exec site grep -q 'elaguer-journal' /etc/crontabs/root
+
       - name: Sans mot de passe, /stats/ n'existe pas
         run: |
           docker rm -f site >/dev/null
@@ -288,3 +314,9 @@ jobs:
             [ "$code" = "404" ] || { echo "$chemin : attendu 404, reçu $code"; exit 1; }
           done
           docker logs nu
+          # Sans statistiques, la purge du journal tourne quand même, et le rapport non.
+          docker exec nu grep -q 'elaguer-journal' /etc/crontabs/root
+          if docker exec nu grep -q 'goaccess-report' /etc/crontabs/root; then
+            echo "rapport planifié sans statistiques"; exit 1
+          fi
+          docker exec nu sh -c 'ps | grep -q "[c]rond"' || { echo "crond ne tourne pas"; exit 1; }

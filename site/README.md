@@ -60,7 +60,9 @@ Une variable d'environnement à définir dans Coolify :
 
 Et un volume persistant sur **`/var/log/nginx`**, sans quoi l'historique repart de zéro à chaque
 redéploiement : c'est le journal qui porte les données, le rapport n'en est qu'un rendu, refait
-toutes les cinq minutes.
+toutes les cinq minutes. Le journal garde 13 mois : chaque nuit, `elaguer-journal.sh` en efface
+les lignes plus anciennes, la durée qu'annonce la politique de confidentialité (§ 5). crond tourne
+pour cela même sans `STATS_PASSWORD`, puisque nginx écrit le journal dans tous les cas.
 
 ### Ce que le rapport compte, et ce qu'il ne compte pas
 
@@ -68,11 +70,13 @@ Les robots d'indexation sont exclus (`--ignore-crawlers`) : sans cela, le nombre
 flatteur et faux.
 
 Les adresses IP sont **tronquées de leur dernier octet à l'écriture même du journal** : le fichier
-analysé ne contient jamais d'adresse complète, il n'y a donc rien à purger et aucune durée de
-conservation à surveiller. Contrepartie assumée : deux visiteurs partageant un même `/24` comptent
+analysé ne contient jamais d'adresse complète. Une adresse tronquée, avec le navigateur et l'heure,
+reste une donnée personnelle : d'où la durée de 13 mois, plus haut. Contrepartie assumée : deux visiteurs partageant un même `/24` comptent
 pour un seul, le nombre de visiteurs uniques est donc légèrement sous-estimé. Le journal
 d'exploitation envoyé à Coolify, lui, garde les adresses complètes — il est éphémère et sert au
-diagnostic, pas à la mesure.
+diagnostic, pas à la mesure. Il disparaît avec le conteneur, à chaque redéploiement (la politique
+de confidentialité le dit) ; entre deux, Docker le borne à trois fichiers de 10 Mo si Coolify a
+écrit sa configuration à l'installation (`/etc/docker/daemon.json`, `log-opts`).
 
 Derrière le proxy de Coolify, toutes les requêtes arrivent avec l'adresse du proxy ; la
 configuration nginx rétablit l'adresse réelle depuis `X-Forwarded-For`, sans quoi le rapport
