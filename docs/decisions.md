@@ -485,3 +485,19 @@ Cette mesure laisse aussi de côté, et la confirmation doit le regarder :
 - la configuration de rendu : seule classic / A4 / français a été mesurée ; les autres gabarits, un long pied de page, des libellés propres et de longues descriptions de lignes ne l'ont pas été ;
 - le reste de la requête d'émission (lecture du corps, validation, appels à la base et au stockage), dont seules les parties calculées comptent dans le budget ;
 - le CPU lui-même : `performance.now()` donne du temps écoulé, et le runtime local a franchi sa limite douce de 1 s sur des requêtes de 0,9 s environ, signe que le démarrage du worker et le chargement des modules comptent aussi.
+
+## 2026-11-08 — Session 28 : le compte en production
+
+### D75. Supabase au plan Free, à Francfort : une seule sauvegarde, chaque nuit, chez Scaleway
+La spec prévoyait un projet au plan Pro, en région Paris (`eu-west-3`) (§ 4, § 11). Le projet de production est `facturx`, créé le 28 septembre 2026 dans l'organisation `metchera`, au plan Free, en région `eu-central-1` (Francfort). L'éditeur est un particulier et le service, gratuit, n'a pas de recette : le plan Pro (25 $ par mois, plus le calcul d'un second projet si l'organisation entière y passait) n'est pas engagé. Une région ne se change pas sur un projet existant, et le palier gratuit n'admet que deux projets actifs, déjà pris : Francfort reste. Les données restent dans l'UE, chez le même prestataire ; seule la ville change.
+
+**Ce que le plan Free retire, et ce qui le compense** (supabase.com/pricing et la documentation, lues le 8 novembre 2026) :
+- *Pas de sauvegarde chez Supabase*, quand le plan Pro en garde 7 quotidiennes. L'archive chiffrée chez Scaleway devient la seule, et passe d'hebdomadaire à quotidienne (`sauvegarde.yml`, `23 2 * * *`) : la perte du projet coûte au plus un jour de factures, pas une semaine. La rétention reste de 12 semaines, soit 84 archives au lieu de 12. Les fichiers des buckets, que les sauvegardes de Supabase ne contiennent pas, y sont déjà.
+- *La pause* d'un projet trop peu actif sur 7 jours, après un courriel. Les CGU ne promettent aucune disponibilité ; le guide dit comment l'éviter et la lever (90 jours pour le faire).
+- *Des quotas* : 500 Mo de base par projet, et pour toute l'organisation 1 Go de fichiers et 5 Go de trafic sortant par mois. Au-delà, l'organisation entière est restreinte (lecture seule, 402).
+- *Le contrôle des mots de passe divulgués*, réservé au plan Pro : l'avertissement du *Security Advisor* est attendu.
+- *Les journaux de la plateforme* ne sont gardés qu'un jour, au lieu de 7.
+
+**Les textes sont repris sans changer de version.** La politique de confidentialité, l'accord de sous-traitance, les CGU et le Studio disent Francfort, la copie chiffrée de chaque nuit comme seule sauvegarde, et un jour pour les journaux de l'hébergeur. La version reste `2026-11` : les passages qui parlent du compte ne sont publiés qu'avec les variables de Supabase (`docs/compte.md`, 1.9), que le site n'a pas encore (`/cgu/` répond 404 le 8 novembre 2026). Personne ne les a donc acceptés dans leur forme précédente.
+
+**Le passage au plan Pro reste ouvert**, sans migration : transférer le projet vers une organisation Pro. Il rendrait les sauvegardes de Supabase, le contrôle des mots de passe et 7 jours de journaux ; la politique de confidentialité (§ 5 et 7) et l'accord de sous-traitance seraient alors à reprendre. La sauvegarde de chaque nuit chez Scaleway resterait.

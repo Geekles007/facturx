@@ -99,7 +99,7 @@
     <li>Des écritures qui engagent juridiquement (émission, relance) faites uniquement par des fonctions du serveur&nbsp;; aucune facture émise ne peut être modifiée ni supprimée depuis le navigateur.</li>
     <li>Des espaces de stockage privés, ouverts par des liens signés valables 60 secondes.</li>
     <li>Une clé de service qui reste dans les secrets des fonctions du serveur.</li>
-    <li>Des sauvegardes quotidiennes chez l'hébergeur, et une copie hebdomadaire chiffrée chez un autre hébergeur européen.</li>
+    <li>Une copie chiffrée chaque nuit chez un autre hébergeur européen, seule sauvegarde des données.</li>
     <li>Un chiffrement au repos par l'hébergeur. Les données restent lisibles par le Service, qui en a besoin pour émettre, numéroter, calculer ce qu'il reste à payer et relancer&nbsp;: ce n'est pas un chiffrement de bout en bout.</li>
     </ul>
     </section>
@@ -111,13 +111,13 @@
     <table class="stack">
     <thead><tr><th scope="col">Sous-traitant</th><th scope="col">Traitement confié</th><th scope="col">Société</th><th scope="col">Où</th></tr></thead>
     <tbody>
-    <tr><td data-label="Sous-traitant">Supabase</td><td data-label="Traitement confié">Base de données, authentification, stockage des PDF et des fichiers, fonctions du Service</td><td data-label="Société">Supabase Inc., société américaine</td><td data-label="Où">Région eu-west-3 (Paris), sur l'infrastructure d'AWS</td></tr>
+    <tr><td data-label="Sous-traitant">Supabase</td><td data-label="Traitement confié">Base de données, authentification, stockage des PDF et des fichiers, fonctions du Service</td><td data-label="Société">Supabase Inc., société américaine</td><td data-label="Où">Région eu-central-1 (Francfort, Allemagne), sur l'infrastructure d'AWS</td></tr>
     <tr><td data-label="Sous-traitant">Brevo</td><td data-label="Traitement confié">Envoi des e-mails d'authentification et des relances</td><td data-label="Société">Société française</td><td data-label="Où">Hébergement dans l'Union européenne</td></tr>
-    <tr><td data-label="Sous-traitant">Scaleway</td><td data-label="Traitement confié">Copie hebdomadaire chiffrée des données du Service</td><td data-label="Société">Scaleway SAS, société française</td><td data-label="Où">Région fr-par (Paris), hors de Supabase</td></tr>
+    <tr><td data-label="Sous-traitant">Scaleway</td><td data-label="Traitement confié">Copie quotidienne chiffrée des données du Service</td><td data-label="Société">Scaleway SAS, société française</td><td data-label="Où">Région fr-par (Paris), hors de Supabase</td></tr>
     </tbody>
     </table>
     </div>
-    <p><b>Supabase est une société américaine.</b> Vos données sont hébergées à Paris, mais Supabase Inc. reste soumise au droit des États-Unis&nbsp;: nous ne pouvons pas vous promettre que les données de vos clients échappent à toute demande d'une autorité américaine adressée à ce prestataire. Si cela vous pose problème, n'utilisez pas le Service avec un compte pour les données de vos clients&nbsp;: le Studio sans compte ne transmet rien de ce que vous saisissez.</p>
+    <p><b>Supabase est une société américaine.</b> Vos données sont hébergées à Francfort, mais Supabase Inc. reste soumise au droit des États-Unis&nbsp;: nous ne pouvons pas vous promettre que les données de vos clients échappent à toute demande d'une autorité américaine adressée à ce prestataire. Si cela vous pose problème, n'utilisez pas le Service avec un compte pour les données de vos clients&nbsp;: le Studio sans compte ne transmet rien de ce que vous saisissez.</p>
     <p>Nous lions chaque sous-traitant ultérieur par un contrat qui lui impose les obligations de protection du présent accord (article 28, paragraphe 4 du RGPD). Tout ajout ou remplacement d'un sous-traitant ultérieur est publié sur cette page, sous un nouveau numéro de version. Si vous vous y opposez, exportez vos données et supprimez votre compte.</p>
     </section>
 
@@ -139,7 +139,7 @@
     <li>À votre demande de suppression, un délai de grâce de 30 jours commence. Le Service n'émet plus rien et n'envoie plus de relance&nbsp;; il ne propose que l'export, l'annulation de la suppression et la déconnexion.</li>
     <li>Après 30 jours, à la première passe de nuit qui suit, nous effaçons tout, dans cet ordre&nbsp;: les PDF et les fichiers, votre identifiant de connexion, les données de votre entreprise (factures, clients, catalogue, paiements, relances), puis les traces de vos connexions que garde le serveur d'authentification.</li>
     </ol>
-    <p>Les copies de sauvegarde ne sont pas réécrites par cet effacement&nbsp;: elles disparaissent à leur renouvellement, selon la durée indiquée dans la <a href="../confidentialite/#conservation">politique de confidentialité</a>. Les journaux techniques de l'hébergeur non plus&nbsp;: ils s'effacent d'eux-mêmes au bout de 7&nbsp;jours.</p>
+    <p>Les copies de sauvegarde ne sont pas réécrites par cet effacement&nbsp;: elles disparaissent quand elles expirent, selon la durée indiquée dans la <a href="../confidentialite/#conservation">politique de confidentialité</a>. Les journaux techniques de l'hébergeur non plus&nbsp;: ils s'effacent d'eux-mêmes au bout d'un jour.</p>
     <p>La loi impose de conserver vos factures pendant dix ans. Cette obligation est la vôtre, pas celle de facturx&nbsp;: l'export est le moyen de les garder.</p>
     </section>
 

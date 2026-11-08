@@ -99,7 +99,7 @@
     <li>Legally binding writes (issuing, reminders) made only by server functions; no issued invoice can be edited or deleted from the browser.</li>
     <li>Private storage, opened through signed links valid for 60 seconds.</li>
     <li>A service key that stays in the server functions' secrets.</li>
-    <li>Daily backups with the host, and a weekly encrypted copy with another European host.</li>
+    <li>An encrypted copy every night with another European host, the data's only backup.</li>
     <li>Encryption at rest by the host. The data remains readable by the Service, which needs it to issue, number, work out what is still to be paid and send reminders: it is not end-to-end encryption.</li>
     </ul>
     </section>
@@ -111,13 +111,13 @@
     <table class="stack">
     <thead><tr><th scope="col">Sub-processor</th><th scope="col">Processing entrusted</th><th scope="col">Company</th><th scope="col">Where</th></tr></thead>
     <tbody>
-    <tr><td data-label="Sub-processor">Supabase</td><td data-label="Processing entrusted">Database, authentication, storage of PDFs and files, the Service's functions</td><td data-label="Company">Supabase Inc., a US company</td><td data-label="Where">eu-west-3 region (Paris), on AWS infrastructure</td></tr>
+    <tr><td data-label="Sub-processor">Supabase</td><td data-label="Processing entrusted">Database, authentication, storage of PDFs and files, the Service's functions</td><td data-label="Company">Supabase Inc., a US company</td><td data-label="Where">eu-central-1 region (Frankfurt, Germany), on AWS infrastructure</td></tr>
     <tr><td data-label="Sub-processor">Brevo</td><td data-label="Processing entrusted">Sending authentication e-mails and reminders</td><td data-label="Company">French company</td><td data-label="Where">Hosted in the European Union</td></tr>
-    <tr><td data-label="Sub-processor">Scaleway</td><td data-label="Processing entrusted">Weekly encrypted copy of the Service's data</td><td data-label="Company">Scaleway SAS, a French company</td><td data-label="Where">fr-par region (Paris), outside Supabase</td></tr>
+    <tr><td data-label="Sub-processor">Scaleway</td><td data-label="Processing entrusted">Daily encrypted copy of the Service's data</td><td data-label="Company">Scaleway SAS, a French company</td><td data-label="Where">fr-par region (Paris), outside Supabase</td></tr>
     </tbody>
     </table>
     </div>
-    <p><b>Supabase is a US company.</b> Your data is hosted in Paris, but Supabase Inc. remains subject to US law: we cannot promise that your customers' data escapes every request from a US authority addressed to that provider. If that is a problem for you, do not use the Service with an account for your customers' data: the account-less Studio sends nothing you enter.</p>
+    <p><b>Supabase is a US company.</b> Your data is hosted in Frankfurt, but Supabase Inc. remains subject to US law: we cannot promise that your customers' data escapes every request from a US authority addressed to that provider. If that is a problem for you, do not use the Service with an account for your customers' data: the account-less Studio sends nothing you enter.</p>
     <p>We bind each sub-processor by a contract that imposes on it the data protection obligations of this agreement (article 28(4) of the GDPR). Any addition or replacement of a sub-processor is published on this page, under a new version number. If you object, export your data and delete your account.</p>
     </section>
 
@@ -139,7 +139,7 @@
     <li>When you request deletion, a 30-day grace period begins. The Service issues nothing and sends no reminders; it offers only the export, the cancellation of the deletion and signing out.</li>
     <li>After 30 days, at the first nightly run that follows, we erase everything, in this order: the PDFs and files, your sign-in identity, your company's data (invoices, customers, catalogue, payments, reminders), then the traces of your sign-ins kept by the authentication server.</li>
     </ol>
-    <p>Backup copies are not rewritten by this erasure: they disappear when they are renewed, after the retention period given in the <a href="../confidentialite/#conservation">privacy policy</a>. Nor are the host's technical logs: they expire on their own after 7&nbsp;days.</p>
+    <p>Backup copies are not rewritten by this erasure: they disappear when they expire, after the retention period given in the <a href="../confidentialite/#conservation">privacy policy</a>. Nor are the host's technical logs: they expire on their own after one day.</p>
     <p>The law requires you to keep your invoices for ten years. That obligation is yours, not facturx's: the export is how you keep them.</p>
     </section>
 

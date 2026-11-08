@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Privacy policy — facturx</title>
-<meta data-compte name="description" content="What facturx does with your data with and without an account: what is received, who hosts it (Supabase, a US company, eu-west-3 region; Brevo), for how long, your rights. Version 2026-11.">
+<meta data-compte name="description" content="What facturx does with your data with and without an account: what is received, who hosts it (Supabase, a US company, eu-central-1 region; Brevo), for how long, your rights. Version 2026-11.">
 <meta data-sans-compte name="description" content="What facturx does with your data: what is received, for how long, your rights. Version 2026-11.">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fafafa">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
 <meta property="og:title" content="Privacy policy">
-<meta data-compte property="og:description" content="What facturx does with your data with and without an account: what is received, who hosts it (Supabase, a US company, eu-west-3 region; Brevo), for how long, your rights. Version 2026-11.">
+<meta data-compte property="og:description" content="What facturx does with your data with and without an account: what is received, who hosts it (Supabase, a US company, eu-central-1 region; Brevo), for how long, your rights. Version 2026-11.">
 <meta data-sans-compte property="og:description" content="What facturx does with your data: what is received, for how long, your rights. Version 2026-11.">
 <meta property="og:url" content="https://facturx.ibird.dev/en/confidentialite/">
 <link rel="canonical" href="https://facturx.ibird.dev/en/confidentialite/">
@@ -104,15 +104,15 @@
     <table class="stack">
     <thead><tr><th scope="col">Provider</th><th scope="col">What it does</th><th scope="col">Company</th><th scope="col">Where</th></tr></thead>
     <tbody>
-    <tr><td data-label="Provider">Supabase</td><td data-label="What it does">Database, authentication, storage of PDFs and files, the Service's functions</td><td data-label="Company">Supabase Inc., a US company</td><td data-label="Where">eu-west-3 region (Paris), on AWS infrastructure</td></tr>
+    <tr><td data-label="Provider">Supabase</td><td data-label="What it does">Database, authentication, storage of PDFs and files, the Service's functions</td><td data-label="Company">Supabase Inc., a US company</td><td data-label="Where">eu-central-1 region (Frankfurt, Germany), on AWS infrastructure</td></tr>
     <tr><td data-label="Provider">Brevo</td><td data-label="What it does">Sending e-mails: address confirmation, forgotten password, reminders</td><td data-label="Company">French company</td><td data-label="Where">Hosted in the European Union</td></tr>
-    <tr><td data-label="Provider">Scaleway</td><td data-label="What it does">Weekly encrypted copy of the Service's data</td><td data-label="Company">Scaleway SAS, a French company</td><td data-label="Where">fr-par region (Paris), outside Supabase</td></tr>
+    <tr><td data-label="Provider">Scaleway</td><td data-label="What it does">Daily encrypted copy of the Service's data</td><td data-label="Company">Scaleway SAS, a French company</td><td data-label="Where">fr-par region (Paris), outside Supabase</td></tr>
     </tbody>
     </table>
     </div>
     <p data-compte>Brevo receives your account's e-mail address and, for a reminder, the recipient's address, the subject, the text and the attached PDF. The site itself (pages, Studio, validator) is served by the publisher's server, rented from Hetzner in Falkenstein (Germany): it receives no account data, only page requests and their log.</p>
     <p data-sans-compte>The site (pages, Studio, validator) is served by the publisher's server, rented from Hetzner in Falkenstein (Germany): it receives only page requests and their log (sections 2 and 5).</p>
-    <p data-compte><b>Supabase is a US company.</b> Your data is hosted in Paris, but hosting in Europe does not change the provider's nationality: Supabase Inc. remains subject to US law. We therefore cannot promise that your data escapes every request from a US authority addressed to that provider. If that is an obstacle for you, use the Studio without an account: nothing you enter or drop then leaves your browser.</p>
+    <p data-compte><b>Supabase is a US company.</b> Your data is hosted in Frankfurt, but hosting in Europe does not change the provider's nationality: Supabase Inc. remains subject to US law. We therefore cannot promise that your data escapes every request from a US authority addressed to that provider. If that is an obstacle for you, use the Studio without an account: nothing you enter or drop then leaves your browser.</p>
     <p data-compte><b>No end-to-end encryption.</b> Your data is encrypted at rest by the host, but it remains readable by the Service: the server reads your invoice to issue it, number it, work out what is still to be paid and send a reminder. That is the trade-off of having an account, and the choice is yours.</p>
     </section>
 
@@ -124,9 +124,9 @@
     <tbody>
     <tr data-compte><td data-label="Situation">Your account exists</td><td data-label="Duration">Your data is kept as long as the account exists. An issued invoice is neither edited nor deleted in the meantime.</td></tr>
     <tr data-compte><td data-label="Situation">You request deletion of the account</td><td data-label="Duration">30 days of grace, which you can cancel. During that time the Service issues nothing and sends no reminders: it offers only the export, the cancellation and signing out.</td></tr>
-    <tr data-compte><td data-label="Situation">The 30 days have passed</td><td data-label="Duration">Everything is erased at the first nightly run after that, in this order: your PDFs and files; your sign-in identity; the company's data (invoices, customers, catalogue, payments, reminders); finally the traces the authentication server keeps of your sign-up and sign-ins (email address, identifier, and for some events IP address). Only the backups remain (next row), and the host's technical logs (requests to the API and the authentication server, which may contain your IP address and email address), which expire on their own after 7&nbsp;days.</td></tr>
+    <tr data-compte><td data-label="Situation">The 30 days have passed</td><td data-label="Duration">Everything is erased at the first nightly run after that, in this order: your PDFs and files; your sign-in identity; the company's data (invoices, customers, catalogue, payments, reminders); finally the traces the authentication server keeps of your sign-up and sign-ins (email address, identifier, and for some events IP address). Only the backups remain (next row), and the host's technical logs (requests to the API and the authentication server, which may contain your IP address and email address), which expire on their own after one day.</td></tr>
     <tr data-compte><td data-label="Situation">An invoice issuance is interrupted and leaves a PDF without an invoice</td><td data-label="Duration">The PDF is erased after at least one day, at the next nightly run.</td></tr>
-    <tr data-compte><td data-label="Situation">Backups</td><td data-label="Duration">The host's daily backups and the weekly encrypted copy: the erasure above does not rewrite them, so your data stays in them until they are renewed. Retention period: 7 days for Supabase's daily backups; 12 weeks for the weekly copy, and 4 months at most if Scaleway keeps a previous version of it.</td></tr>
+    <tr data-compte><td data-label="Situation">Backups</td><td data-label="Duration">A daily encrypted copy, at Scaleway: the erasure above does not rewrite the copies already made, so your data stays in them until they expire. Retention period: 12 weeks for each copy, and 4 months at most if Scaleway keeps a previous version of it.</td></tr>
     <tr><td data-label="Situation">Site logs</td><td data-label="Duration">The log used for statistics never holds a full address. A separate, short-lived operating log is used for diagnosis and keeps full addresses. Periods: 13 months for the statistics log, whose older lines are erased every night; the operating log is erased at each update of the site.</td></tr>
     </tbody>
     </table>
@@ -148,7 +148,7 @@
     <li>Issuing an invoice and sending a reminder are done only by server functions. The browser has no write access to an issued invoice.</li>
     <li>Your PDFs, your logos and your fonts sit in private storage. They open only through a signed link, valid for 60 seconds.</li>
     <li>The database's service key exists only in the server functions' secrets; it is never sent to the browser.</li>
-    <li>The data is backed up daily by the host, and an encrypted copy is deposited every week with another European host.</li>
+    <li>The data is copied every night, encrypted, to another European host: that is its only backup.</li>
     <li>Your sign-in session is kept in your browser's storage, so that you stay signed in. So that nothing you type is lost, the open draft is also copied into the browser.</li>
     </ul>
     <p>The database schema, its access rules and the Service's functions are published in the <a href="https://github.com/Geekles007/facturx/tree/main/supabase">project repository</a>: you can read them.</p>

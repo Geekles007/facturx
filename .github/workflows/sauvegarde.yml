@@ -1,8 +1,8 @@
 name: Sauvegarde
 
-# La sauvegarde chiffrée du compte (spec § 11), en plus des sauvegardes quotidiennes du plan Pro de
-# Supabase : chaque dimanche à 2 h 23 (UTC), les données de la base et les buckets `factures` et
-# `fichiers`, en une archive chiffrée par age, déposée chez Scaleway (fr-par) et gardée 12 semaines.
+# La sauvegarde chiffrée du compte (spec § 11, D75), la seule : le plan Free de Supabase n'en fait
+# pas. Chaque nuit à 2 h 23 (UTC), les données de la base et les buckets `factures` et `fichiers`,
+# en une archive chiffrée par age, déposée chez Scaleway (fr-par) et gardée 12 semaines.
 # La logique est dans scripts/sauvegarde.sh (qu'on peut lancer en local) ; la mise en place, les
 # secrets et la restauration sont dans docs/compte.md.
 #
@@ -13,10 +13,10 @@ name: Sauvegarde
 # sans activité dans un dépôt public (un courriel prévient avant) : docs/compte.md dit comment le voir.
 #
 # Rien ne tourne tant que la variable du dépôt SAUVEGARDE_ACTIVE ne vaut pas `true` (docs/compte.md,
-# 1.12) : sans ses secrets, chaque passage du dimanche échouerait, et préviendrait pour rien.
+# 1.12) : sans ses secrets, chaque passage de la nuit échouerait, et préviendrait pour rien.
 on:
   schedule:
-    - cron: '23 2 * * 0'
+    - cron: '23 2 * * *'
   workflow_dispatch:
 
 permissions:
