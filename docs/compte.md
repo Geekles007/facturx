@@ -15,7 +15,7 @@ Conventions de ce guide : `<ref>` est l'identifiant du projet Supabase (20 lettr
 | Nom | Valeur en production | Sans lui |
 |---|---|---|
 | `FACTURX_ORIGINES` | `https://facturx.ibird.dev` : l'origine du site, sans barre finale (plusieurs, séparées par des virgules) | aucune origine admise : le navigateur bloque tout appel du Studio (CORS) |
-| `BREVO_API_KEY` | la clé de l'API Brevo (`xkeysib-…`) ; **jamais `simule`**, refusé sur un projet hébergé | `relancer` échoue (500) |
+| `BREVO_API_KEY` | la clé de l'API Brevo (`xkeysib-…`) ; **jamais `simule`**, refusé sur un projet hébergé | `relancer` échoue (500) ; une clé que Brevo refuse, ou son blocage des adresses IP, donne un refus 401 de Brevo à chaque relance (1.3, 9) |
 | `RELANCES_EXPEDITEUR` | `relances@ibird.dev`, sur le domaine authentifié chez Brevo | `relancer` échoue (500) |
 | `PURGE_SECRET` | 64 caractères aléatoires (`openssl rand -hex 32`), **la même valeur** que `purger_secret` dans le Vault | `purger` refuse tout (401) ; un secret de moins de 32 caractères, ou celui de `.env.example`, aussi |
 | `FACTURX_TESTS` | **absent** : il laisserait un en-tête fixer « aujourd'hui » (la fonction l'ignore déjà sur `*.supabase.co`) | — |
@@ -74,8 +74,17 @@ Ce domaine est aussi celui du courrier de l'éditeur (`hello@ibird.dev`, reçu p
 4. Chez Hetzner, créer `compte@ibird.dev` et `relances@ibird.dev` comme redirections vers une boîte lue (`hello@ibird.dev`) : elles reçoivent le code si Brevo veut valider une adresse, et la réponse d'un destinataire dont le logiciel ignorerait le `Reply-To`.
 5. *Senders → Add a sender* : `relances@ibird.dev` (nom : `facturx` ; chaque relance le remplace par « *Nom de l'entreprise* via facturx ») et `compte@ibird.dev` (nom : `facturx`).
 6. *SMTP & API → SMTP* : noter le serveur (`smtp-relay.brevo.com`, port `587`) et l'identifiant SMTP, puis *Generate a new SMTP key* : c'est le mot de passe SMTP de l'étape 1.4.
-7. *SMTP & API → API Keys → Generate a new API key*, nommée `facturx-relances` : c'est `BREVO_API_KEY` (étape 1.5).
+7. *SMTP & API → API Keys → Generate a new API key*, nommée `facturx-relances` : c'est `BREVO_API_KEY` (étape 1.5). Une clé d'API commence par `xkeysib-` ; la clé SMTP de l'étape 6 (`xsmtpsib-…`) ne vaut pas pour l'API, qui la refuse (401).
 8. Vérifier, dans les réglages des e-mails transactionnels de Brevo, que **le suivi des clics et des ouvertures est désactivé**. Avec lui, Brevo réécrit chaque lien d'un e-mail pour le compter : le lien de confirmation passerait par un serveur de Brevo, et le service de suivi qui l'ouvre (une messagerie, un antivirus) peut consommer ce lien à usage unique avant vous, si bien que la confirmation échoue. Il ajouterait aussi un pixel d'ouverture à des e-mails qui n'en portent aucun (D76). L'étape 1.10 le vérifie : le lien du bouton doit commencer par l'adresse de Supabase.
+9. *Security → Authorised IPs* : **désactiver le blocage des adresses IP inconnues**. Les fonctions de Supabase n'ont pas d'adresse fixe : avec ce blocage, Brevo refuse chaque appel de `relancer` (401), quelle que soit la clé, et en ajouter une à la liste ne suffit pas, la suivante sera une autre. Le 9 novembre 2026, les e-mails du compte, envoyés par SMTP, passaient, et seules les relances échouaient : le Studio disait « Le service d'envoi a refusé l'e-mail », et le journal de la fonction (*Edge Functions → relancer → Logs*) `{"relancer":"refus de Brevo","statut":401}`.
+
+   Pour savoir, devant un 401, si c'est la clé ou l'adresse : tester la clé depuis sa machine. La commande la lit sans l'afficher et ne montre que le motif de Brevo (« unrecognised IP address » : le blocage est encore actif ; « Key not found » : la clé n'est pas la bonne) :
+
+   ```sh
+   read -rs K && curl -s -H "api-key: $K" https://api.brevo.com/v3/account | jq -r '.message // "clé valide"'; unset K
+   ```
+
+   La clé se colle à l'invite, **jamais dans la ligne de commande** : elle resterait dans l'historique du shell (`~/.zsh_history`). Si c'est arrivé, la tenir pour exposée : en générer une nouvelle, supprimer l'ancienne chez Brevo, reposer `BREVO_API_KEY` (1.5), puis effacer la ligne de l'historique, le terminal fautif fermé : `LC_ALL=C sed -i '' '/xkeysib-/d' ~/.zsh_history`.
 
 ### 1.3 bis Les enregistrements DNS
 
@@ -232,7 +241,7 @@ Avec un **compte d'essai** (une adresse que vous lisez, par exemple un alias `+e
    - le lien du bouton, copié sans être suivi (clic droit → *Copier l'adresse du lien*), **commence par `https://<ref>.supabase.co/auth/v1/verify`** : Brevo ne l'a pas réécrit pour compter les clics (1.3, 8). Une adresse de Brevo à la place : le suivi est encore actif, le désactiver avant d'aller plus loin ;
    - une seconde inscription, **depuis `/en/studio/`** (un autre alias, par exemple `+essai-en`), reçoit l'e-mail en anglais : objet « Confirm your email address », bouton « Confirm my address ». Cliquer ce bouton : le lien confirme le compte (ce qui prouve le lien de l'e-mail anglais), qui peut alors se connecter ; le supprimer ensuite comme le premier (1.11, 8).
 3. **Émission** : renseigner l'entreprise (avec un SIREN : `relancer` l'exige), puis une facture dont l'acheteur a pour adresse de contact la vôtre, **datée d'il y a quelques jours (de cette année) et échue d'hier** (pour pouvoir la relancer tout de suite). *Émettre* : la facture prend son numéro, son PDF s'ouvre.
-4. **Relance** : sur cette facture, *Relancer*, destinataire votre adresse, *Envoyer*. L'e-mail arrive de « *Nom de l'entreprise* via facturx » `<relances@ibird.dev>`, avec le PDF joint, et y répondre écrit à l'adresse du compte (`Reply-To`). Le Studio dit « envoyée ». Dans l'e-mail, dans l'ordre : le nom de l'entreprise en tête, l'encadré (numéro, reste dû et échéance de la facture), le texte relu, « *numéro*.pdf est joint à cet e-mail. », puis, hors de la carte, « Envoyé par *Entreprise* avec facturx. Pour lui écrire, répondez à cet e-mail. »
+4. **Relance** : sur cette facture, *Relancer*, destinataire votre adresse, *Envoyer*. L'e-mail arrive de « *Nom de l'entreprise* via facturx » `<relances@ibird.dev>`, avec le PDF joint, et y répondre écrit à l'adresse du compte (`Reply-To`). Le Studio dit « envoyée ». Dans l'e-mail, dans l'ordre : le nom de l'entreprise en tête, l'encadré (numéro, reste dû et échéance de la facture), le texte relu, « *numéro*.pdf est joint à cet e-mail. », puis, hors de la carte, « Envoyé par *Entreprise* avec facturx. Pour lui écrire, répondez à cet e-mail. » Si le Studio dit « Le service d'envoi a refusé l'e-mail » : 1.3, 9.
 5. Les contrôles du déploiement déjà vus : migrations appliquées depuis la base vide (1.7) ; `deno.lock` en version 5 accepté au déploiement (l'étape *Edge Functions* a réussi ; sinon, voir la section 5) ; `postgres` lit `storage.objects` et la tâche `purger-chaque-nuit` est là (1.8).
 
 ### 1.11 Confirmer D74 sur le projet déployé
