@@ -285,3 +285,36 @@ describe('les fichiers générés', () => {
     );
   });
 });
+
+describe('la pile locale', () => {
+  const config = lire('supabase/config.toml');
+  const objets = JSON.parse(lire('supabase/templates/objets.json')) as Record<Modele, string>;
+
+  test.each(MODELES)(
+    '[auth.email.template.%s] emploie l’objet et le fichier du dépôt',
+    (modele) => {
+      // Le corps de la section (les lignes jusqu'à la section suivante) ; une section commentée ne compte pas.
+      const section = new RegExp(
+        `^\\[auth\\.email\\.template\\.${modele}\\]\\n([^\\[]*)`,
+        'm',
+      ).exec(config);
+      expect(
+        section,
+        `config.toml n’a pas de section [auth.email.template.${modele}]`,
+      ).not.toBeNull();
+      const corps = section?.[1] ?? '';
+      // L'objet est une chaîne littérale TOML : il contient des guillemets, pas d'apostrophe droite.
+      expect(/^subject = '([^']*)'$/m.exec(corps)?.[1]).toBe(objets[modele]);
+      expect(/^content_path = "([^"]*)"$/m.exec(corps)?.[1]).toBe(
+        `./supabase/templates/${modele}.html`,
+      );
+    },
+  );
+
+  test('ne personnalise que les cinq modèles du compte', () => {
+    const sections = [...config.matchAll(/^\[auth\.email\.template\.([\w]+)\]$/gm)].map(
+      (m) => m[1],
+    );
+    expect(sections.sort()).toEqual([...MODELES].sort());
+  });
+});
