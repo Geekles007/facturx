@@ -13,6 +13,7 @@
  */
 import { assert, assertEquals, assertExists, assertMatch } from '@std/assert';
 import { aujourdhuiParis } from '../_shared/dates.ts';
+import { date, montant, paragraphes } from '../_vendor/shared/courriel.ts';
 import { fromBase64 } from '../_vendor/shared/portable.ts';
 import { DOSSIER_TRACES } from '../relancer/brevo.ts';
 import { cleDuVerrou } from '../relancer/limites.ts';
@@ -75,13 +76,27 @@ async function messagesRemis(factureId: string): Promise<MessageBrevo[]> {
 /** L'oid du type `uuid[]` de Postgres, que postgres.js ne devine pas pour un paramètre. */
 const UUID_ARRAY = 2951;
 
+/**
+ * Ce qui distingue une facture d'essai : son échéance, son type, le chemin de son PDF, et la langue de
+ * ses libellés (`appearance.language` ; sans elle, l'apparence est vide, comme une facture ancienne).
+ */
+interface OptionsFacture {
+  echeance?: string | null;
+  typeCode?: string;
+  pdfChemin?: string;
+  langue?: string;
+}
+
 /** Les factures `ids` de l'entreprise, écrites en base : échéance `echeance`, 1 200,00 à payer. */
 async function ecrireFactures(
   compte: Compte,
   ids: string[],
-  options: { echeance?: string | null; typeCode?: string; pdfChemin?: string } = {},
+  options: OptionsFacture = {},
 ): Promise<void> {
   const echeance = options.echeance === undefined ? decaler(aujourdhui(), -10) : options.echeance;
+  const apparence = JSON.stringify(
+    options.langue === undefined ? {} : { language: options.langue },
+  );
   await base(
     (sql) => sql`
       insert into factures (id, entreprise_id, numero, type_code, date_emission, date_echeance,
@@ -89,7 +104,7 @@ async function ecrireFactures(
                             pdf_chemin, sdk_version, origine, emise_par)
       select t.id, ${compte.entrepriseId}, 'F-' || left(t.id::text, 8), ${options.typeCode ?? '380'},
              ${decaler(aujourdhui(), -60)}::date, ${echeance}::date, 'Client Démo SARL', 'EUR',
-             100000, 120000, 120000, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb,
+             100000, 120000, 120000, '{}'::jsonb, '{}'::jsonb, ${apparence}::text::jsonb,
              coalesce(${options.pdfChemin ?? null}, ${compte.entrepriseId}::text || '/' || t.id || '.pdf'),
              '0', 'emise', ${compte.userId}
         from unnest(${sql.array(ids, UUID_ARRAY)}) as t(id)`,
@@ -97,10 +112,7 @@ async function ecrireFactures(
 }
 
 /** Une facture en retard, avec son PDF dans le Storage ; son identifiant. */
-async function creerFacture(
-  compte: Compte,
-  options: { echeance?: string | null; typeCode?: string; pdfChemin?: string } = {},
-): Promise<string> {
+async function creerFacture(compte: Compte, options: OptionsFacture = {}): Promise<string> {
   const id = crypto.randomUUID();
   await ecrireFactures(compte, [id], options);
   const depot = await admin()
@@ -175,6 +187,8 @@ interface Options {
   destinataire?: unknown;
   objet?: unknown;
   corps?: unknown;
+  /** La langue demandée ; sans cette clé, la requête n'en porte pas (un Studio d'avant l'habillage). */
+  langue?: unknown;
   enTetes?: Record<string, string>;
 }
 
@@ -192,6 +206,7 @@ async function relancer(
       destinataire: 'destinataire' in options ? options.destinataire : DESTINATAIRE,
       objet: 'objet' in options ? options.objet : OBJET,
       corps: 'corps' in options ? options.corps : CORPS,
+      ...('langue' in options ? { langue: options.langue } : {}),
     },
     options.enTetes,
   );
@@ -253,8 +268,30 @@ Deno.test('nominal : 201 { id, niveau }, relance consignée envoyee avec l’ide
   assertEquals(remis.replyTo, { email: compte.email });
   assertEquals(remis.to, [{ email: DESTINATAIRE }]);
   assertEquals(remis.subject, 'Relance Bcc: x@y');
-  assertEquals(remis.textContent, '<b>Bonjour</b>\n\nMerci.');
-  assert(remis.htmlContent.includes('<p style="margin:0 0 16px">&lt;b&gt;Bonjour&lt;/b&gt;</p>'));
+  // Le texte relu est habillé : la facture lue en base (1 200,00 € dus, échéance d'il y a dix jours,
+  // sans langue connue : le français), le PDF joint, le nom de l'entreprise.
+  const numero = numeroDe(factureId);
+  const echeance = decaler(aujourdhui(), -10);
+  const nbsp = '\u00a0';
+  assertEquals(
+    remis.textContent,
+    [
+      `Facture ${numero}`,
+      `Reste dû${nbsp}: ${montant(120000, 'EUR', 'fr')}`,
+      `Échéance${nbsp}: ${date(echeance, 'fr')}`,
+      '',
+      '<b>Bonjour</b>\n\nMerci.',
+      '',
+      `${numero}.pdf est joint à cet e-mail.`,
+      '--',
+      'Envoyé par Atelier Exemple SAS avec facturx. Pour lui écrire, répondez à cet e-mail.',
+    ].join('\n'),
+  );
+  assert(remis.htmlContent.includes(paragraphes('<b>Bonjour</b>\n\nMerci.')));
+  assert(remis.htmlContent.includes('&lt;b&gt;Bonjour&lt;/b&gt;</p>'));
+  assert(remis.htmlContent.includes('<html lang="fr">'));
+  assert(remis.htmlContent.includes('>Atelier Exemple SAS</td>'));
+  assert(remis.htmlContent.includes(`>${montant(120000, 'EUR', 'fr')}</td>`));
   assert(!remis.htmlContent.includes('<b>'));
   // La pièce jointe est le PDF de la facture, octet pour octet, sous le nom de son numéro.
   assertEquals(
@@ -527,6 +564,12 @@ Deno.test('payée en partie : le reste dû est positif, la relance part', async 
       values (${compte.entrepriseId}, ${factureId}, ${aujourdhui()}, 50000, 'virement', ${compte.userId})`,
   );
   assertEquals((await relancer(compte, factureId)).status, 201);
+
+  // L'encadré dit ce qui reste dû d'après la vue de suivi (1 200,00 moins 500,00), non le total.
+  const [remis] = await messagesRemis(factureId);
+  assert(remis.htmlContent.includes(`>${montant(70000, 'EUR', 'fr')}</td>`));
+  assert(!remis.htmlContent.includes(`>${montant(120000, 'EUR', 'fr')}</td>`));
+  assert(remis.textContent.includes(`Reste dû\u00a0: ${montant(70000, 'EUR', 'fr')}\n`));
 });
 
 Deno.test('destinataire mal formé : 422, path destinataire, rien d’envoyé ni de consigné', async () => {
@@ -620,6 +663,63 @@ Deno.test('corps de requête : facture, objet et message vérifiés, 422 sur le 
   const trop = await relancer(compte, emoji, { corps: '🙂'.repeat(10_001) });
   assertEquals(issues(trop.status, trop.corps)[0].path, 'corps');
   assertEquals((await relancer(compte, emoji, { corps: '🙂'.repeat(10_000) })).status, 201);
+});
+
+Deno.test('langue : fr ou en, sinon 422 CORPS au chemin langue, rien d’envoyé ni de consigné', async () => {
+  const compte = await compteRelanceur();
+  const factureId = await creerFacture(compte);
+
+  for (const mauvaise of ['de', 'EN', 'fr-FR', '', null, 12, true, ['fr'], { langue: 'fr' }]) {
+    const { status, corps } = await relancer(compte, factureId, { langue: mauvaise });
+    const [anomalie] = issues(status, corps);
+    assertEquals(anomalie.path, 'langue', JSON.stringify(mauvaise));
+    assertEquals(anomalie.code, 'CORPS', JSON.stringify(mauvaise));
+  }
+  assertEquals(await relancesDe(factureId), []);
+  assertEquals(await messagesRemis(factureId), []);
+});
+
+Deno.test('langue : celle que le Studio demande, sinon celle de la facture, sinon le français', async () => {
+  const compte = await compteRelanceur();
+  const cas: { nom: string; facture?: string; demandee?: 'fr' | 'en'; attendue: 'fr' | 'en' }[] = [
+    // Absente : la facture parle.
+    { nom: 'facture en anglais', facture: 'en', attendue: 'en' },
+    { nom: 'facture en français', facture: 'fr', attendue: 'fr' },
+    // Sans langue lisible (apparence vide, ou une langue que les e-mails ne parlent pas) : le français.
+    { nom: 'facture sans langue', attendue: 'fr' },
+    { nom: 'facture dans une autre langue', facture: 'de', attendue: 'fr' },
+    // Demandée : elle prime sur la facture, dans les deux sens.
+    { nom: 'anglais demandé, facture en français', facture: 'fr', demandee: 'en', attendue: 'en' },
+    { nom: 'français demandé, facture en anglais', facture: 'en', demandee: 'fr', attendue: 'fr' },
+    { nom: 'anglais demandé, facture sans langue', demandee: 'en', attendue: 'en' },
+  ];
+  for (const { nom, facture, demandee, attendue } of cas) {
+    const factureId = await creerFacture(compte, { langue: facture });
+    const { status, corps } = await relancer(
+      compte,
+      factureId,
+      demandee === undefined ? {} : { langue: demandee },
+    );
+    assertEquals(status, 201, `${nom} : ${JSON.stringify(corps)}`);
+    const [remis, ...autres] = await messagesRemis(factureId);
+    assertEquals(autres, [], nom);
+    // L'encadré, le libellé du texte brut, la mention du PDF et la langue du document suivent.
+    const html = remis.htmlContent;
+    assert(html.includes(`<html lang="${attendue}">`), nom);
+    assert(
+      attendue === 'en'
+        ? html.includes('>Amount due</td>') && remis.textContent.includes('Amount due: ')
+        : html.includes('>Reste dû</td>') && remis.textContent.includes('Reste dû\u00a0: '),
+      nom,
+    );
+    assert(
+      html.includes(attendue === 'en' ? 'is attached to this email.' : 'est joint à cet e-mail.'),
+      nom,
+    );
+    // Le montant et la date sont ceux que le Studio prépare dans cette langue.
+    assert(html.includes(`>${montant(120000, 'EUR', attendue)}</td>`), nom);
+    assert(html.includes(`>${date(decaler(aujourdhui(), -10), attendue)}</td>`), nom);
+  }
 });
 
 Deno.test('caractère que la base refuse : 422 avant l’envoi, le simulateur n’est jamais appelé, le délai n’est pas consommé', async () => {

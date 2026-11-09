@@ -2,7 +2,11 @@
  * Edge Function `relancer` (spec § 9) : l'e-mail de relance d'une facture en retard, que l'utilisateur
  * a relu, part par Brevo avec le PDF de la facture en pièce jointe, et est consigné.
  *
- *   POST /functions/v1/relancer   { factureId, destinataire, objet, corps }
+ *   POST /functions/v1/relancer   { factureId, destinataire, objet, corps, langue? }
+ *
+ * `langue` (`fr` ou `en`, sinon 422 `CORPS`) est celle du texte que le Studio a préparé : les libellés
+ * de l'habillage de l'e-mail (`message.ts`) s'y accordent. Absente (un Studio d'avant l'habillage),
+ * c'est celle de la facture (`appearance.language`), puis le français.
  *
  * Réponse 201 `{ id, niveau }`. Le niveau (1, rappel courtois ; 2, ferme ; 3, dernier rappel, qui se
  * répète) est le nombre de relances `envoyee` de la facture plus un, plafonné à 3. Si l'on ne sait pas
@@ -49,6 +53,7 @@ import { aujourdhui, contexte, exigerCompteActif } from '../_shared/contexte.ts'
 import { exigerAdmissible, lireObjetPortable, lireTexte, UUID } from '../_shared/corps.ts';
 import { admin, sql } from '../_shared/db.ts';
 import { type Anomalie, anomalies, erreur, json, traiter } from '../_shared/erreurs.ts';
+import type { Langue } from '../_vendor/shared/courriel.ts';
 import { destinataireValide } from '../_vendor/shared/destinataire.ts';
 import { EnvoiIncertain, ErreurBrevo, expediteurConfigure } from './brevo.ts';
 import { appliquerLimites } from './limites.ts';
@@ -73,6 +78,13 @@ interface Corps {
   destinataire: string;
   objet: string;
   corps: string;
+  /** La langue demandée ; absente, le serveur la déduit de la facture. */
+  langue?: Langue;
+}
+
+/** `fr` ou `en` ; toute autre valeur ne se lit pas. */
+function langueLue(valeur: unknown): Langue | undefined {
+  return valeur === 'fr' || valeur === 'en' ? valeur : undefined;
 }
 
 /** Le corps de la requête, vérifié dans sa forme ; `objet` est rendu nettoyé (une seule ligne). */
@@ -81,7 +93,7 @@ function lireCorps(texte: string): Corps {
   const refus = (anomalie: Anomalie) => anomalies([anomalie], message);
   const requete = lireObjetPortable(texte, message);
 
-  const { factureId, destinataire, objet, corps } = requete;
+  const { factureId, destinataire, objet, corps, langue } = requete;
   if (typeof factureId !== 'string' || !UUID.test(factureId)) {
     throw refus({ code: 'CORPS', path: 'factureId', message: 'Identifiant de facture attendu.' });
   }
@@ -106,6 +118,9 @@ function lireCorps(texte: string): Corps {
   if (typeof corps !== 'string') {
     throw refus({ code: 'CORPS', path: 'corps', message: 'Message attendu.' });
   }
+  if (langue !== undefined && langueLue(langue) === undefined) {
+    throw refus({ code: 'CORPS', path: 'langue', message: 'Langue attendue : fr ou en.' });
+  }
   // Ce qui part dans l'e-mail est aussi ce qui est consigné : un caractère que la base refuse (le NUL)
   // ferait échouer la consignation après l'envoi. Rien d'autre que `\t`, `\n` et `\r` comme contrôle.
   exigerAdmissible({ objet, corps }, '', 'CORPS', message, true);
@@ -121,7 +136,7 @@ function lireCorps(texte: string): Corps {
       message: `Message attendu, de ${CORPS_MAX} caractères au plus.`,
     });
   }
-  return { factureId, destinataire, objet: objetNettoye, corps };
+  return { factureId, destinataire, objet: objetNettoye, corps, langue: langueLue(langue) };
 }
 
 Deno.serve(
@@ -130,19 +145,29 @@ Deno.serve(
     // pas être demandée.
     const ctx = await contexte(req);
     exigerCompteActif(ctx, SANS_ENVOI);
-    const { factureId, destinataire, objet, corps } = lireCorps(
+    const { factureId, destinataire, objet, corps, langue } = lireCorps(
       await lireTexte(req, PLAFOND_REQUETE),
     );
     const e = ctx.entrepriseId;
 
     // La facture de l'entreprise du compte, et son reste dû d'après la vue de suivi (qui déduit les
     // paiements et les avoirs ; un avoir n'y figure pas). Inconnue ou d'une autre entreprise : la même
-    // réponse, rien ne dit que l'identifiant existe ailleurs.
+    // réponse, rien ne dit que l'identifiant existe ailleurs. `reste_du` (des centimes, un `bigint`
+    // que postgres.js rendrait en texte) est lu en `float8`, exact jusqu'à 2^53 ; il est `null` sans
+    // ligne de suivi, et la devise et la langue de la facture servent à l'habillage du message.
     const [facture] = await sql<
-      { numero: string; pdf_chemin: string; echeance: string | null; du: boolean }[]
+      {
+        numero: string;
+        pdf_chemin: string;
+        echeance: string | null;
+        reste_du: number | null;
+        devise: string;
+        langue_facture: string | null;
+      }[]
     >`
       select f.numero, f.pdf_chemin, f.date_echeance::text as echeance,
-             coalesce(s.reste_du > 0, false) as du
+             s.reste_du::float8 as reste_du, f.devise,
+             f.appearance ->> 'language' as langue_facture
         from public.factures f
         left join public.suivi_factures s on s.entreprise_id = f.entreprise_id and s.facture_id = f.id
        where f.id = ${factureId} and f.entreprise_id = ${e}`;
@@ -150,7 +175,12 @@ Deno.serve(
 
     // Une échéance du jour n'est pas encore passée ; une facture sans échéance n'est jamais en retard.
     // « Aujourd'hui » est celui de la fonction, comme pour `emettre` (les tests le fixent).
-    if (facture.echeance === null || facture.echeance >= aujourdhui(req) || !facture.du) {
+    if (
+      facture.echeance === null ||
+      facture.echeance >= aujourdhui(req) ||
+      facture.reste_du === null ||
+      facture.reste_du <= 0
+    ) {
       throw anomalies(
         [
           {
@@ -163,6 +193,12 @@ Deno.serve(
         `La facture n’est pas à relancer : ${SANS_ENVOI}.`,
       );
     }
+
+    // Ce que l'habillage du message dit de la facture, lu une fois la facture reconnue en retard.
+    const echeance = facture.echeance;
+    const resteDu = facture.reste_du;
+    // La langue du texte : celle que le Studio demande, sinon celle de la facture, sinon le français.
+    const langueMessage: Langue = langue ?? langueLue(facture.langue_facture) ?? 'fr';
 
     // 2. L'adresse du compte, puis le SIREN du vendeur (le profil de l'entreprise).
     if (!ctx.confirme) {
@@ -250,6 +286,10 @@ Deno.serve(
         replyTo: ctx.email,
         numero: facture.numero,
         pdf,
+        langue: langueMessage,
+        resteDu,
+        devise: facture.devise,
+        echeance,
       });
 
       // 4. L'envoi, sous le verrou. Un refus de Brevo ne lève pas ici : lever annulerait la

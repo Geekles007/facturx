@@ -3,8 +3,13 @@
  * l'API Brevo sans que rien de ce qu'il a saisi puisse devenir du HTML, un en-tête ou un destinataire
  * de plus.
  *
- *   - le corps, en texte, est échappé puis placé dans un gabarit HTML fixe (`textContent` garde le
- *     texte brut) : aucun HTML saisi par l'utilisateur n'est envoyé ;
+ *   - le corps, en texte, est échappé puis placé dans le cadre fixe des e-mails de facturx
+ *     (`cadre`, site-src/shared/courriel.ts) : aucun HTML saisi par l'utilisateur n'est envoyé. Le
+ *     gabarit y ajoute, dans la langue du texte (`fr` ou `en`), le nom de l'entreprise en tête, un
+ *     encadré de la facture (numéro, reste dû, échéance : lus en base par `relancer`, non saisis), la
+ *     mention du PDF joint et, hors de la carte, le pied « Envoyé par … avec facturx ». Le nom, le
+ *     numéro et les montants y sont échappés comme le texte. `textContent` porte les mêmes
+ *     informations, en texte brut (spec e-mails, § 6.3) ;
  *   - l'objet est débarrassé des retours à la ligne, des caractères de contrôle et de mise en forme
  *     (sens d'écriture, largeur nulle), et coupé à 200 caractères ; le nom de l'expéditeur, de ces
  *     caractères, des guillemets et des chevrons ;
@@ -14,6 +19,15 @@
  * L'adresse d'expédition est celle du domaine de facturx (`RELANCES_EXPEDITEUR`) ; `Reply-To` est
  * l'adresse du compte, de sorte qu'une réponse du client arrive à l'entreprise.
  */
+import {
+  cadre,
+  date,
+  encadre,
+  type Langue,
+  mention,
+  montant,
+  paragraphes,
+} from '../_vendor/shared/courriel.ts';
 import { fileStem } from '../_vendor/shared/numerotation.ts';
 import { toBase64 } from '../_vendor/shared/portable.ts';
 
@@ -42,19 +56,6 @@ const FINS_DE_LIGNE = /[\p{Cc}\p{Zl}\p{Zp}]+/gu;
  */
 const MISE_EN_FORME = /\p{Cf}/gu;
 
-const ENTITES: Record<string, string> = {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#39;',
-};
-
-/** `texte` pour le contenu d'un élément HTML : il s'affichera tel qu'il a été saisi. */
-export function echapper(texte: string): string {
-  return texte.replace(/[&<>"']/g, (c) => ENTITES[c] as string);
-}
-
 /** Les `max` premiers caractères de `texte` : un caractère hors du plan de base ne se coupe pas en deux. */
 function couper(texte: string, max: number): string {
   // Deux unités par caractère au plus : la première coupe évite de parcourir un texte énorme.
@@ -80,9 +81,13 @@ export function nettoyerObjet(objet: string): string {
   return uneLigne(objet, OBJET_MAX);
 }
 
-/** « *Nom de l'entreprise* via facturx », sans guillemet, chevron, barre oblique inverse ni retour à la ligne. */
-function nomExpediteur(entreprise: string): string {
-  const nom = couper(
+/**
+ * Le nom de l'entreprise tel qu'il se montre (l'expéditeur, l'en-tête, le pied) : sans guillemet,
+ * chevron, barre oblique inverse ni caractère de mise en forme, sur une seule ligne, de 100 caractères
+ * au plus. Vide s'il n'en reste rien.
+ */
+function nomNettoye(entreprise: string): string {
+  return couper(
     entreprise
       .replace(/["<>\\]/g, '')
       .replace(MISE_EN_FORME, '')
@@ -91,32 +96,54 @@ function nomExpediteur(entreprise: string): string {
       .trim(),
     NOM_MAX,
   ).trim();
+}
+
+/** « *Nom de l'entreprise* via facturx » ; « facturx » seul quand le nom ne laisse rien. */
+function nomExpediteur(entreprise: string): string {
+  const nom = nomNettoye(entreprise);
   return nom === '' ? 'facturx' : `${nom} via facturx`;
 }
 
-/** Les paragraphes du texte (lignes vides), en `<p>` ; un retour à la ligne simple devient `<br>`. */
-function enParagraphes(corps: string): string {
-  return corps
-    .replace(/\r\n?/g, '\n')
-    .split(/\n\s*\n/)
-    .map((paragraphe) => paragraphe.trim())
-    .filter((paragraphe) => paragraphe !== '')
-    .map(
-      (paragraphe) =>
-        `<p style="margin:0 0 16px">${echapper(paragraphe).replace(/\n/g, '<br>')}</p>`,
-    )
-    .join('');
-}
-
-/** Le gabarit fixe : le seul HTML qui part est celui-ci, autour de paragraphes déjà échappés. */
-const gabarit = (paragraphes: string): string =>
-  '<!doctype html><html><head><meta charset="utf-8"></head>' +
-  '<body style="margin:0;padding:24px;font-family:Arial,Helvetica,sans-serif;font-size:15px;' +
-  `line-height:1.5;color:#111">${paragraphes}</body></html>`;
+/**
+ * Ce que le gabarit dit, dans chaque langue. En français, les deux-points du texte brut sont précédés
+ * d'une espace insécable.
+ */
+const TEXTES: Record<
+  Langue,
+  {
+    facture: string;
+    resteDu: string;
+    echeance: string;
+    deuxPoints: string;
+    joint: (fichier: string) => string;
+    pied: (nom: string) => string;
+    piedSansNom: string;
+  }
+> = {
+  fr: {
+    facture: 'Facture',
+    resteDu: 'Reste dû',
+    echeance: 'Échéance',
+    deuxPoints: '\u00a0:',
+    joint: (fichier) => `${fichier} est joint à cet e-mail.`,
+    pied: (nom) => `Envoyé par ${nom} avec facturx. Pour lui écrire, répondez à cet e-mail.`,
+    piedSansNom: 'Envoyé avec facturx.',
+  },
+  en: {
+    facture: 'Invoice',
+    resteDu: 'Amount due',
+    echeance: 'Due date',
+    deuxPoints: ':',
+    joint: (fichier) => `${fichier} is attached to this email.`,
+    pied: (nom) => `Sent by ${nom} with facturx. To reach them, reply to this email.`,
+    piedSansNom: 'Sent with facturx.',
+  },
+};
 
 /**
  * Le message à envoyer. L'adresse d'expédition est lue dans `RELANCES_EXPEDITEUR` : sans elle, la
- * fonction lève (une erreur du serveur, pas un message sans expéditeur).
+ * fonction lève (une erreur du serveur, pas un message sans expéditeur). `resteDu` est en centimes,
+ * dans `devise` ; `echeance` est une date `AAAA-MM-JJ` ; `langue` est celle du texte.
  */
 export function composer(m: {
   objet: string;
@@ -126,18 +153,53 @@ export function composer(m: {
   replyTo: string;
   numero: string;
   pdf: Uint8Array;
+  langue: Langue;
+  resteDu: number;
+  devise: string;
+  echeance: string;
 }): MessageBrevo {
   const expediteur = Deno.env.get('RELANCES_EXPEDITEUR')?.trim();
   if (!expediteur) {
     throw new Error('RELANCES_EXPEDITEUR : à définir (adresse d’expédition des relances).');
   }
+  const t = TEXTES[m.langue];
+  const nom = nomNettoye(m.entreprise);
+  const fichier = `${fileStem(m.numero)}.pdf`;
+  const reste = montant(m.resteDu, m.devise, m.langue);
+  const echeance = date(m.echeance, m.langue);
+  const pied = nom === '' ? t.piedSansNom : t.pied(nom);
+  const corps = m.corps.trim();
   return {
     sender: { name: nomExpediteur(m.entreprise), email: expediteur },
     to: [{ email: m.destinataire }],
     replyTo: { email: m.replyTo },
     subject: nettoyerObjet(m.objet),
-    htmlContent: gabarit(enParagraphes(m.corps)),
-    textContent: m.corps,
-    attachment: [{ name: `${fileStem(m.numero)}.pdf`, content: toBase64(m.pdf) }],
+    htmlContent: cadre({
+      lang: m.langue,
+      preheader: `${t.facture} ${m.numero} · ${t.resteDu} ${reste} · ${t.echeance} ${echeance}`,
+      // Sans nom d'entreprise, pas d'en-tête : le message ne porte pas le mot « facturx » en tête.
+      ...(nom === '' ? {} : { entete: nom }),
+      contenu:
+        encadre([
+          [t.facture, m.numero],
+          [t.resteDu, reste],
+          [t.echeance, echeance],
+        ]) +
+        paragraphes(corps) +
+        mention(t.joint(fichier)),
+      pied,
+    }),
+    textContent: [
+      `${t.facture} ${m.numero}`,
+      `${t.resteDu}${t.deuxPoints} ${reste}`,
+      `${t.echeance}${t.deuxPoints} ${echeance}`,
+      '',
+      corps,
+      '',
+      t.joint(fichier),
+      '--',
+      pied,
+    ].join('\n'),
+    attachment: [{ name: fichier, content: toBase64(m.pdf) }],
   };
 }
