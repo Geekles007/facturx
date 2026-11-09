@@ -106,7 +106,6 @@
     <tbody>
     <tr><td data-label="Prestataire">Supabase</td><td data-label="Ce qu'il fait">Base de données, authentification, stockage des PDF et des fichiers, fonctions du Service</td><td data-label="Société">Supabase Inc., société américaine</td><td data-label="Où">Région eu-central-1 (Francfort, Allemagne), sur l'infrastructure d'AWS</td></tr>
     <tr><td data-label="Prestataire">Brevo</td><td data-label="Ce qu'il fait">Envoi des e-mails&nbsp;: confirmation d'adresse, mot de passe oublié, relances</td><td data-label="Société">Société française</td><td data-label="Où">Hébergement dans l'Union européenne</td></tr>
-    <tr><td data-label="Prestataire">Scaleway</td><td data-label="Ce qu'il fait">Copie quotidienne chiffrée des données du Service</td><td data-label="Société">Scaleway SAS, société française</td><td data-label="Où">Région fr-par (Paris), hors de Supabase</td></tr>
     </tbody>
     </table>
     </div>
@@ -124,9 +123,9 @@
     <tbody>
     <tr data-compte><td data-label="Situation">Votre compte existe</td><td data-label="Durée">Vos données sont conservées tant que le compte existe. Une facture émise ne se modifie ni ne se supprime pendant ce temps.</td></tr>
     <tr data-compte><td data-label="Situation">Vous demandez la suppression du compte</td><td data-label="Durée">30 jours de délai de grâce, que vous pouvez annuler. Pendant ce délai, le Service n'émet plus rien et n'envoie plus de relance&nbsp;: il ne propose que l'export, l'annulation et la déconnexion.</td></tr>
-    <tr data-compte><td data-label="Situation">Les 30 jours sont écoulés</td><td data-label="Durée">Tout est effacé à la première passe de nuit qui suit, dans cet ordre&nbsp;: vos PDF et fichiers&nbsp;; votre identifiant de connexion&nbsp;; les données de l'entreprise (factures, clients, catalogue, paiements, relances)&nbsp;; enfin les traces que le serveur d'authentification garde de votre inscription et de vos connexions (adresse e-mail, identifiant, et pour certains évènements adresse IP). Il ne reste que les sauvegardes (ligne suivante) et les journaux techniques de l'hébergeur (requêtes à l'API et au serveur d'authentification, qui peuvent contenir votre adresse IP et votre adresse e-mail), qui s'effacent d'eux-mêmes au bout d'un jour.</td></tr>
+    <tr data-compte><td data-label="Situation">Les 30 jours sont écoulés</td><td data-label="Durée">Tout est effacé à la première passe de nuit qui suit, dans cet ordre&nbsp;: vos PDF et fichiers&nbsp;; votre identifiant de connexion&nbsp;; les données de l'entreprise (factures, clients, catalogue, paiements, relances)&nbsp;; enfin les traces que le serveur d'authentification garde de votre inscription et de vos connexions (adresse e-mail, identifiant, et pour certains évènements adresse IP). Il ne reste que les journaux techniques de l'hébergeur (requêtes à l'API et au serveur d'authentification, qui peuvent contenir votre adresse IP et votre adresse e-mail), qui s'effacent d'eux-mêmes au bout d'un jour.</td></tr>
     <tr data-compte><td data-label="Situation">Une émission est interrompue et laisse un PDF sans facture</td><td data-label="Durée">Le PDF est effacé après un jour au moins, à la passe de nuit suivante.</td></tr>
-    <tr data-compte><td data-label="Situation">Sauvegardes</td><td data-label="Durée">Copie quotidienne chiffrée, chez Scaleway&nbsp;: l'effacement ci-dessus ne réécrit pas les copies déjà faites, vos données y subsistent jusqu'à ce qu'elles expirent. Durée de conservation&nbsp;: 12&nbsp;semaines pour chaque copie, et 4&nbsp;mois au plus si Scaleway en garde une version antérieure.</td></tr>
+    <tr data-compte><td data-label="Situation">Sauvegardes</td><td data-label="Durée">Aucune à ce jour&nbsp;: le Service ne fait pas de copie de sauvegarde de vos données, qui ne sont que chez Supabase. Pour en garder une copie, exportez-les régulièrement («&nbsp;Exporter mes données&nbsp;», dans le menu du compte).</td></tr>
     <tr><td data-label="Situation">Journaux du site</td><td data-label="Durée">Le journal qui sert aux statistiques ne contient jamais d'adresse complète. Un journal d'exploitation distinct, éphémère, sert au diagnostic et garde les adresses complètes. Durées&nbsp;: 13&nbsp;mois pour le journal des statistiques, dont les lignes plus anciennes sont effacées chaque nuit&nbsp;; le journal d'exploitation est effacé à chaque mise à jour du site.</td></tr>
     </tbody>
     </table>
@@ -148,7 +147,7 @@
     <li>Émettre une facture et envoyer une relance se font uniquement par des fonctions du serveur. Le navigateur n'a aucun droit d'écriture sur une facture émise.</li>
     <li>Vos PDF, vos logos et vos polices sont dans des espaces privés. Ils ne s'ouvrent que par un lien signé, valable 60 secondes.</li>
     <li>La clé de service de la base n'existe que dans les secrets des fonctions du serveur&nbsp;; elle n'est jamais envoyée au navigateur.</li>
-    <li>Les données sont copiées chaque nuit, chiffrées, chez un autre hébergeur européen&nbsp;: c'est leur seule sauvegarde.</li>
+    <li>Le Service ne fait pas, à ce jour, de copie de sauvegarde des données&nbsp;: exportez régulièrement les vôtres («&nbsp;Exporter mes données&nbsp;»).</li>
     <li>Votre session de connexion est gardée dans le stockage de votre navigateur, pour que vous restiez connecté. Pour ne rien perdre de ce que vous tapez, le brouillon ouvert est aussi recopié dans le navigateur.</li>
     </ul>
     <p>Le schéma de la base, ses règles d'accès et les fonctions du Service sont publiés dans le <a href="https://github.com/Geekles007/facturx/tree/main/supabase">dépôt du projet</a>&nbsp;: vous pouvez les lire.</p>
