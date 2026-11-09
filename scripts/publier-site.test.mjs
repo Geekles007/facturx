@@ -164,7 +164,7 @@ describe('les pages du site, publiées', () => {
     expect(accueil).toContain('Studio · gratuit<span>, avec ou sans compte</span>');
     expect(readFileSync(join(avec, 'en/index.html'), 'utf8')).toContain('Create a free account');
     const confidentialite = readFileSync(join(avec, 'confidentialite/index.html'), 'utf8');
-    expect(confidentialite).toContain('<b>Supabase est une société américaine.</b>');
+    expect(confidentialite).toContain("<b>Des transferts hors de l'Union européenne.</b>");
     expect(confidentialite).toContain("<h2>8. Traceurs et mesure d'audience</h2>");
     for (const page of pagesDe(avec)) {
       expect(readFileSync(join(avec, page), 'utf8'), page).not.toMatch(/data-(sans-)?compte/);
