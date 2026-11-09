@@ -26,6 +26,7 @@
  */
 
 import { FunctionsHttpError } from '@supabase/supabase-js';
+import { date, type Langue, LOCALES, montant } from '../../shared/courriel.js';
 import { destinataireValide } from '../../shared/destinataire.js';
 import { t } from '../i18n.js';
 import type { CompanyProfile, SavedInvoice } from '../library.js';
@@ -36,7 +37,8 @@ import { factureEnregistree } from './emission.js';
 import { finDAttente, type Issue, reaction } from './erreurs.js';
 import { type LigneSuivi, ligneSuivi, type Relance, relancesDe, sessionRefusee } from './suivi.js';
 
-export type Langue = 'fr' | 'en';
+// La langue d'un e-mail vit dans le module partagé ; elle reste exportée d'ici pour qui l'en importe.
+export type { Langue };
 
 /** 1 : rappel courtois ; 2 : rappel ferme ; 3 : dernier rappel, qui se répète. */
 export type Niveau = 1 | 2 | 3;
@@ -62,30 +64,6 @@ export interface DonneesRelance {
 }
 
 // ---------- le modèle ----------
-
-const LOCALES: Record<Langue, string> = { fr: 'fr-FR', en: 'en-GB' };
-
-/** Un montant en centimes, dans sa devise, avec ses deux décimales (comme en base). */
-function montant(centimes: number, devise: string, langue: Langue): string {
-  return new Intl.NumberFormat(LOCALES[langue], {
-    style: 'currency',
-    currency: devise,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(centimes / 100);
-}
-
-/** Une date `AAAA-MM-JJ` ; telle quelle si elle ne se lit pas. */
-function date(iso: string, langue: Langue): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (!m) return iso;
-  return new Intl.DateTimeFormat(LOCALES[langue], {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))));
-}
 
 /** Un taux saisi en pour cent ; tel quel s'il ne se lit pas comme un nombre. */
 function taux(saisi: string, langue: Langue): string {
