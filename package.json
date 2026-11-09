@@ -27,7 +27,8 @@
     "compte:polices": "node scripts/compte-polices.mjs",
     "compte:start": "supabase start",
     "compte:test": "node scripts/compte-test.mjs",
-    "emails:construire": "node scripts/emails-construire.mjs"
+    "emails:construire": "node scripts/emails-construire.mjs",
+    "emails:deployer": "node scripts/emails-deployer.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
