@@ -14,6 +14,8 @@ import {
   type AuthError,
   isAuthRetryableFetchError,
   isAuthSessionMissingError,
+  type SupabaseClient,
+  type User,
 } from '@supabase/supabase-js';
 import { type Strings, t } from '../i18n.js';
 import { estDuCompte } from '../persistence.js';
@@ -58,6 +60,18 @@ interface Etat {
   expire: boolean;
 }
 
+/**
+ * Inscrit dans le compte la langue du Studio (`user_metadata.langue`), que les modèles d'e-mails lisent
+ * pour écrire dans la langue de l'utilisateur. Lancé sans être attendu et sans rien lever : l'échec
+ * n'est pas grave, le démarrage suivant recommence, et il ne doit ni le retarder ni le casser.
+ */
+function alignerLangue(sb: SupabaseClient, user: User): void {
+  if (user.user_metadata?.langue === t.lang) return;
+  Promise.resolve()
+    .then(() => sb.auth.updateUser({ data: { langue: t.lang } }))
+    .catch(() => {});
+}
+
 async function lire(etat: Etat): Promise<CompteUi | undefined> {
   const sb = client();
   // Un lien de réinitialisation ramène ici avec un code, que `supabase-js` échange contre la session
@@ -72,6 +86,8 @@ async function lire(etat: Etat): Promise<CompteUi | undefined> {
   const user = data.session?.user;
   if (!user) return undefined;
   etat.session = true;
+  // Ici et non dans `connecter` : la connexion recharge la page, ce qui couperait l'appel.
+  alignerLangue(sb, user);
   const { data: membre, error } = await sb
     .from('membres')
     .select('entreprise_id, entreprises(suppression_demandee_le)')
@@ -203,7 +219,7 @@ export async function inscrire(
   const { data, error } = await client().auth.signUp({
     email,
     password: motDePasse,
-    options: { data: { cgu: cguVersion }, emailRedirectTo: adresseDeRetour() },
+    options: { data: { cgu: cguVersion, langue: t.lang }, emailRedirectTo: adresseDeRetour() },
   });
   if (error) throw erreur(error);
   if (!data.session) return 'confirmation';
@@ -274,8 +290,9 @@ export async function changerAdresse(email: string): Promise<void> {
   if (nouvelle.toLowerCase() === actuelle.toLowerCase()) {
     throw new Error(t.compte.motDePasse.memeAdresse);
   }
+  // La langue part avec l'adresse : les e-mails de confirmation qui en résultent la lisent déjà.
   const { error } = await client().auth.updateUser(
-    { email: nouvelle },
+    { email: nouvelle, data: { langue: t.lang } },
     { emailRedirectTo: adresseDeRetour() },
   );
   if (error) throw erreur(error);

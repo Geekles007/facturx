@@ -147,6 +147,92 @@ describe('demarrer', () => {
   });
 });
 
+describe('demarrer, et la langue du compte', () => {
+  const membre = {
+    data: { entreprise_id: 'e-1', entreprises: { suppression_demandee_le: null } },
+    error: null,
+  };
+
+  /** L'utilisateur de la session, avec la langue que le compte a gardée. */
+  const avecLangue = (langue?: string) => ({
+    ...utilisateur,
+    user_metadata: langue === undefined ? {} : { langue },
+  });
+
+  beforeEach(() => {
+    maybeSingle.mockResolvedValue(membre);
+  });
+
+  // Les doublures de ces cas (qui rejette, qui ne rend rien, qui ne répond jamais) ne fuient pas.
+  afterEach(() => {
+    auth.updateUser.mockReset();
+  });
+
+  it('aligne le compte sur la langue du Studio quand elle diffère', async () => {
+    auth.getSession.mockResolvedValue({ data: { session: { user: avecLangue('en') } } });
+    await demarrer();
+    expect(auth.updateUser).toHaveBeenCalledOnce();
+    expect(auth.updateUser).toHaveBeenCalledWith({ data: { langue: 'fr' } });
+  });
+
+  it('pose la langue d’un compte qui n’en a pas encore, ou sans métadonnées', async () => {
+    auth.getSession.mockResolvedValue({ data: { session: { user: avecLangue() } } });
+    await demarrer();
+    expect(auth.updateUser).toHaveBeenCalledWith({ data: { langue: 'fr' } });
+    auth.updateUser.mockClear();
+    auth.getSession.mockResolvedValue({ data: { session: { user: utilisateur } } });
+    await demarrer();
+    expect(auth.updateUser).toHaveBeenCalledWith({ data: { langue: 'fr' } });
+  });
+
+  it('ne touche pas au compte quand la langue est déjà la bonne', async () => {
+    auth.getSession.mockResolvedValue({ data: { session: { user: avecLangue('fr') } } });
+    await demarrer();
+    expect(auth.updateUser).not.toHaveBeenCalled();
+  });
+
+  it('ne touche pas au compte sans session', async () => {
+    auth.getSession.mockResolvedValue({ data: { session: null } });
+    await demarrer();
+    expect(auth.updateUser).not.toHaveBeenCalled();
+  });
+
+  it('rend le même compte quand l’alignement échoue, par un refus ou par une exception', async () => {
+    auth.getSession.mockResolvedValue({ data: { session: { user: avecLangue('en') } } });
+    const attendu = await demarrer();
+    expect(attendu).toMatchObject({ email: 'a@exemple.test', entrepriseId: 'e-1' });
+
+    auth.updateUser.mockRejectedValue(new Error('réseau coupé'));
+    expect(await demarrer()).toEqual(attendu);
+    auth.updateUser.mockImplementation(() => {
+      throw new Error('verrou indisponible');
+    });
+    expect(await demarrer()).toEqual(attendu);
+    // `supabase-js` rend d'ordinaire l'erreur au lieu de la lever.
+    auth.updateUser.mockResolvedValue({ data: { user: null }, error: new Error('refusé') });
+    expect(await demarrer()).toEqual(attendu);
+  });
+
+  it('rend le même compte quand la doublure ne rend rien', async () => {
+    auth.getSession.mockResolvedValue({ data: { session: { user: avecLangue('en') } } });
+    auth.updateUser.mockReturnValue(undefined);
+    const compte = await demarrer();
+    expect(auth.updateUser).toHaveBeenCalledOnce();
+    expect(compte).toMatchObject({
+      email: 'a@exemple.test',
+      entrepriseId: 'e-1',
+      session: 'active',
+    });
+  });
+
+  it('n’attend pas l’alignement : un serveur qui ne répond pas ne retient pas le démarrage', async () => {
+    auth.getSession.mockResolvedValue({ data: { session: { user: avecLangue('en') } } });
+    auth.updateUser.mockReturnValue(new Promise(() => {}));
+    await expect(demarrer()).resolves.toMatchObject({ entrepriseId: 'e-1' });
+    expect(auth.updateUser).toHaveBeenCalledOnce();
+  });
+});
+
 describe('demarrer, au retour d’un lien reçu par e-mail', () => {
   const membre = {
     data: { entreprise_id: 'e-1', entreprises: { suppression_demandee_le: null } },
@@ -224,13 +310,16 @@ describe('demarrer, au retour d’un lien reçu par e-mail', () => {
 });
 
 describe('inscrire', () => {
-  it('transmet l’acceptation des CGU, sans quoi la base refuse le compte', async () => {
+  it('transmet l’acceptation des CGU, sans quoi la base refuse le compte, et la langue du Studio', async () => {
     auth.signUp.mockResolvedValue({ data: { session: null }, error: null });
     expect(await inscrire('a@exemple.test', 'secret', CGU_VERSION)).toBe('confirmation');
     expect(auth.signUp).toHaveBeenCalledWith({
       email: 'a@exemple.test',
       password: 'secret',
-      options: { data: { cgu: '2026-11' }, emailRedirectTo: 'https://exemple.test/studio/' },
+      options: {
+        data: { cgu: '2026-11', langue: 'fr' },
+        emailRedirectTo: 'https://exemple.test/studio/',
+      },
     });
     expect(reload).not.toHaveBeenCalled();
   });
@@ -377,8 +466,9 @@ describe('changer d’adresse et de mot de passe', () => {
   it('la nouvelle adresse attend sa confirmation : le lien ramène au Studio, rien ne change avant', async () => {
     auth.updateUser.mockResolvedValue({ data: { user: utilisateur }, error: null });
     await changerAdresse('  b@exemple.test ');
+    // La langue part avec l'adresse : l'e-mail de confirmation qui en résulte la lit déjà.
     expect(auth.updateUser).toHaveBeenCalledWith(
-      { email: 'b@exemple.test' },
+      { email: 'b@exemple.test', data: { langue: 'fr' } },
       { emailRedirectTo: 'https://exemple.test/studio/' },
     );
     expect(store.get().ui.compte?.email).toBe('a@exemple.test');
