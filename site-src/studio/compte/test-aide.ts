@@ -1,12 +1,14 @@
 /**
  * Aides des tests du compte contre la pile Supabase locale : un compte neuf, le client de service,
- * un jeton que le serveur refuse, une facture insérée comme `emettre` l'enregistre. Et, sans pile,
- * ce que les tests de la relance partagent : un refus d'Edge Function, une facture en retard.
+ * un jeton que le serveur refuse, une facture insérée comme `emettre` l'enregistre, un e-mail lu dans
+ * Mailpit. Et, sans pile, ce que les tests de la relance partagent : un refus d'Edge Function, une
+ * facture en retard.
  *
  * Les variables sont celles de `supabase status -o env`, que le job CI `compte` pose sans les
- * afficher : `SUPABASE_URL` (`API_URL`), `SUPABASE_ANON_KEY` et `SUPABASE_SERVICE_ROLE_KEY`. Chaque
- * appel de `compteDeTest` crée son propre compte, sous une adresse unique : aucun test ne dépend
- * d'un autre, ni de l'ordre, ni de ce que la pile contient déjà.
+ * afficher : `SUPABASE_URL` (`API_URL`), `SUPABASE_ANON_KEY` et `SUPABASE_SERVICE_ROLE_KEY`, et
+ * `MAILPIT_URL`, l'adresse locale de la boîte où la pile dépose ses e-mails. Chaque appel de
+ * `compteDeTest` crée son propre compte, sous une adresse unique : aucun test ne dépend d'un autre,
+ * ni de l'ordre, ni de ce que la pile contient déjà.
  *
  * Seuls des tests importent ce module : il n'entre pas dans le bundle du Studio.
  */
@@ -31,16 +33,27 @@ export function adminDeTest(): SupabaseClient {
   return createClient(variable('SUPABASE_URL'), variable('SUPABASE_SERVICE_ROLE_KEY'), sansSession);
 }
 
+/** Client sans session, comme un visiteur qui s'inscrit ou demande un lien avant d'être connecté. */
+export function clientAnonyme(): SupabaseClient {
+  return createClient(variable('SUPABASE_URL'), variable('SUPABASE_ANON_KEY'), sansSession);
+}
+
 /** Où `supabase-js` range la session des clients de test : une mémoire par client. */
 const CLE_SESSION = 'sb-essai-auth-token';
 const memoires = new WeakMap<SupabaseClient, Map<string, string>>();
 
 /**
  * Un compte confirmé, qui a accepté les CGU (sans quoi l'inscription est refusée), connecté par un
- * client à lui, et l'entreprise que l'inscription lui a créée. Le client ne renouvelle pas son
- * jeton de lui-même : un test ne laisse aucune minuterie derrière lui.
+ * client à lui, l'entreprise que l'inscription lui a créée, et de quoi le retrouver : son adresse et
+ * son identifiant. Le client ne renouvelle pas son jeton de lui-même : un test ne laisse aucune
+ * minuterie derrière lui.
  */
-export async function compteDeTest(): Promise<{ sb: SupabaseClient; entrepriseId: string }> {
+export async function compteDeTest(): Promise<{
+  sb: SupabaseClient;
+  entrepriseId: string;
+  email: string;
+  userId: string;
+}> {
   const email = `essai-${crypto.randomUUID()}@facturx.test`;
   const password = crypto.randomUUID();
   const cree = await adminDeTest().auth.admin.createUser({
@@ -79,7 +92,53 @@ export async function compteDeTest(): Promise<{ sb: SupabaseClient; entrepriseId
     .eq('user_id', cree.data.user.id)
     .single<{ entreprise_id: string }>();
   if (membre.error) throw new Error(`membre : ${membre.error.message}`);
-  return { sb, entrepriseId: membre.data.entreprise_id };
+  return { sb, entrepriseId: membre.data.entreprise_id, email, userId: cree.data.user.id };
+}
+
+/** Un e-mail de la boîte de Mailpit : son objet et ses deux corps, tels que l'API les rend. */
+export type CourrielRecu = { Subject: string; HTML: string; Text: string };
+
+/** Combien de temps la pile a pour déposer l'e-mail, et l'intervalle entre deux regards. */
+const ATTENTE_COURRIEL_MS = 10_000;
+const PAS_COURRIEL_MS = 250;
+
+/**
+ * Le dernier e-mail adressé à `adresse` dans Mailpit, avec l'objet `objet` si on le précise. Les
+ * e-mails d'Auth partent de façon asynchrone : on attend jusqu'à 10 s. Si rien n'arrive, l'erreur
+ * nomme l'adresse et les objets reçus entre-temps, pour qu'on voie si c'est l'envoi qui manque ou
+ * l'objet qui diffère.
+ */
+export async function courrielRecu(adresse: string, objet?: string): Promise<CourrielRecu> {
+  const base = variable('MAILPIT_URL').replace(/\/+$/, '');
+  const recherche = `${base}/api/v1/search?query=${encodeURIComponent(`to:"${adresse}"`)}`;
+  const adresseCherchee = adresse.toLowerCase();
+  const debut = Date.now();
+  let objetsRecus: string[] = [];
+  do {
+    const reponse = await fetch(recherche);
+    if (!reponse.ok) throw new Error(`Mailpit, recherche pour ${adresse} : ${reponse.status}`);
+    const { messages } = (await reponse.json()) as {
+      messages: { ID: string; Subject: string; To: { Address: string }[] }[];
+    };
+    // Les plus récents d'abord : le premier qui convient est le dernier reçu.
+    const siens = messages.filter((m) =>
+      m.To.some((destinataire) => destinataire.Address.toLowerCase() === adresseCherchee),
+    );
+    const trouve = siens.find((m) => objet === undefined || m.Subject === objet);
+    if (trouve) {
+      const message = await fetch(`${base}/api/v1/message/${trouve.ID}`);
+      if (!message.ok) throw new Error(`Mailpit, message ${trouve.ID} : ${message.status}`);
+      const { Subject, HTML, Text } = (await message.json()) as CourrielRecu;
+      return { Subject, HTML, Text };
+    }
+    objetsRecus = siens.map((m) => m.Subject);
+    await new Promise((fin) => setTimeout(fin, PAS_COURRIEL_MS));
+  } while (Date.now() - debut < ATTENTE_COURRIEL_MS);
+  const attendu = objet === undefined ? '' : ` d'objet « ${objet} »`;
+  const recus = objetsRecus.length > 0 ? ` (reçus : ${objetsRecus.join(' ; ')})` : '';
+  throw new Error(
+    `aucun e-mail${attendu} pour ${adresse} après ${ATTENTE_COURRIEL_MS / 1000} s${recus}`,
+  );
 }
 
 /** Une partie d'un JWT, décodée. */
