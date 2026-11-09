@@ -97,7 +97,9 @@ jobs:
           rm -r supabase/functions/mesure-rendu
       - name: Tests du Studio contre la pile (persistance du compte)
         # L'adresse et les clés de la pile viennent de `supabase status`, masquées avant tout usage :
-        # aucune n'apparaît dans le journal. Sans elles, les tests seraient sautés : l'étape échoue.
+        # aucune n'apparaît dans le journal. L'adresse de Mailpit, où la pile dépose les e-mails du
+        # compte, est locale : elle n'a rien à masquer. Sans elles, les tests seraient sautés :
+        # l'étape échoue.
         run: |
           while IFS='=' read -r nom valeur; do
             valeur="${valeur%\"}"
@@ -106,9 +108,10 @@ jobs:
               API_URL) export SUPABASE_URL="$valeur" ;;
               ANON_KEY) echo "::add-mask::$valeur"; export SUPABASE_ANON_KEY="$valeur" ;;
               SERVICE_ROLE_KEY) echo "::add-mask::$valeur"; export SUPABASE_SERVICE_ROLE_KEY="$valeur" ;;
+              MAILPIT_URL) export MAILPIT_URL="$valeur" ;;
             esac
           done < <(supabase status -o env)
-          : "${SUPABASE_URL:?}" "${SUPABASE_ANON_KEY:?}" "${SUPABASE_SERVICE_ROLE_KEY:?}"
+          : "${SUPABASE_URL:?}" "${SUPABASE_ANON_KEY:?}" "${SUPABASE_SERVICE_ROLE_KEY:?}" "${MAILPIT_URL:?}"
           pnpm exec vitest run --config vitest.site.config.mts site-src/studio/compte
       - name: Tests de la base et des fonctions (le PDF émis passe veraPDF), émissions réelles du Studio
         # `compte:test` sert les fonctions, puis y lance aussi les émissions réelles du Studio

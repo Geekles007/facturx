@@ -1042,7 +1042,7 @@ const fr = {
       objet: 'Objet',
       corps: 'Message',
       corpsAide:
-        "Texte brut, 10 000 caractères au plus : il part tel que vous l'écrivez, mis en page par le serveur.",
+        "Texte brut, 10 000 caractères au plus : il part tel que vous l'écrivez, mis en page par le serveur, qui ajoute un encadré (numéro, reste dû, échéance) et la ligne « Envoyé par … avec facturx ».",
       envoyer: 'Envoyer la relance',
       envoi: 'Envoi en cours…',
       envoyee: (niveau: number, destinataire: string) =>
@@ -2337,7 +2337,7 @@ const en: Strings = {
       objet: 'Subject',
       corps: 'Message',
       corpsAide:
-        'Plain text, 10,000 characters at most: it is sent as you write it, laid out by the server.',
+        'Plain text, 10,000 characters at most: it is sent as you write it, laid out by the server, which adds a box (number, amount due, due date) and the line ‘Sent by … with facturx’.',
       envoyer: 'Send the reminder',
       envoi: 'Sending…',
       envoyee: (niveau: number, destinataire: string) =>

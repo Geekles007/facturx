@@ -2,18 +2,14 @@
  * Le message de relance (`relancer/message.ts`, spec § 9, étape 3), sans la pile : ce qu'un texte saisi
  * par l'utilisateur peut faire dans l'e-mail qui part sous le nom de l'entreprise. Le corps est échappé
  * avant le gabarit HTML, l'objet et le nom de l'expéditeur ne portent ni retour à la ligne ni guillemet,
- * le destinataire est une seule adresse.
+ * le destinataire est une seule adresse. L'habillage (spec e-mails, § 6) : le nom de l'entreprise en
+ * tête, un encadré de la facture, la mention du PDF et le pied, dans la langue du texte.
  */
 import { assert, assertEquals, assertThrows } from '@std/assert';
+import { date, echapper, type Langue, montant, paragraphes } from '../_vendor/shared/courriel.ts';
 import { destinataireValide } from '../_vendor/shared/destinataire.ts';
 import { fromBase64 } from '../_vendor/shared/portable.ts';
-import {
-  composer,
-  echapper,
-  type MessageBrevo,
-  nettoyerObjet,
-  uneLigne,
-} from '../relancer/message.ts';
+import { composer, type MessageBrevo, nettoyerObjet, uneLigne } from '../relancer/message.ts';
 import { avecEnv } from './aide.ts';
 
 const EXPEDITEUR = 'relances@facturx.test';
@@ -26,6 +22,10 @@ const base = {
   replyTo: 'facturation@exemple.fr',
   numero: 'F-2026-0001',
   pdf: new TextEncoder().encode('%PDF-1.7\n'),
+  langue: 'fr' as Langue,
+  resteDu: 125000,
+  devise: 'EUR',
+  echeance: '2026-11-08',
 };
 
 /** `composer`, l'adresse d'expédition étant celle de l'environnement (`RELANCES_EXPEDITEUR`). */
@@ -33,11 +33,134 @@ function compose(m: Partial<typeof base> = {}): Promise<MessageBrevo> {
   return avecEnv({ RELANCES_EXPEDITEUR: EXPEDITEUR }, () => composer({ ...base, ...m }));
 }
 
+/** Le pied que `composer` met au bas du message, pour l'entreprise de la base. */
+const PIED_FR =
+  'Envoyé par Atelier Exemple SAS avec facturx. Pour lui écrire, répondez à cet e-mail.';
+
 Deno.test('le corps est échappé', async () => {
   const m = await compose({ corps: '<script>x</script>\n\nMerci' });
   assert(!m.htmlContent.includes('<script>'));
   assert(m.htmlContent.includes('&lt;script&gt;'));
-  assertEquals(m.textContent, '<script>x</script>\n\nMerci');
+  // Le texte reste celui que l'utilisateur a relu, tel quel, au milieu de l'habillage.
+  assert(m.textContent.includes('\n\n<script>x</script>\n\nMerci\n\n'));
+});
+
+Deno.test('l’habillage en français : en-tête, encadré, mention du PDF et pied', async () => {
+  const { htmlContent: html } = await compose();
+  assert(html.startsWith('<!doctype html>'));
+  assert(html.includes('<html lang="fr">'));
+  // Le nom de l'entreprise en tête, dans la cellule d'en-tête du cadre.
+  assert(html.includes('font-weight:600;color:#0a0a0a">Atelier Exemple SAS</td>'));
+  for (const libelle of ['Facture', 'Reste dû', 'Échéance']) {
+    assert(html.includes(`>${libelle}</td>`), libelle);
+  }
+  // L'encadré dit ce que le texte du Studio dit : même montant, même date.
+  assert(html.includes(`>${montant(125000, 'EUR', 'fr')}</td>`));
+  assert(html.includes('>08/11/2026</td>'));
+  assert(html.includes('>F-2026-0001</td>'));
+  assert(html.includes('F-2026-0001.pdf est joint à cet e-mail.'));
+  assert(html.includes(PIED_FR));
+  // Le préheader, caché, reprend l'encadré.
+  assert(
+    html.includes(
+      `Facture F-2026-0001 · Reste dû ${montant(125000, 'EUR', 'fr')} · Échéance 08/11/2026</div>`,
+    ),
+  );
+  // Aucune ressource distante : rien ne se charge à l'ouverture.
+  for (const motif of ['src=', 'href=', 'url(', '@import', '<link', '<img']) {
+    assert(!html.includes(motif), motif);
+  }
+});
+
+Deno.test('l’habillage en anglais : libellés, mention et pied', async () => {
+  const m = await compose({ langue: 'en' });
+  const html = m.htmlContent;
+  assert(html.includes('<html lang="en">'));
+  for (const libelle of ['Invoice', 'Amount due', 'Due date']) {
+    assert(html.includes(`>${libelle}</td>`), libelle);
+  }
+  for (const libelle of ['Reste dû', 'Échéance']) assert(!html.includes(libelle), libelle);
+  assert(html.includes(`>${montant(125000, 'EUR', 'en')}</td>`));
+  assert(html.includes('>08/11/2026</td>'));
+  assert(html.includes('F-2026-0001.pdf is attached to this email.'));
+  assert(html.includes('Sent by Atelier Exemple SAS with facturx.'));
+  assert(html.includes('To reach them, reply to this email.'));
+  assert(
+    html.includes(
+      `Invoice F-2026-0001 · Amount due ${montant(125000, 'EUR', 'en')} · Due date 08/11/2026</div>`,
+    ),
+  );
+});
+
+Deno.test('l’encadré suit la devise et la langue : 1 250,00 USD en anglais', async () => {
+  const m = await compose({ devise: 'USD', langue: 'en' });
+  assert(m.htmlContent.includes('>US$1,250.00</td>'));
+  assert(m.textContent.includes('Amount due: US$1,250.00\n'));
+});
+
+Deno.test('sans nom d’entreprise : pas d’en-tête, le pied ne nomme personne', async () => {
+  for (const entreprise of ['', '   ', '"\n"']) {
+    const m = await compose({ entreprise });
+    // L'en-tête est la seule cellule de ce style au-dessus de la carte.
+    assert(!m.htmlContent.includes('padding:0 4px 16px'), JSON.stringify(entreprise));
+    assert(m.htmlContent.includes('>Envoyé avec facturx.</td>'));
+    assert(!m.htmlContent.includes('Envoyé par'));
+    assert(m.textContent.endsWith('\n--\nEnvoyé avec facturx.'));
+  }
+  const en = await compose({ entreprise: '', langue: 'en' });
+  assert(en.htmlContent.includes('>Sent with facturx.</td>'));
+  assert(en.textContent.endsWith('\n--\nSent with facturx.'));
+});
+
+Deno.test('le nom de l’entreprise dans l’habillage : nettoyé, échappé', async () => {
+  const m = await compose({ entreprise: 'A <b>&</b> "B"' });
+  // Chevrons et guillemets sont retirés, comme pour l'expéditeur ; l'esperluette est échappée.
+  assert(!m.htmlContent.includes('<b>'));
+  assert(!m.htmlContent.includes('"B"'));
+  assert(!m.htmlContent.includes('&</b>'));
+  assert(m.htmlContent.includes('>A b&amp;/b B</td>'));
+  assert(m.htmlContent.includes('Envoyé par A b&amp;/b B avec facturx.'));
+  assert(m.textContent.includes('Envoyé par A b&/b B avec facturx.'));
+  assertEquals(m.sender.name, 'A b&/b B via facturx');
+});
+
+Deno.test('la version texte : la facture, le texte relu, le PDF et le pied', async () => {
+  const m = await compose();
+  const nbsp = '\u00a0';
+  assertEquals(
+    m.textContent,
+    [
+      'Facture F-2026-0001',
+      `Reste dû${nbsp}: ${montant(125000, 'EUR', 'fr')}`,
+      `Échéance${nbsp}: ${date('2026-11-08', 'fr')}`,
+      '',
+      base.corps,
+      '',
+      'F-2026-0001.pdf est joint à cet e-mail.',
+      '--',
+      PIED_FR,
+    ].join('\n'),
+  );
+  assertEquals(date('2026-11-08', 'fr'), '08/11/2026');
+  // Les lignes vides autour du texte relu ne s'ajoutent pas à celles du gabarit.
+  const marge = await compose({ corps: '\n  Merci\n\n' });
+  assert(marge.textContent.includes('\n\nMerci\n\nF-2026-0001.pdf'));
+
+  const en = await compose({ langue: 'en' });
+  assertEquals(
+    en.textContent,
+    [
+      'Invoice F-2026-0001',
+      `Amount due: ${montant(125000, 'EUR', 'en')}`,
+      'Due date: 08/11/2026',
+      '',
+      base.corps,
+      '',
+      'F-2026-0001.pdf is attached to this email.',
+      '--',
+      'Sent by Atelier Exemple SAS with facturx. To reach them, reply to this email.',
+    ].join('\n'),
+  );
 });
 
 Deno.test('l’objet ne peut pas injecter d’en-tête', () => {
@@ -86,14 +209,19 @@ Deno.test('nettoyerObjet : 200 caractères au plus, sans couper un caractère en
 });
 
 Deno.test('le gabarit : paragraphes sur les lignes vides, <br> sur les retours simples', async () => {
-  const m = await compose({
-    corps: 'Bonjour,\n\nLa facture est échue.\nMerci.\r\n\r\n  \r\nCordialement',
-  });
-  assert(m.htmlContent.includes('<p style="margin:0 0 16px">Bonjour,</p>'));
-  assert(m.htmlContent.includes('<p style="margin:0 0 16px">La facture est échue.<br>Merci.</p>'));
-  assert(m.htmlContent.includes('<p style="margin:0 0 16px">Cordialement</p>'));
-  assertEquals(m.htmlContent.match(/<p /g)?.length, 3);
-  assert(m.htmlContent.startsWith('<!doctype html>'));
+  const corps = 'Bonjour,\n\nLa facture est échue.\nMerci.\r\n\r\n  \r\nCordialement';
+  const m = await compose({ corps });
+  // Les paragraphes sont ceux du module partagé, ceux que les e-mails du compte emploient aussi.
+  assert(m.htmlContent.includes(paragraphes(corps)));
+  assert(m.htmlContent.includes('Bonjour,</p>'));
+  assert(m.htmlContent.includes('La facture est échue.<br>Merci.</p>'));
+  assert(m.htmlContent.includes('Cordialement</p>'));
+  assertEquals(m.htmlContent.match(/<p class="texte"/g)?.length, 3);
+  // Le texte relu est entre l'encadré et la mention du PDF.
+  const html = m.htmlContent;
+  assert(html.indexOf('>Échéance</td>') < html.indexOf('Bonjour,'));
+  assert(html.indexOf('Cordialement') < html.indexOf('est joint à cet e-mail.'));
+  assert(html.startsWith('<!doctype html>'));
 });
 
 Deno.test('le gabarit : rien de ce qui est saisi n’échappe à l’échappement', async () => {
@@ -105,18 +233,21 @@ Deno.test('le gabarit : rien de ce qui est saisi n’échappe à l’échappemen
     '</p><iframe src="https://exemple.fr"></iframe>',
     '<u>sur\n<i>deux lignes</i></u>',
   ].join('\n\n');
+  const balisesDe = (html: string) =>
+    [...new Set([...html.matchAll(/<\/?([a-z0-9]+)/gi)].map((trouvee) => trouvee[1].toLowerCase()))]
+      .sort()
+      .join(' ');
   const { htmlContent } = await compose({ corps: hostile });
-  // Le gabarit est fixe : il ne contient que ses propres balises.
-  const balises = new Set(
-    [...htmlContent.matchAll(/<\/?([a-z0-9]+)/gi)].map((trouvee) => trouvee[1].toLowerCase()),
-  );
-  assertEquals([...balises].sort(), ['body', 'br', 'head', 'html', 'meta', 'p']);
+  // Le gabarit est fixe : avec un texte hostile, il ne contient que les balises qu'un texte ordinaire
+  // (deux paragraphes, un retour à la ligne) lui fait porter.
+  const ordinaire = await compose({ corps: 'Bonjour\nMerci\n\nCordialement' });
+  assertEquals(balisesDe(htmlContent), balisesDe(ordinaire.htmlContent));
   for (const motif of ['<img', '<script', '<svg', '<iframe', '<a ', '<u>', '<i>']) {
     assert(!htmlContent.includes(motif), motif);
   }
   // Les guillemets sont neutralisés aussi : ce qui était saisi ne ferme aucun attribut.
   assert(htmlContent.includes('&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;'));
-  assertEquals((await compose({ corps: hostile })).textContent, hostile);
+  assert((await compose({ corps: hostile })).textContent.includes(`\n\n${hostile}\n\n`));
 });
 
 Deno.test('le message : destinataire, objet nettoyé, expéditeur de l’environnement', async () => {
@@ -150,8 +281,21 @@ Deno.test('le nom de l’expéditeur : ni guillemet, ni retour à la ligne, ni c
     ['At​elier⁦ Exemple⁩', 'Atelier Exemple via facturx'],
     ['﻿‮', 'facturx'],
   ]) {
-    assertEquals((await compose({ entreprise: nom })).sender.name, attendu);
+    const m = await compose({ entreprise: nom });
+    assertEquals(m.sender.name, attendu);
+    // Le pied et l'en-tête emploient le même nom, sans le « via facturx ».
+    const sansSuffixe = attendu === 'facturx' ? '' : attendu.replace(/ via facturx$/, '');
+    assert(
+      sansSuffixe === ''
+        ? m.textContent.endsWith('\n--\nEnvoyé avec facturx.')
+        : m.textContent.includes(`Envoyé par ${sansSuffixe} avec facturx.`),
+      JSON.stringify(nom),
+    );
   }
+  // Cent caractères au plus, comme le nom de l'expéditeur.
+  const long = await compose({ entreprise: 'x'.repeat(150) });
+  assertEquals(long.sender.name, `${'x'.repeat(100)} via facturx`);
+  assert(long.textContent.includes(`Envoyé par ${'x'.repeat(100)} avec facturx.`));
 });
 
 Deno.test('nettoyerObjet : les caractères de mise en forme sont retirés (sens d’écriture, largeur nulle)', () => {

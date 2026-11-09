@@ -1,0 +1,37 @@
+{{ $en := eq (printf "%v" .Data.langue) "en" }}{{ if $en }}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<style>@media (prefers-color-scheme: dark){.fond{background-color:#000000 !important}.carte{background-color:#111111 !important;border-color:#2a2a2a !important;color:#ededed !important}.encadre{background-color:#000000 !important;border-color:#2a2a2a !important}.texte{color:#ededed !important}.secondaire{color:#a1a1a1 !important}.mention{color:#8f8f8f !important}.bouton{background-color:#ededed !important}.bouton-texte{color:#0a0a0a !important}}</style>
+</head>
+<body class="fond" style="margin:0;padding:0;background-color:#fafafa">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;font-size:1px;line-height:1px;color:#fafafa">The code to confirm an operation on your facturx account.</div>
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" class="fond" style="background-color:#fafafa"><tr><td align="center" style="padding:32px 16px">
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="560" style="width:100%;max-width:560px">
+<tr><td class="texte" style="padding:0 4px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.4;font-weight:600;color:#0a0a0a">facturx</td></tr>
+<tr><td class="carte" style="padding:28px 24px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#0a0a0a;background-color:#ffffff;border:1px solid #e5e5e5;border-radius:12px"><h1 class="texte" style="margin:0 0 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:20px;line-height:1.3;font-weight:600;color:#0a0a0a">Your verification code</h1><p class="texte" style="margin:0 0 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#0a0a0a">Here is the code requested to confirm an operation on your facturx account:</p><p class="texte" style="margin:0 0 16px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;font-size:32px;line-height:1.2;font-weight:700;letter-spacing:6px;color:#0a0a0a">{{ .Token }}</p><p class="mention" style="margin:0 0 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.5;color:#6b6b6b">Didn’t ask for this? Someone may be using your session: change your password.</p></td></tr>
+<tr><td class="mention" style="padding:16px 4px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:1.5;color:#6b6b6b">facturx · facturx.ibird.dev</td></tr>
+</table>
+</td></tr></table>
+</body>
+</html>{{ else }}<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<style>@media (prefers-color-scheme: dark){.fond{background-color:#000000 !important}.carte{background-color:#111111 !important;border-color:#2a2a2a !important;color:#ededed !important}.encadre{background-color:#000000 !important;border-color:#2a2a2a !important}.texte{color:#ededed !important}.secondaire{color:#a1a1a1 !important}.mention{color:#8f8f8f !important}.bouton{background-color:#ededed !important}.bouton-texte{color:#0a0a0a !important}}</style>
+</head>
+<body class="fond" style="margin:0;padding:0;background-color:#fafafa">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;font-size:1px;line-height:1px;color:#fafafa">Le code pour confirmer une opération sur votre compte facturx.</div>
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" class="fond" style="background-color:#fafafa"><tr><td align="center" style="padding:32px 16px">
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="560" style="width:100%;max-width:560px">
+<tr><td class="texte" style="padding:0 4px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.4;font-weight:600;color:#0a0a0a">facturx</td></tr>
+<tr><td class="carte" style="padding:28px 24px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#0a0a0a;background-color:#ffffff;border:1px solid #e5e5e5;border-radius:12px"><h1 class="texte" style="margin:0 0 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:20px;line-height:1.3;font-weight:600;color:#0a0a0a">Votre code de vérification</h1><p class="texte" style="margin:0 0 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#0a0a0a">Voici le code demandé pour confirmer une opération sur votre compte facturx :</p><p class="texte" style="margin:0 0 16px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;font-size:32px;line-height:1.2;font-weight:700;letter-spacing:6px;color:#0a0a0a">{{ .Token }}</p><p class="mention" style="margin:0 0 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.5;color:#6b6b6b">Vous n’avez rien demandé ? Quelqu’un utilise peut-être votre session : changez votre mot de passe.</p></td></tr>
+<tr><td class="mention" style="padding:16px 4px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:1.5;color:#6b6b6b">facturx · facturx.ibird.dev</td></tr>
+</table>
+</td></tr></table>
+</body>
+</html>{{ end }}

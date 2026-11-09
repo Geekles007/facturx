@@ -24,6 +24,7 @@ test('aucun module partagé n’importe un fichier relatif (Deno ne résout pas 
     'rendu.ts',
     'destinataire.ts',
     'image.ts',
+    'courriel.ts',
   ])
     expect(readFileSync(join(here, f), 'utf8')).not.toMatch(/from\s+['"]\./);
 });

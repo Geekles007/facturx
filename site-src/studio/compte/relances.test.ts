@@ -393,6 +393,7 @@ describe('envoyerRelance (faux client)', () => {
     destinataire: ' compta@client.fr ',
     objet: 'Rappel : facture F-1',
     corps: 'Bonjour,\n\nLa facture F-1…',
+    langue: 'fr' as const,
   };
 
   beforeEach(() => {
@@ -406,6 +407,15 @@ describe('envoyerRelance (faux client)', () => {
     expect(invoke).toHaveBeenCalledTimes(1);
     expect(invoke).toHaveBeenCalledWith('relancer', {
       body: { ...ENVOI, destinataire: 'compta@client.fr' },
+      timeout: DELAI_RELANCE_MS,
+    });
+  });
+
+  test('la langue du texte part avec la demande : le serveur habille l’e-mail dans cette langue', async () => {
+    invoke.mockResolvedValueOnce({ data: { id: 'r-1', niveau: 1 }, error: null });
+    await envoyerRelance({ ...ENVOI, langue: 'en' });
+    expect(invoke).toHaveBeenCalledWith('relancer', {
+      body: { ...ENVOI, destinataire: 'compta@client.fr', langue: 'en' },
       timeout: DELAI_RELANCE_MS,
     });
   });
@@ -600,6 +610,7 @@ describe.skipIf(pile)('la relance contre la pile, `relancer` servie (simulateur 
       destinataire,
       objet: 'Rappel : facture impayée',
       corps: 'Bonjour,\n\nLa facture reste impayée.\n\nCordialement',
+      langue: 'fr',
     });
 
   test('`peutEnvoyer` et `relancer` s’accordent : le bouton ne s’active pas sur une adresse refusée', async () => {

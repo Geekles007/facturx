@@ -290,8 +290,13 @@ describe('le formulaire de relance', () => {
     expect(langueDe({ ...preparee(), niveau: 3 })).not.toContain(phrases.particulier);
   });
 
-  test('l’objet et le message sont préremplis et modifiables ; ce qui part est ce qui est relu', async () => {
-    const props = accessoires();
+  test('l’objet et le message sont préremplis et modifiables ; ce qui part est ce qui est relu, avec la langue du texte', async () => {
+    // Un texte préparé en anglais : c'est cette langue que le serveur reçoit, pour habiller l'e-mail.
+    const props = accessoires({
+      ...preparee(),
+      langue: 'en',
+      ...preparerRelance(DONNEES_DE_TEST, 1, 'en'),
+    });
     let arbre = rendre(FormulaireRelance, props);
     expect(saisie(arbre, phrases.objet).props.value).toBe(props.preparee.objet);
     expect(saisie(arbre, phrases.corps).props.value).toBe(props.preparee.corps);
@@ -307,6 +312,7 @@ describe('le formulaire de relance', () => {
         destinataire: 'compta@client-demo.fr',
         objet: props.preparee.objet,
         corps: 'Message relu et modifié.',
+        langue: 'en',
       },
       timeout: expect.any(Number),
     });
