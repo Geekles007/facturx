@@ -315,6 +315,8 @@ export interface EnvoiRelance {
   destinataire: string;
   objet: string;
   corps: string;
+  /** La langue du texte : le serveur y met les libellés de l'encadré, la mention du PDF et le pied. */
+  langue: Langue;
 }
 
 /** Le champ du formulaire en cause dans un refus. */
@@ -429,7 +431,7 @@ function refusDeRelance(
 
 /**
  * Envoie la relance par `relancer` : l'adresse sans ses espaces de début et de fin, l'objet et le
- * message tels qu'ils ont été relus. Ne lève jamais. Une session refusée (401) ouvre la connexion,
+ * message tels qu'ils ont été relus, et la langue dans laquelle le texte a été préparé. Ne lève jamais. Une session refusée (401) ouvre la connexion,
  * comme pour l'émission. Une panne hors de la fonction (passerelle, worker arrêté, délai) laisse
  * l'issue inconnue : l'e-mail a pu partir.
  */
@@ -442,6 +444,7 @@ export async function envoyerRelance(envoi: EnvoiRelance): Promise<IssueRelance>
         destinataire: envoi.destinataire.trim(),
         objet: envoi.objet,
         corps: envoi.corps,
+        langue: envoi.langue,
       },
       timeout: DELAI_RELANCE_MS,
     });

@@ -174,6 +174,7 @@ export function FormulaireRelance({
         destinataire,
         objet,
         corps,
+        langue: preparee.langue,
       }).catch((): IssueRelance => ({ kind: 'sansReponse' }));
       setEtat(
         issue.kind === 'refus'
