@@ -24,7 +24,7 @@ Conventions de ce guide : `<ref>` est l'identifiant du projet Supabase (20 lettr
 
 **Secrets du Vault** (la purge de nuit, migration `20261104000600_purge.sql`, section 1.8) : `purger_url` (`https://<ref>.supabase.co/functions/v1/purger`) et `purger_secret` (la valeur de `PURGE_SECRET`).
 
-**Authentification** (tableau de bord, section 1.4) : SMTP `smtp-relay.brevo.com:587` ; Site URL `https://facturx.ibird.dev/studio/` ; Redirect URLs `https://facturx.ibird.dev/studio/` et `https://facturx.ibird.dev/en/studio/` (le Studio y renvoie, `site-src/studio/compte/index.ts`) ; e-mail confirmé obligatoire.
+**Authentification** (tableau de bord, section 1.4) : SMTP `smtp-relay.brevo.com:587` ; Site URL `https://facturx.ibird.dev/studio/` ; Redirect URLs `https://facturx.ibird.dev/studio/` et `https://facturx.ibird.dev/en/studio/` (le Studio y renvoie, `site-src/studio/compte/index.ts`) ; e-mail confirmé obligatoire ; les modèles d'e-mails ne se règlent pas ici : ils viennent du dépôt (`supabase/templates/`) et du workflow (1.4, 5).
 
 **Secrets GitHub** (Settings → Secrets and variables → Actions) :
 
@@ -75,6 +75,7 @@ Ce domaine est aussi celui du courrier de l'éditeur (`hello@ibird.dev`, reçu p
 5. *Senders → Add a sender* : `relances@ibird.dev` (nom : `facturx` ; chaque relance le remplace par « *Nom de l'entreprise* via facturx ») et `compte@ibird.dev` (nom : `facturx`).
 6. *SMTP & API → SMTP* : noter le serveur (`smtp-relay.brevo.com`, port `587`) et l'identifiant SMTP, puis *Generate a new SMTP key* : c'est le mot de passe SMTP de l'étape 1.4.
 7. *SMTP & API → API Keys → Generate a new API key*, nommée `facturx-relances` : c'est `BREVO_API_KEY` (étape 1.5).
+8. Vérifier, dans les réglages des e-mails transactionnels de Brevo, que **le suivi des clics et des ouvertures est désactivé**. Avec lui, Brevo réécrit chaque lien d'un e-mail pour le compter : le lien de confirmation passerait par un serveur de Brevo, et le service de suivi qui l'ouvre (une messagerie, un antivirus) peut consommer ce lien à usage unique avant vous, si bien que la confirmation échoue. Il ajouterait aussi un pixel d'ouverture à des e-mails qui n'en portent aucun (D76). L'étape 1.10 le vérifie : le lien du bouton doit commencer par l'adresse de Supabase.
 
 ### 1.3 bis Les enregistrements DNS
 
@@ -112,7 +113,7 @@ Dans le tableau de bord du projet. **Ne jamais lancer `supabase config push`** a
    - Username : l'identifiant SMTP de Brevo ; Password : la clé SMTP de Brevo (étape 1.3, 6)
 3. *Authentication → Sign In / Providers → Email* : **Confirm email** activé (`emettre`, `importer` et `relancer` refusent un compte non confirmé) ; **Secure email change** activé (`double_confirm_changes = true` en local).
 4. *Authentication → Rate Limits* : la limite d'envoi d'e-mails par heure, que Supabase règle bas par défaut, sous le plafond quotidien de Brevo (300 par jour : 12 par heure tiennent dans la journée).
-5. Facultatif : *Authentication → Emails → Templates*, les gabarits sont en anglais par défaut.
+5. Les modèles d'e-mails (confirmation, mot de passe oublié, changement d'adresse, lien de connexion, code de vérification) ne se règlent pas ici : ils viennent du dépôt, `supabase/templates/` (écrits par `pnpm emails:construire` à partir de `site-src/courriels/compte.ts`, en français et en anglais), et le workflow de déploiement les pose en production (1.7, étape « Modèles d'e-mails »). **Une modification faite dans *Authentication → Emails → Templates* est écrasée au déploiement suivant**, sans avertissement : pour changer un e-mail, changer le dépôt, puis déployer. Tant que le workflow ne les a pas posés, le tableau de bord montre les gabarits anglais de Supabase. Le modèle d'invitation, dont facturx ne se sert pas, reste celui de Supabase.
 6. *Authentication → Configuration → Audit Logs* : **Write audit logs to the database** peut rester activé. Le serveur d'authentification y écrit (`auth.audit_log_entries`) l'inscription, chaque connexion et la suppression de chaque utilisateur, avec son adresse e-mail et son identifiant ; `auth.admin.deleteUser` ne les efface pas, et la purge de nuit le fait (`purger`, étape 3), à condition que le rôle `postgres` ait le droit d'effacer dans cette table : la vérification est en 1.8. **S'il ne l'a pas**, désactiver ce réglage : sans lui, le journal d'audit ne va plus que dans les journaux de la plateforme (*Logs → Auth*), conservés un jour sur le plan Free (7 sur le plan Pro), ce que la politique de confidentialité (§ 5) dit déjà ; la passe de `purger` resterait sinon en échec (500) chaque nuit.
 
 Ce qu'on doit voir : à l'étape 1.10, l'e-mail de confirmation arrive, de `compte@ibird.dev`, et ses en-têtes disent `spf=pass`, `dkim=pass` et `dmarc=pass` (Gmail : *Afficher l'original*).
@@ -147,7 +148,7 @@ Ce qu'on doit voir : `supabase secrets list` donne les quatre noms (avec une emp
 
 ### 1.6 Les secrets du déploiement
 
-Les deux workflows ne se lancent que depuis la branche par défaut (`main`) : GitHub n'offre `workflow_dispatch` et ne planifie un workflow que s'il y est. Ils ne tournent pas dans une copie du dépôt (`if: github.repository == 'Geekles007/facturx'`), et le déploiement refuse en plus toute autre branche que `main` (`github.ref == 'refs/heads/main'`) : lancé depuis une autre, son job est sauté, sans rien déployer. Ses secrets ne sont donnés qu'aux étapes qui parlent au projet (lier, vérifier les secrets, migrer, déployer, déposer les polices, contrôler), jamais à l'installation des dépendances ni aux constructions.
+Les deux workflows ne se lancent que depuis la branche par défaut (`main`) : GitHub n'offre `workflow_dispatch` et ne planifie un workflow que s'il y est. Ils ne tournent pas dans une copie du dépôt (`if: github.repository == 'Geekles007/facturx'`), et le déploiement refuse en plus toute autre branche que `main` (`github.ref == 'refs/heads/main'`) : lancé depuis une autre, son job est sauté, sans rien déployer. Ses secrets ne sont donnés qu'aux étapes qui parlent au projet (lier, vérifier les secrets, migrer, déployer, déposer les polices, poser les modèles d'e-mails, contrôler), jamais à l'installation des dépendances ni aux constructions.
 
 ```sh
 gh secret set SUPABASE_ACCESS_TOKEN     # le jeton de 1.2 ; gh le demande sans l'afficher
@@ -167,6 +168,7 @@ Ce qu'on doit voir, étape par étape :
 - **Migrations** : les huit migrations `20261104000100` à `20261104000900` appliquées (il n'y a pas de `000500`) ;
 - **Edge Functions** : `Fonctions : emettre importer relancer supprimer-compte purger`, puis le déploiement de chacune ;
 - **Polices du Studio** : `Polices TTF déposées dans le bucket « polices » : 14.` ;
+- **Modèles d'e-mails** : `PATCH config/auth : <code>` et `GET config/auth : <code>` (un code 2xx), puis `modèles identiques`. Rien d'autre n'est affiché, et c'est voulu : la réponse de l'API de gestion est la configuration d'authentification entière, mot de passe SMTP compris, et le journal est public. Un échec dit le code reçu, ou les noms (jamais les valeurs) des clés que la relecture trouve différentes ; le contenu se lit alors dans le tableau de bord, sans y rien modifier ;
 - **Les fonctions répondent** : `emettre : 401 {"code":"SESSION"}` et `purger : 401 {"code":"SESSION"}`.
 
 Le premier `db push` est la première application des migrations sur une base vide hors de la CI : en local, `supabase db reset` n'a pas pu être lancé pendant le développement ; c'est le job `compte` de `ci.yml` qui les applique à chaque fois depuis zéro (`supabase start`). Une erreur ici est à rapporter telle quelle.
@@ -225,9 +227,13 @@ Ce qu'on doit voir : sur `https://facturx.ibird.dev/studio/`, « Se connecter »
 Avec un **compte d'essai** (une adresse que vous lisez, par exemple un alias `+essai`), pas votre compte réel : une facture émise ne se supprime pas, et ces essais en émettent. Le même compte sert à la confirmation de D74 (1.11) ; on le supprime ensuite.
 
 1. **Inscription réelle** : *Créer un compte gratuit*, CGU acceptées. L'e-mail de confirmation arrive (en-têtes `spf=pass`, `dkim=pass`, `dmarc=pass`) ; le lien ramène sur `/studio/`, connecté.
-2. **Émission** : renseigner l'entreprise (avec un SIREN : `relancer` l'exige), puis une facture dont l'acheteur a pour adresse de contact la vôtre, **datée d'il y a quelques jours (de cette année) et échue d'hier** (pour pouvoir la relancer tout de suite). *Émettre* : la facture prend son numéro, son PDF s'ouvre.
-3. **Relance** : sur cette facture, *Relancer*, destinataire votre adresse, *Envoyer*. L'e-mail arrive de « *Nom de l'entreprise* via facturx » `<relances@ibird.dev>`, avec le PDF joint, et y répondre écrit à l'adresse du compte (`Reply-To`). Le Studio dit « envoyée ».
-4. Les contrôles du déploiement déjà vus : migrations appliquées depuis la base vide (1.7) ; `deno.lock` en version 5 accepté au déploiement (l'étape *Edge Functions* a réussi ; sinon, voir la section 5) ; `postgres` lit `storage.objects` et la tâche `purger-chaque-nuit` est là (1.8).
+2. **Les e-mails du compte** (D76), sur cet e-mail de confirmation, reçu en français :
+   - son objet est « Confirmez votre adresse e-mail » et son bouton « Confirmer mon adresse » ; l'ouvrir dans Gmail **sur le web et sur mobile, en mode clair puis en mode sombre** : le texte reste lisible, le bouton visible, rien n'est à charger ;
+   - le lien du bouton, copié sans être suivi (clic droit → *Copier l'adresse du lien*), **commence par `https://<ref>.supabase.co/auth/v1/verify`** : Brevo ne l'a pas réécrit pour compter les clics (1.3, 8). Une adresse de Brevo à la place : le suivi est encore actif, le désactiver avant d'aller plus loin ;
+   - une seconde inscription, **depuis `/en/studio/`** (un autre alias, par exemple `+essai-en`), reçoit l'e-mail en anglais : objet « Confirm your email address », bouton « Confirm my address ». Supprimer ce second compte de même (1.11, 8).
+3. **Émission** : renseigner l'entreprise (avec un SIREN : `relancer` l'exige), puis une facture dont l'acheteur a pour adresse de contact la vôtre, **datée d'il y a quelques jours (de cette année) et échue d'hier** (pour pouvoir la relancer tout de suite). *Émettre* : la facture prend son numéro, son PDF s'ouvre.
+4. **Relance** : sur cette facture, *Relancer*, destinataire votre adresse, *Envoyer*. L'e-mail arrive de « *Nom de l'entreprise* via facturx » `<relances@ibird.dev>`, avec le PDF joint, et y répondre écrit à l'adresse du compte (`Reply-To`). Le Studio dit « envoyée ». Dans l'e-mail, dans l'ordre : le nom de l'entreprise en tête, l'encadré (numéro, reste dû et échéance de la facture), le texte relu, « *numéro*.pdf est joint à cet e-mail. », puis, hors de la carte, « Envoyé par *Entreprise* avec facturx. Pour lui écrire, répondez à cet e-mail. »
+5. Les contrôles du déploiement déjà vus : migrations appliquées depuis la base vide (1.7) ; `deno.lock` en version 5 accepté au déploiement (l'étape *Edge Functions* a réussi ; sinon, voir la section 5) ; `postgres` lit `storage.objects` et la tâche `purger-chaque-nuit` est là (1.8).
 
 ### 1.11 Confirmer D74 sur le projet déployé
 
@@ -371,14 +377,16 @@ pnpm build && pnpm site:build && pnpm compte:preparer
 supabase db push --remote
 supabase functions deploy emettre importer relancer supprimer-compte purger
 pnpm compte:polices
+pnpm emails:deployer
 ```
 
 - `pnpm build` construit le SDK, `pnpm site:build` les polices du Studio (`site/studio/polices/`), `pnpm compte:preparer` copie le SDK et les modules partagés dans `supabase/functions/_vendor/`.
 - **`supabase db push --remote`** : avec le CLI 3, `db push` sans `--remote` vise la base **locale**. Le workflow ajoute `--yes`, qui confirme sans question une modification du projet hébergé.
 - Les fonctions déployées sont celles que `config.toml` déclare (`[functions.<nom>]`, avec `verify_jwt = false` et l'import map) : une nouvelle fonction y a son entrée, sans quoi le workflow ne la déploie pas.
 - `pnpm compte:polices` lit `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` ; il remplace les polices du bucket `polices`.
+- `pnpm emails:deployer` lit `SUPABASE_ACCESS_TOKEN` et `SUPABASE_PROJECT_REF` ; il envoie par l'API de gestion de Supabase les objets et les modèles d'e-mails de `supabase/templates/` (les seules clés `mailer_*`), puis les relit et les compare à ce qu'il a envoyé. Ces fichiers sont versionnés : après un changement de `site-src/courriels/compte.ts`, `pnpm emails:construire` les régénère (un test du site vérifie qu'ils sont à jour). Ce n'est pas `supabase config push`, que 1.4 interdit.
 
-À la main, depuis un poste lié au projet (1.2), la même suite : `supabase functions deploy` vise le projet lié ; `pnpm compte:polices` demande `SUPABASE_URL=https://<ref>.supabase.co` et la clé de service dans l'environnement (`read -rs SUPABASE_SERVICE_ROLE_KEY && export SUPABASE_SERVICE_ROLE_KEY`).
+À la main, depuis un poste lié au projet (1.2), la même suite : `supabase functions deploy` vise le projet lié ; `pnpm compte:polices` demande `SUPABASE_URL=https://<ref>.supabase.co` et la clé de service dans l'environnement (`read -rs SUPABASE_SERVICE_ROLE_KEY && export SUPABASE_SERVICE_ROLE_KEY`) ; `pnpm emails:deployer`, `SUPABASE_PROJECT_REF=<ref>` et le jeton d'accès (`read -rs SUPABASE_ACCESS_TOKEN && export SUPABASE_ACCESS_TOKEN`).
 
 Le site se redéploie par Coolify, comme avant. Une version qui change le Studio et le serveur à la fois : le serveur d'abord, puis le site.
 

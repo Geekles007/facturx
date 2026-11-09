@@ -64,7 +64,7 @@ Le lien de chaque e-mail reste `{{ .ConfirmationURL }}` : le mécanisme de Supab
 
 Les textes :
 
-- **confirmation** : vous venez de créer un compte facturx avec l'adresse `{{ .Email }}` ; confirmez-la pour conserver vos factures et relancer vos clients. Vous n'avez rien demandé ? Ignorez cet e-mail : aucun compte ne sera ouvert.
+- **confirmation** : vous venez de créer un compte facturx avec l'adresse `{{ .Email }}` ; confirmez-la pour conserver vos factures et relancer vos clients. Vous n'avez rien demandé ? Ignorez cet e-mail : le compte ne sera pas activé.
 - **recovery** : une demande de nouveau mot de passe a été faite pour le compte `{{ .Email }}`. Vous n'avez rien demandé ? Ignorez cet e-mail : votre mot de passe ne change pas.
 - **email_change** : le même e-mail part à l'ancienne et à la nouvelle adresse, et doit convenir aux deux. Une demande remplace l'adresse du compte, `{{ .Email }}`, par `{{ .NewEmail }}` ; le changement se fait quand les deux adresses l'ont confirmé. Vous n'avez rien demandé ? Ne cliquez pas : l'adresse ne change pas sans cette confirmation.
 - **magic_link** : un lien de connexion a été demandé pour le compte `{{ .Email }}`. Vous n'avez rien demandé ? Ignorez cet e-mail.
@@ -110,7 +110,7 @@ Le montant et la date sont formatés comme dans le texte que le Studio a prépar
 ```
 Facture F-2026-0042
 Reste dû : 1 250,00 €
-Échéance : 8 novembre 2026
+Échéance : 08/11/2026
 
 <le texte relu>
 
