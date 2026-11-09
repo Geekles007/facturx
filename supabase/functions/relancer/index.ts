@@ -4,9 +4,9 @@
  *
  *   POST /functions/v1/relancer   { factureId, destinataire, objet, corps, langue? }
  *
- * `langue` (`fr` ou `en`, sinon 422 `CORPS`) est celle du texte que le Studio a préparé : les libellés
- * de l'habillage de l'e-mail (`message.ts`) s'y accordent. Absente (un Studio d'avant l'habillage),
- * c'est celle de la facture (`appearance.language`), puis le français.
+ * `langue` (`fr` ou `en`, sinon 422 `ANOMALIES`, anomalie `CORPS`) est celle du texte que le Studio
+ * a préparé : les libellés de l'habillage de l'e-mail (`message.ts`) s'y accordent. Absente (un Studio
+ * d'avant l'habillage), c'est celle de la facture (`appearance.language`), puis le français.
  *
  * Réponse 201 `{ id, niveau }`. Le niveau (1, rappel courtois ; 2, ferme ; 3, dernier rappel, qui se
  * répète) est le nombre de relances `envoyee` de la facture plus un, plafonné à 3. Si l'on ne sait pas

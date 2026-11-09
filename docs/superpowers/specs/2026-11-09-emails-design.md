@@ -99,7 +99,7 @@ Pas de mot « facturx » en tête : le client voit qui le relance, pas l'outil.
 
 ### 6.2 La langue
 
-Les libellés (Facture / Invoice, Reste dû / Amount due, Échéance / Due date, la mention du PDF, le pied) sont dans la langue du texte. Le Studio l'envoie avec la demande (`langue`, celle dans laquelle il a préparé l'e-mail) ; le serveur n'accepte que `fr` ou `en` (400 `CORPS` sinon). Absente (un Studio d'avant ce chantier, resté ouvert), il prend celle de la facture (`appearance.language`), puis le français.
+Les libellés (Facture / Invoice, Reste dû / Amount due, Échéance / Due date, la mention du PDF, le pied) sont dans la langue du texte. Le Studio l'envoie avec la demande (`langue`, celle dans laquelle il a préparé l'e-mail) ; le serveur n'accepte que `fr` ou `en` (sinon 422 `ANOMALIES`, avec une anomalie `CORPS` au chemin `langue`, comme pour tout champ mal formé du corps). Absente (un Studio d'avant ce chantier, resté ouvert), il prend celle de la facture (`appearance.language`), puis le français.
 
 Le montant et la date sont formatés comme dans le texte que le Studio a préparé : `Intl`, `fr-FR` ou `en-GB`. Les deux fonctions de formatage de `site-src/studio/compte/relances.ts` (`montant`, `date`) passent dans le module partagé (§ 7), pour que l'encadré et le texte disent exactement la même chose.
 
@@ -132,7 +132,7 @@ Envoyé par ACME SARL avec facturx. Pour lui écrire, répondez à cet e-mail.
 - **En local**, `config.toml` désigne ces fichiers (`[auth.email.template.<modèle>]`, `subject` et `content_path`) ; un test vérifie que ses objets sont ceux de `objets.json`. Les e-mails s'affichent dans Mailpit, après un redémarrage de la pile locale, que fait l'utilisateur.
 - **En production**, une étape de `compte-deploy.yml`, « Modèles d'e-mails », envoie les objets et les modèles par l'API de gestion de Supabase : `PATCH https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/config/auth`, avec les seules clés `mailer_subjects_<modèle>` et `mailer_templates_<modèle>_content`, et le jeton `SUPABASE_ACCESS_TOKEN` déjà dans les secrets. Ce n'est pas `supabase config push`, qui écrirait sur la production les réglages de la pile locale.
   - La réponse de l'API est la configuration d'authentification entière, qui peut contenir des secrets (le mot de passe SMTP) : **elle n'est jamais affichée**. L'étape n'écrit que le code HTTP.
-  - Elle relit ensuite la configuration (`GET`), n'en garde par `jq` que les clés envoyées, et la compare à ce qu'elle a envoyé ; elle échoue si elles diffèrent, sans rien afficher d'autre que « identiques » ou les noms des clés qui diffèrent.
+  - Elle relit ensuite la configuration (`GET`) : `scripts/emails-deployer.mjs`, en Node, n'en garde que les clés envoyées et les compare à ce qu'il a envoyé (`clesQuiDifferent`) ; l'étape échoue si elles diffèrent, sans rien afficher d'autre que « identiques » (le journal dit « modèles identiques ») ou les noms des clés qui diffèrent.
 - Les modèles du tableau de bord de Supabase ne se modifient plus à la main : le déploiement suivant les écraserait. Le guide le dit.
 
 ## 8. Vérifications

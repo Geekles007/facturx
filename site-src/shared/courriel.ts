@@ -1,8 +1,8 @@
 /**
  * Le cadre HTML des e-mails de facturx, partagé entre le Studio (qui formate les montants et les
- * dates du texte qu'il prépare), les modèles d'e-mail du compte (construits avec `pnpm site:build`)
- * et l'Edge Function `relancer` (l'habillage de la relance) : un seul style, et un montant ou une
- * date qui se disent partout de la même façon.
+ * dates du texte qu'il prépare), les modèles d'e-mail du compte (construits avec
+ * `pnpm emails:construire`) et l'Edge Function `relancer` (l'habillage de la relance) : un seul
+ * style, et un montant ou une date qui se disent partout de la même façon.
  *
  * Le cadre est celui que les messageries affichent : des tableaux (`role="presentation"`) et des
  * styles en ligne, 560 px de large au plus, la pile de polices du système, aucune ressource distante

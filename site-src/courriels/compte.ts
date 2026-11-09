@@ -1,8 +1,10 @@
 /**
  * Les e-mails que Supabase Auth envoie au titulaire d'un compte facturx : confirmation de l'adresse,
  * mot de passe oublié, changement d'adresse, lien de connexion, code de vérification. Supabase les
- * compose avec un gabarit Go (`text/template`) ; on lui en remet un par type, bilingue, que
- * `pnpm emails:construire` écrit dans supabase/templates/.
+ * compose, objet comme corps, avec un gabarit Go (`html/template`) ; on lui en remet un par type,
+ * bilingue, que `pnpm emails:construire` écrit dans supabase/templates/. `html/template` retire les
+ * commentaires HTML : un modèle du compte ne peut porter de commentaire conditionnel, comme le
+ * `<!--[if mso]>` d'Outlook.
  *
  * Un modèle tient les deux langues : l'anglais si la langue du compte (`user_metadata.langue`, que
  * le Studio y enregistre) est « en », le français sinon, y compris pour un compte qui n'en a pas.
