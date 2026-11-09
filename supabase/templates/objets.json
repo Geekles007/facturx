@@ -1,0 +1,7 @@
+{
+  "confirmation": "{{ if eq (printf \"%v\" .Data.langue) \"en\" }}Confirm your email address{{ else }}Confirmez votre adresse e-mail{{ end }}",
+  "recovery": "{{ if eq (printf \"%v\" .Data.langue) \"en\" }}Reset your password{{ else }}Réinitialisez votre mot de passe{{ end }}",
+  "email_change": "{{ if eq (printf \"%v\" .Data.langue) \"en\" }}Confirm your email change{{ else }}Confirmez le changement d’adresse{{ end }}",
+  "magic_link": "{{ if eq (printf \"%v\" .Data.langue) \"en\" }}Your sign-in link{{ else }}Votre lien de connexion{{ end }}",
+  "reauthentication": "{{ if eq (printf \"%v\" .Data.langue) \"en\" }}Your verification code{{ else }}Votre code de vérification{{ end }}"
+}
